@@ -1,6 +1,7 @@
-// Regra: nenhuma cor de marca. Cor colorida serve exclusivamente para
-// comunicar estado (semantic). Ação primária usa contraste neutro
-// (texto x fundo), nunca cor de destaque.
+// Regra: a cor de marca (brand) é usada para identidade e estados
+// interativos; as cores de estado (semantic) comunicam exclusivamente
+// status. A marca é dona da faixa azul/violeta e não colide com nenhum
+// status.
 import { Easing } from 'react-native';
 
 export const light = {
@@ -12,9 +13,9 @@ export const light = {
   textPrimary: '#22221F',
   textSecondary: '#6B6862',
   textMuted: '#9A968D',
-  accent: '#C4693F',
-  accentSoft: '#E8A97E',
-  accentWash: '#F5D9C4',
+  brand: '#2F3577',
+  brandActive: '#6067C8',
+  brandWash: '#ECEDF7',
 } as const;
 
 export const dark = {
@@ -30,7 +31,7 @@ export const semantic = {
   ok: '#2F7D53',
   pending: '#A9740B',
   overdue: '#B23A2E',
-  info: '#2C6BA8',
+  info: '#6B6862',
 } as const;
 
 export const motion = {

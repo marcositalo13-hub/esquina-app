@@ -96,8 +96,8 @@ export default function Home() {
     <View style={styles.container}>
       <LinearGradient
         colors={[
-          'rgba(245, 217, 196, 0.5)',
-          'rgba(245, 217, 196, 0.2)',
+          'rgba(236, 237, 247, 0.5)',
+          'rgba(236, 237, 247, 0.2)',
           'rgba(250, 249, 246, 0)',
         ]}
         locations={[0, 0.4, 1]}
@@ -142,7 +142,7 @@ export default function Home() {
                   <Ionicons
                     name={isActive ? item.iconFilled : item.iconOutline}
                     size={24}
-                    color={isActive ? light.accent : light.textPrimary}
+                    color={isActive ? light.brandActive : light.textPrimary}
                   />
                 </Animated.View>
                 <Text style={styles.taskbarLabel}>{item.label}</Text>
@@ -250,6 +250,6 @@ const styles = StyleSheet.create({
     width: DOT_SIZE,
     height: DOT_SIZE,
     borderRadius: DOT_SIZE / 2,
-    backgroundColor: light.accent,
+    backgroundColor: light.brandActive,
   },
 });
