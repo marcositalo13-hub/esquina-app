@@ -96,12 +96,14 @@ export default function Home() {
     <View style={styles.container}>
       <LinearGradient
         colors={[
-          'rgba(216, 220, 240, 0.85)',
-          'rgba(216, 220, 240, 0.4)',
-          'rgba(250, 249, 246, 0)',
+          'rgba(216, 220, 240, 0.12)',
+          'rgba(216, 220, 240, 0.35)',
+          'rgba(216, 220, 240, 0.7)',
         ]}
-        locations={[0, 0.4, 1]}
-        style={styles.headerGradient}
+        locations={[0, 0.6, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.backgroundGradient}
       />
 
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
@@ -119,8 +121,6 @@ export default function Home() {
           </Pressable>
         </View>
       </View>
-
-      <View style={[styles.taskbarWash, { height: 49 + insets.bottom }]} />
 
       <BlurView intensity={40} tint="light" style={styles.taskbar}>
         <LinearGradient
@@ -167,12 +167,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: light.bg,
   },
-  headerGradient: {
+  backgroundGradient: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 320,
+    bottom: 0,
   },
   header: {
     paddingHorizontal: spacing.lg,
@@ -213,13 +213,6 @@ const styles = StyleSheet.create({
     color: light.textSecondary,
     textDecorationLine: 'underline',
     marginTop: spacing.sm,
-  },
-  taskbarWash: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(216, 220, 240, 0.5)',
   },
   taskbar: {
     overflow: 'hidden',
