@@ -6,6 +6,7 @@
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/metro-runtime": "~57.0.8",
     "@expo/vector-icons": "^15.0.2",
+    "@supabase/supabase-js": "^2.112.3",
     "expo": "~57.0.11",
     "expo-blur": "~57.0.2",
     "expo-constants": "^57.0.9",
@@ -23,6 +24,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.8",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   },
@@ -30,7 +32,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "lint": "biome check .",
+    "format": "biome check --write ."
   },
   "private": true
 }

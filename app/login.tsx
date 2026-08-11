@@ -1,16 +1,16 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import { router } from 'expo-router';
-import { dark, radius, spacing, fonts } from '../src/theme';
+import { dark, fonts, radius, spacing } from '../src/theme';
 
 export default function Login() {
   const [email, setEmail] = useState('');

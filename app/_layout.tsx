@@ -1,13 +1,13 @@
-import { useEffect } from 'react';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import * as SplashScreen from 'expo-splash-screen';
 import {
-  useFonts,
   Inter_400Regular,
   Inter_500Medium,
   Inter_600SemiBold,
+  useFonts,
 } from '@expo-google-fonts/inter';
+import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { light } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});

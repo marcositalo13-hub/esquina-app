@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { light, radius, spacing, fonts } from '../src/theme';
+import { router } from 'expo-router';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import condos from '../src/data/condos';
+import { fonts, light, radius, spacing } from '../src/theme';
 
 const condo = condos[0];
 
@@ -27,6 +28,9 @@ export default function Home() {
       <View style={styles.body}>
         <View style={styles.placeholderCard}>
           <Text style={styles.placeholderText}>Conteúdo em construção</Text>
+          <Pressable onPress={() => router.push('/cadastro')}>
+            <Text style={styles.testeLink}>Teste: Cadastro genérico</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -86,6 +90,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     color: light.textSecondary,
+  },
+  testeLink: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textSecondary,
+    textDecorationLine: 'underline',
+    marginTop: spacing.sm,
   },
   taskbar: {
     backgroundColor: light.card,
