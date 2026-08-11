@@ -15,7 +15,7 @@ export const light = {
   textMuted: '#9A968D',
   brand: '#2F3577',
   brandActive: '#6067C8',
-  brandWash: '#ECEDF7',
+  brandWash: '#D8DCF0',
 } as const;
 
 export const dark = {

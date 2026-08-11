@@ -96,8 +96,8 @@ export default function Home() {
     <View style={styles.container}>
       <LinearGradient
         colors={[
-          'rgba(236, 237, 247, 0.5)',
-          'rgba(236, 237, 247, 0.2)',
+          'rgba(216, 220, 240, 0.85)',
+          'rgba(216, 220, 240, 0.4)',
           'rgba(250, 249, 246, 0)',
         ]}
         locations={[0, 0.4, 1]}
@@ -119,6 +119,8 @@ export default function Home() {
           </Pressable>
         </View>
       </View>
+
+      <View style={[styles.taskbarWash, { height: 49 + insets.bottom }]} />
 
       <BlurView intensity={40} tint="light" style={styles.taskbar}>
         <LinearGradient
@@ -211,6 +213,13 @@ const styles = StyleSheet.create({
     color: light.textSecondary,
     textDecorationLine: 'underline',
     marginTop: spacing.sm,
+  },
+  taskbarWash: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(216, 220, 240, 0.5)',
   },
   taskbar: {
     overflow: 'hidden',
