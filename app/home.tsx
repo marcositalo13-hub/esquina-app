@@ -120,14 +120,13 @@ export default function Home() {
         </View>
       </View>
 
-      <BlurView
-        intensity={40}
-        tint="light"
-        style={[
-          styles.taskbar,
-          { paddingBottom: Math.max(insets.bottom, spacing.md) },
-        ]}
-      >
+      <BlurView intensity={40} tint="light" style={styles.taskbar}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0)']}
+          style={styles.taskbarSheen}
+        />
+
         <View style={styles.taskbarItems}>
           {menuItems.map((item, index) => {
             const isActive = item.key === activeKey;
@@ -154,6 +153,8 @@ export default function Home() {
             );
           })}
         </View>
+
+        <View style={{ height: insets.bottom }} />
       </BlurView>
     </View>
   );
@@ -212,20 +213,28 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   taskbar: {
+    overflow: 'hidden',
     borderTopWidth: 1,
-    borderTopColor: light.border,
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.md,
+    borderTopColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  taskbarSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 24,
   },
   taskbarItems: {
     flexDirection: 'row',
     justifyContent: 'space-evenly',
     alignItems: 'center',
+    height: 49,
+    paddingHorizontal: spacing.md,
   },
   taskbarItem: {
     flex: 1,
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 2,
   },
   taskbarLabel: {
     fontFamily: fonts.medium,
