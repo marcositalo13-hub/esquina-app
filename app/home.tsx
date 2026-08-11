@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   },
   taskbarItems: {
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
+    justifyContent: 'space-around',
     alignItems: 'center',
     height: 49,
     paddingHorizontal: spacing.md,
@@ -236,6 +236,7 @@ const styles = StyleSheet.create({
   taskbarItem: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
   },
   taskbarLabel: {
