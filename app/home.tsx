@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
-  type LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -46,9 +45,7 @@ export default function Home() {
 
   const [activeKey, setActiveKey] = useState<string>('inicio');
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [rowWidth, setRowWidth] = useState(0);
 
-  const activeIndexAnim = useRef(new Animated.Value(0)).current;
   const iconScales = useRef(menuItems.map(() => new Animated.Value(1))).current;
 
   useEffect(() => {
@@ -71,25 +68,8 @@ export default function Home() {
     };
   }, []);
 
-  function handleRowLayout(event: LayoutChangeEvent) {
-    setRowWidth(event.nativeEvent.layout.width);
-  }
-
   function handlePressItem(key: string, index: number) {
-    if (key !== activeKey) {
-      setActiveKey(key);
-
-      if (reduceMotion) {
-        activeIndexAnim.setValue(index);
-      } else {
-        Animated.timing(activeIndexAnim, {
-          toValue: index,
-          duration: motion.duration.base,
-          easing: motion.easing,
-          useNativeDriver: true,
-        }).start();
-      }
-    }
+    setActiveKey(key);
 
     if (reduceMotion) {
       return;
@@ -112,18 +92,15 @@ export default function Home() {
     ]).start();
   }
 
-  const itemWidth = rowWidth / menuItems.length;
-  const dotTranslateX = activeIndexAnim.interpolate({
-    inputRange: menuItems.map((_, index) => index),
-    outputRange: menuItems.map(
-      (_, index) => index * itemWidth + itemWidth / 2 - DOT_SIZE / 2,
-    ),
-  });
-
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['rgba(245, 217, 196, 0.55)', 'rgba(250, 249, 246, 0)']}
+        colors={[
+          'rgba(245, 217, 196, 0.5)',
+          'rgba(245, 217, 196, 0.2)',
+          'rgba(250, 249, 246, 0)',
+        ]}
+        locations={[0, 0.4, 1]}
         style={styles.headerGradient}
       />
 
@@ -151,7 +128,7 @@ export default function Home() {
           { paddingBottom: Math.max(insets.bottom, spacing.md) },
         ]}
       >
-        <View style={styles.taskbarItems} onLayout={handleRowLayout}>
+        <View style={styles.taskbarItems}>
           {menuItems.map((item, index) => {
             const isActive = item.key === activeKey;
             return (
@@ -170,21 +147,12 @@ export default function Home() {
                   />
                 </Animated.View>
                 <Text style={styles.taskbarLabel}>{item.label}</Text>
+                <View style={styles.indicatorSlot}>
+                  {isActive ? <View style={styles.indicatorDot} /> : null}
+                </View>
               </Pressable>
             );
           })}
-
-          {rowWidth > 0 ? (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.dot,
-                {
-                  transform: [{ translateX: dotTranslateX }],
-                },
-              ]}
-            />
-          ) : null}
         </View>
       </BlurView>
     </View>
@@ -201,7 +169,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 200,
+    height: 320,
   },
   header: {
     paddingHorizontal: spacing.lg,
@@ -264,10 +232,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: light.textSecondary,
   },
-  dot: {
-    position: 'absolute',
-    left: 0,
-    bottom: spacing.xs / 2,
+  indicatorSlot: {
+    height: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indicatorDot: {
     width: DOT_SIZE,
     height: DOT_SIZE,
     borderRadius: DOT_SIZE / 2,
