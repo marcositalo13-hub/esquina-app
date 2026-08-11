@@ -12,6 +12,9 @@ export const light = {
   textPrimary: '#22221F',
   textSecondary: '#6B6862',
   textMuted: '#9A968D',
+  accent: '#C4693F',
+  accentSoft: '#E8A97E',
+  accentWash: '#F5D9C4',
 } as const;
 
 export const dark = {

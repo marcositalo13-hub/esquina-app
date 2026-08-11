@@ -1,23 +1,132 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  Animated,
+  type LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import condos from '../src/data/condos';
-import { fonts, light, radius, spacing } from '../src/theme';
+import { fonts, light, motion, radius, spacing } from '../src/theme';
 
 const condo = condos[0];
 
+const DOT_SIZE = 4;
+
 const menuItems = [
-  { key: 'inicio', icon: 'home-outline' as const, label: 'Início' },
-  { key: 'financeiro', icon: 'wallet-outline' as const, label: 'Financeiro' },
-  { key: 'comercial', icon: 'business-outline' as const, label: 'Comercial' },
+  {
+    key: 'inicio',
+    iconOutline: 'home-outline' as const,
+    iconFilled: 'home' as const,
+    label: 'Início',
+  },
+  {
+    key: 'financeiro',
+    iconOutline: 'wallet-outline' as const,
+    iconFilled: 'wallet' as const,
+    label: 'Financeiro',
+  },
+  {
+    key: 'comercial',
+    iconOutline: 'business-outline' as const,
+    iconFilled: 'business' as const,
+    label: 'Comercial',
+  },
 ];
 
 export default function Home() {
   const insets = useSafeAreaInsets();
 
+  const [activeKey, setActiveKey] = useState<string>('inicio');
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [rowWidth, setRowWidth] = useState(0);
+
+  const activeIndexAnim = useRef(new Animated.Value(0)).current;
+  const iconScales = useRef(menuItems.map(() => new Animated.Value(1))).current;
+
+  useEffect(() => {
+    let mounted = true;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) {
+        setReduceMotion(enabled);
+      }
+    });
+
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion,
+    );
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  function handleRowLayout(event: LayoutChangeEvent) {
+    setRowWidth(event.nativeEvent.layout.width);
+  }
+
+  function handlePressItem(key: string, index: number) {
+    if (key !== activeKey) {
+      setActiveKey(key);
+
+      if (reduceMotion) {
+        activeIndexAnim.setValue(index);
+      } else {
+        Animated.timing(activeIndexAnim, {
+          toValue: index,
+          duration: motion.duration.base,
+          easing: motion.easing,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+
+    if (reduceMotion) {
+      return;
+    }
+
+    const scale = iconScales[index];
+    Animated.sequence([
+      Animated.timing(scale, {
+        toValue: 1.15,
+        duration: motion.duration.fast,
+        easing: motion.easing,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: motion.duration.fast,
+        easing: motion.easing,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
+
+  const itemWidth = rowWidth / menuItems.length;
+  const dotTranslateX = activeIndexAnim.interpolate({
+    inputRange: menuItems.map((_, index) => index),
+    outputRange: menuItems.map(
+      (_, index) => index * itemWidth + itemWidth / 2 - DOT_SIZE / 2,
+    ),
+  });
+
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(245, 217, 196, 0.55)', 'rgba(250, 249, 246, 0)']}
+        style={styles.headerGradient}
+      />
+
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.condoName} numberOfLines={1}>
           {condo.nome}
@@ -34,21 +143,50 @@ export default function Home() {
         </View>
       </View>
 
-      <View
+      <BlurView
+        intensity={40}
+        tint="light"
         style={[
           styles.taskbar,
           { paddingBottom: Math.max(insets.bottom, spacing.md) },
         ]}
       >
-        <View style={styles.taskbarItems}>
-          {menuItems.map((item) => (
-            <View key={item.key} style={styles.taskbarItem}>
-              <Ionicons name={item.icon} size={24} color={light.textPrimary} />
-              <Text style={styles.taskbarLabel}>{item.label}</Text>
-            </View>
-          ))}
+        <View style={styles.taskbarItems} onLayout={handleRowLayout}>
+          {menuItems.map((item, index) => {
+            const isActive = item.key === activeKey;
+            return (
+              <Pressable
+                key={item.key}
+                style={styles.taskbarItem}
+                onPress={() => handlePressItem(item.key, index)}
+              >
+                <Animated.View
+                  style={{ transform: [{ scale: iconScales[index] }] }}
+                >
+                  <Ionicons
+                    name={isActive ? item.iconFilled : item.iconOutline}
+                    size={24}
+                    color={isActive ? light.accent : light.textPrimary}
+                  />
+                </Animated.View>
+                <Text style={styles.taskbarLabel}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+
+          {rowWidth > 0 ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.dot,
+                {
+                  transform: [{ translateX: dotTranslateX }],
+                },
+              ]}
+            />
+          ) : null}
         </View>
-      </View>
+      </BlurView>
     </View>
   );
 }
@@ -57,6 +195,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: light.bg,
+  },
+  headerGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
   },
   header: {
     paddingHorizontal: spacing.lg,
@@ -99,7 +244,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   taskbar: {
-    backgroundColor: light.card,
     borderTopWidth: 1,
     borderTopColor: light.border,
     paddingTop: spacing.md,
@@ -119,5 +263,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 11,
     color: light.textSecondary,
+  },
+  dot: {
+    position: 'absolute',
+    left: 0,
+    bottom: spacing.xs / 2,
+    width: DOT_SIZE,
+    height: DOT_SIZE,
+    borderRadius: DOT_SIZE / 2,
+    backgroundColor: light.accent,
   },
 });
