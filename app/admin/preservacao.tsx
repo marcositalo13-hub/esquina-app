@@ -1,9 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -27,14 +26,7 @@ import {
   type TipoAtividade,
 } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
-import {
-  fonts,
-  light,
-  motion,
-  radius,
-  semantic,
-  spacing,
-} from '../../src/theme';
+import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 
@@ -137,6 +129,31 @@ export default function AdminPreservacao() {
     return Array.from(contagem.values());
   }, [planos]);
 
+  // Chips de tipo/prioridade/periodicidade filtram a lista de planos.
+  // O alternador Hoje/Todas NUNCA entra aqui — só afeta a barra de progresso.
+  const planosFiltrados = useMemo(() => {
+    return planos.filter((plano) => {
+      if (tipoFiltros.length > 0 && !tipoFiltros.includes(plano.tipo_id)) {
+        return false;
+      }
+      if (
+        prioridadeFiltros.length > 0 &&
+        !prioridadeFiltros.includes(plano.prioridade)
+      ) {
+        return false;
+      }
+      if (
+        periodicidadeFiltros.length > 0 &&
+        !periodicidadeFiltros.includes(plano.periodicidade)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [planos, tipoFiltros, prioridadeFiltros, periodicidadeFiltros]);
+
+  // Barra de progresso: mesmos chips de tipo/prioridade/periodicidade, MAIS
+  // o alternador Hoje/Todas (que só afeta este cálculo, nunca a lista).
   const progresso = useMemo(() => {
     const hojeStr = hoje();
 
@@ -171,11 +188,15 @@ export default function AdminPreservacao() {
       return true;
     });
 
-    const total = filtradas.length;
     const concluidas = filtradas.filter((o) => o.status === 'concluida').length;
-    const percentual = total > 0 ? Math.round((concluidas / total) * 100) : 0;
+    const atrasadas = filtradas.filter(
+      (o) => o.status === 'pendente' && o.data_prevista < hojeStr,
+    ).length;
+    const pendentes = filtradas.filter(
+      (o) => o.status === 'pendente' && o.data_prevista >= hojeStr,
+    ).length;
 
-    return { total, concluidas, percentual };
+    return { total: filtradas.length, concluidas, pendentes, atrasadas };
   }, [
     ordens,
     dateFilter,
@@ -184,16 +205,23 @@ export default function AdminPreservacao() {
     periodicidadeFiltros,
   ]);
 
-  const progressoAnim = useRef(new Animated.Value(0)).current;
+  // Badge do chip de Tipo: deriva da mesma lista de ordens já carregada,
+  // sem nova consulta — atraso independe dos filtros ativos no momento.
+  const tiposComAtraso = useMemo(() => {
+    const hojeStr = hoje();
+    const ids = new Set<string>();
 
-  useEffect(() => {
-    Animated.timing(progressoAnim, {
-      toValue: progresso.percentual,
-      duration: motion.duration.base,
-      easing: motion.easing,
-      useNativeDriver: false,
-    }).start();
-  }, [progresso.percentual, progressoAnim]);
+    for (const ordem of ordens) {
+      if (ordem.status === 'pendente' && ordem.data_prevista < hojeStr) {
+        const idTipo = ordem.planos_manutencao?.tipo_id;
+        if (idTipo) {
+          ids.add(idTipo);
+        }
+      }
+    }
+
+    return ids;
+  }, [ordens]);
 
   function toggleTipoFiltro(id: string) {
     setTipoFiltros((atual) =>
@@ -409,6 +437,63 @@ export default function AdminPreservacao() {
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
 
         <View style={styles.painelCard}>
+          <View style={styles.progressoTrilho}>
+            <View
+              style={[
+                styles.segmento,
+                styles.segmentoConcluidas,
+                { flex: progresso.concluidas },
+              ]}
+            />
+            <View
+              style={[
+                styles.segmento,
+                styles.segmentoPendentes,
+                { flex: progresso.pendentes },
+              ]}
+            />
+            <View
+              style={[
+                styles.segmento,
+                styles.segmentoAtrasadas,
+                { flex: progresso.atrasadas },
+              ]}
+            />
+          </View>
+
+          <View style={styles.contadoresRow}>
+            <View style={styles.contadorItem}>
+              <Text style={[styles.contadorBolinha, { color: semantic.ok }]}>
+                ●
+              </Text>
+              <Text style={styles.contadorTexto}>
+                {progresso.concluidas} concluídas
+              </Text>
+            </View>
+            <View style={styles.contadorItem}>
+              <Text
+                style={[styles.contadorBolinha, { color: light.textMuted }]}
+              >
+                ●
+              </Text>
+              <Text style={styles.contadorTexto}>
+                {progresso.pendentes} pendentes
+              </Text>
+            </View>
+            <View style={styles.contadorItem}>
+              <Text
+                style={[styles.contadorBolinha, { color: semantic.overdue }]}
+              >
+                ●
+              </Text>
+              <Text style={styles.contadorTexto}>
+                {progresso.atrasadas} atrasadas
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.painelCard}>
           <View style={styles.segmentedControl}>
             <Pressable
               style={[
@@ -448,12 +533,16 @@ export default function AdminPreservacao() {
             <Text style={styles.label}>Tipo</Text>
             <View style={styles.chipWrap}>
               {tiposAtivos.map((tipo) => (
-                <Chip
-                  key={tipo.id}
-                  label={tipo.nome}
-                  selected={tipoFiltros.includes(tipo.id)}
-                  onPress={() => toggleTipoFiltro(tipo.id)}
-                />
+                <View key={tipo.id}>
+                  <Chip
+                    label={tipo.nome}
+                    selected={tipoFiltros.includes(tipo.id)}
+                    onPress={() => toggleTipoFiltro(tipo.id)}
+                  />
+                  {tiposComAtraso.has(tipo.id) ? (
+                    <View style={styles.chipBadgeDot} />
+                  ) : null}
+                </View>
               ))}
             </View>
           </View>
@@ -490,24 +579,6 @@ export default function AdminPreservacao() {
               ))}
             </View>
           </View>
-
-          <View style={styles.progressoTrilho}>
-            <Animated.View
-              style={[
-                styles.progressoPreenchimento,
-                {
-                  width: progressoAnim.interpolate({
-                    inputRange: [0, 100],
-                    outputRange: ['0%', '100%'],
-                  }),
-                },
-              ]}
-            />
-          </View>
-          <Text style={styles.progressoTexto}>
-            {progresso.concluidas} de {progresso.total} concluídas (
-            {progresso.percentual}%)
-          </Text>
         </View>
 
         {resumoPorTipo.length > 0 ? (
@@ -526,25 +597,27 @@ export default function AdminPreservacao() {
         ) : null}
 
         <View style={styles.lista}>
-          {!carregando && planos.length === 0 ? (
+          {!carregando && planosFiltrados.length === 0 ? (
             <Text style={styles.vazio}>Nenhuma atividade cadastrada.</Text>
           ) : null}
 
-          {planos.map((plano) => (
+          {planosFiltrados.map((plano) => (
             <View key={plano.id} style={styles.planoCard}>
-              <Pressable
-                style={styles.planoMenuButton}
-                onPress={() => handleAbrirMenu(plano)}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="ellipsis-horizontal"
-                  size={18}
-                  color={light.textSecondary}
-                />
-              </Pressable>
+              <View style={styles.planoCabecalho}>
+                <Text style={styles.planoTitulo}>{plano.titulo}</Text>
+                <Pressable
+                  onPress={() => handleAbrirMenu(plano)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={styles.planoMenuButton}
+                >
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={18}
+                    color={light.textSecondary}
+                  />
+                </Pressable>
+              </View>
 
-              <Text style={styles.planoTitulo}>{plano.titulo}</Text>
               <Text style={styles.planoTipo}>
                 {plano.tipos_atividade?.nome ?? 'Sem tipo'}
               </Text>
@@ -777,6 +850,45 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
+  progressoTrilho: {
+    flexDirection: 'row',
+    height: 16,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  segmento: {
+    height: '100%',
+  },
+  segmentoConcluidas: {
+    backgroundColor: semantic.ok,
+  },
+  segmentoPendentes: {
+    backgroundColor: `${light.textMuted}66`,
+  },
+  segmentoAtrasadas: {
+    backgroundColor: semantic.overdue,
+  },
+  contadoresRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  contadorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  contadorBolinha: {
+    fontSize: 10,
+  },
+  contadorTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
+  },
   segmentedControl: {
     flexDirection: 'row',
     backgroundColor: light.sunken,
@@ -805,24 +917,14 @@ const styles = StyleSheet.create({
   filtroGrupo: {
     gap: spacing.xs,
   },
-  progressoTrilho: {
-    height: 8,
-    backgroundColor: light.sunken,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-    marginTop: spacing.xs,
-  },
-  progressoPreenchimento: {
-    height: '100%',
-    backgroundColor: semantic.ok,
-    borderRadius: radius.sm,
-  },
-  progressoTexto: {
-    fontFamily: fonts.medium,
-    fontSize: 12,
-    color: light.textSecondary,
+  chipBadgeDot: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: semantic.overdue,
   },
   resumoRow: {
     gap: spacing.sm,
@@ -860,7 +962,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   planoCard: {
-    position: 'relative',
     backgroundColor: light.card,
     borderWidth: 1,
     borderColor: light.border,
@@ -868,17 +969,20 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.xs / 2,
   },
+  planoCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   planoMenuButton: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    zIndex: 1,
+    padding: 4,
   },
   planoTitulo: {
+    flex: 1,
     fontFamily: fonts.medium,
     fontSize: 15,
     color: light.textPrimary,
-    paddingRight: spacing.lg,
   },
   planoTipo: {
     fontFamily: fonts.regular,
