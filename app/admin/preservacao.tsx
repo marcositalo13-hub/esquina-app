@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -55,6 +54,11 @@ export default function AdminPreservacao() {
   const [periodicidadeFiltros, setPeriodicidadeFiltros] = useState<
     Periodicidade[]
   >([]);
+
+  const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null);
+  const [menuEtapa, setMenuEtapa] = useState<'opcoes' | 'confirmarExclusao'>(
+    'opcoes',
+  );
 
   const [modalVisivel, setModalVisivel] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -387,40 +391,44 @@ export default function AdminPreservacao() {
     setModalVisivel(true);
   }
 
-  function handleExcluir(plano: PlanoManutencao) {
-    Alert.alert('Excluir plano?', plano.titulo, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: async () => {
-          const { error } = await supabase
-            .from('planos_manutencao')
-            .delete()
-            .eq('id', plano.id);
-
-          if (error) {
-            setErroLista(error.message);
-            return;
-          }
-
-          carregarTudo();
-        },
-      },
-    ]);
+  function handleAbrirMenu(id: string) {
+    setMenuAbertoId((atual) => (atual === id ? null : id));
+    setMenuEtapa('opcoes');
   }
 
-  function handleAbrirMenu(plano: PlanoManutencao) {
-    Alert.alert(plano.titulo, undefined, [
-      { text: 'Editar', onPress: () => handleEditar(plano) },
-      { text: 'Duplicar', onPress: () => handleDuplicar(plano) },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: () => handleExcluir(plano),
-      },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
+  function fecharMenu() {
+    setMenuAbertoId(null);
+    setMenuEtapa('opcoes');
+  }
+
+  function handleMenuEditar(plano: PlanoManutencao) {
+    fecharMenu();
+    handleEditar(plano);
+  }
+
+  function handleMenuDuplicar(plano: PlanoManutencao) {
+    fecharMenu();
+    handleDuplicar(plano);
+  }
+
+  function handleMenuPedirConfirmacaoExclusao() {
+    setMenuEtapa('confirmarExclusao');
+  }
+
+  async function handleMenuExcluirConfirmar(plano: PlanoManutencao) {
+    const { error } = await supabase
+      .from('planos_manutencao')
+      .delete()
+      .eq('id', plano.id);
+
+    fecharMenu();
+
+    if (error) {
+      setErroLista(error.message);
+      return;
+    }
+
+    carregarTudo();
   }
 
   async function handleSalvar() {
@@ -758,45 +766,123 @@ export default function AdminPreservacao() {
             <Text style={styles.vazio}>Nenhuma atividade cadastrada.</Text>
           ) : null}
 
-          {planosFiltrados.map((plano) => (
-            <View key={plano.id} style={styles.planoCard}>
-              <View style={styles.planoCabecalho}>
-                <Text style={styles.planoTitulo}>{plano.titulo}</Text>
-                <Pressable
-                  onPress={() => handleAbrirMenu(plano)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={({ pressed }) => [
-                    styles.planoMenuButton,
-                    pressed && styles.planoMenuButtonPressionado,
-                  ]}
-                >
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={18}
-                    color={light.textSecondary}
-                  />
-                </Pressable>
+          {planosFiltrados.map((plano) => {
+            const menuAberto = menuAbertoId === plano.id;
+
+            return (
+              <View
+                key={plano.id}
+                style={menuAberto ? styles.planoWrapperMenuAberto : null}
+              >
+                <View style={styles.planoCard}>
+                  <View style={styles.planoCabecalho}>
+                    <Text style={styles.planoTitulo}>{plano.titulo}</Text>
+                    <Pressable
+                      onPress={() => handleAbrirMenu(plano.id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      style={({ pressed }) => [
+                        styles.planoMenuButton,
+                        pressed && styles.planoMenuButtonPressionado,
+                      ]}
+                    >
+                      <Ionicons
+                        name="ellipsis-horizontal"
+                        size={18}
+                        color={light.textSecondary}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.planoTipo}>
+                    {plano.tipos_atividade?.nome ?? 'Sem tipo'}
+                  </Text>
+
+                  {plano.local ? (
+                    <Text style={styles.planoDetalhe}>{plano.local}</Text>
+                  ) : null}
+
+                  <View style={styles.planoRodape}>
+                    <Text style={styles.planoDetalhe}>
+                      {plano.periodicidade} ·{' '}
+                      {formatarDataBR(plano.data_inicio)}
+                    </Text>
+                    <Chip
+                      label={plano.prioridade}
+                      color={getCorPrioridade(plano.prioridade)}
+                    />
+                  </View>
+                </View>
+
+                {menuAberto ? (
+                  <>
+                    <Pressable
+                      style={styles.menuOverlay}
+                      onPress={fecharMenu}
+                    />
+                    <View style={styles.menuPainel}>
+                      {menuEtapa === 'opcoes' ? (
+                        <>
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => handleMenuEditar(plano)}
+                          >
+                            <Text style={styles.menuItemTexto}>Editar</Text>
+                          </Pressable>
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => handleMenuDuplicar(plano)}
+                          >
+                            <Text style={styles.menuItemTexto}>Duplicar</Text>
+                          </Pressable>
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={handleMenuPedirConfirmacaoExclusao}
+                          >
+                            <Text
+                              style={[
+                                styles.menuItemTexto,
+                                styles.menuItemExcluirTexto,
+                              ]}
+                            >
+                              Excluir
+                            </Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <View style={styles.menuConfirmacao}>
+                          <Text style={styles.menuConfirmacaoTexto}>
+                            Confirmar exclusão?
+                          </Text>
+                          <View style={styles.menuConfirmacaoBotoes}>
+                            <Pressable
+                              style={styles.menuConfirmacaoBotaoCancelar}
+                              onPress={fecharMenu}
+                            >
+                              <Text
+                                style={styles.menuConfirmacaoBotaoCancelarTexto}
+                              >
+                                Cancelar
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              style={styles.menuConfirmacaoBotaoExcluir}
+                              onPress={() => handleMenuExcluirConfirmar(plano)}
+                            >
+                              <Text
+                                style={styles.menuConfirmacaoBotaoExcluirTexto}
+                              >
+                                Excluir
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  </>
+                ) : null}
               </View>
-
-              <Text style={styles.planoTipo}>
-                {plano.tipos_atividade?.nome ?? 'Sem tipo'}
-              </Text>
-
-              {plano.local ? (
-                <Text style={styles.planoDetalhe}>{plano.local}</Text>
-              ) : null}
-
-              <View style={styles.planoRodape}>
-                <Text style={styles.planoDetalhe}>
-                  {plano.periodicidade} · {formatarDataBR(plano.data_inicio)}
-                </Text>
-                <Chip
-                  label={plano.prioridade}
-                  color={getCorPrioridade(plano.prioridade)}
-                />
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
 
@@ -1165,6 +1251,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
+  planoWrapperMenuAberto: {
+    zIndex: 20,
+    elevation: 20,
+  },
   planoCard: {
     backgroundColor: light.card,
     borderWidth: 1,
@@ -1172,6 +1262,82 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs / 2,
+  },
+  menuOverlay: {
+    position: 'absolute',
+    top: -2000,
+    left: -2000,
+    width: 5000,
+    height: 5000,
+    backgroundColor: 'transparent',
+  },
+  menuPainel: {
+    position: 'absolute',
+    top: 44,
+    right: spacing.md,
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: 10,
+    paddingVertical: spacing.xs,
+    minWidth: 160,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  menuItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  menuItemTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  menuItemExcluirTexto: {
+    color: semantic.overdue,
+  },
+  menuConfirmacao: {
+    padding: spacing.md,
+    gap: spacing.sm,
+    minWidth: 180,
+  },
+  menuConfirmacaoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textPrimary,
+  },
+  menuConfirmacaoBotoes: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  menuConfirmacaoBotaoCancelar: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  menuConfirmacaoBotaoCancelarTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  menuConfirmacaoBotaoExcluir: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: semantic.overdue,
+  },
+  menuConfirmacaoBotaoExcluirTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
   },
   planoCabecalho: {
     flexDirection: 'row',
