@@ -816,7 +816,7 @@ const styles = StyleSheet.create({
   },
   progressoPreenchimento: {
     height: '100%',
-    backgroundColor: light.brand,
+    backgroundColor: semantic.ok,
     borderRadius: radius.sm,
   },
   progressoTexto: {
