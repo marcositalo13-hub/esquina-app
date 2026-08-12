@@ -3,6 +3,10 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  BottomTabBar,
+  type BottomTabItem,
+} from '../src/components/BottomTabBar';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
@@ -35,17 +39,12 @@ const cards: CardConfig[] = [
     icon: 'briefcase-outline',
     ativo: false,
   },
-  {
-    key: 'relatorio',
-    label: 'Relatório Geral',
-    icon: 'stats-chart-outline',
-    ativo: false,
-  },
 ];
 
 export default function Admin() {
   const insets = useSafeAreaInsets();
-  const [temPendencia, setTemPendencia] = useState(false);
+  const [activeKey, setActiveKey] = useState<'gestao' | 'relatorio'>('gestao');
+  const [temPendenciaAtrasada, setTemPendenciaAtrasada] = useState(false);
 
   useEffect(() => {
     async function carregarPendencia() {
@@ -57,11 +56,27 @@ export default function Admin() {
         .lt('data_prevista', hoje)
         .limit(1);
 
-      setTemPendencia((data?.length ?? 0) > 0);
+      setTemPendenciaAtrasada((data?.length ?? 0) > 0);
     }
 
     carregarPendencia();
   }, []);
+
+  const tabs: BottomTabItem[] = [
+    {
+      key: 'gestao',
+      label: 'Gestão',
+      icon: 'grid-outline',
+      iconActive: 'grid',
+      badge: temPendenciaAtrasada,
+    },
+    {
+      key: 'relatorio',
+      label: 'Relatório Geral',
+      icon: 'stats-chart-outline',
+      iconActive: 'stats-chart',
+    },
+  ];
 
   return (
     <View style={styles.container}>
@@ -74,22 +89,36 @@ export default function Admin() {
         </Pressable>
       </View>
 
-      <View style={styles.grid}>
-        {cards.map((card) => (
-          <Pressable
-            key={card.key}
-            disabled={!card.ativo}
-            onPress={() => card.href && router.push(card.href as never)}
-            style={[styles.card, !card.ativo && styles.cardInativo]}
-          >
-            {card.key === 'preservacao' && temPendencia ? (
-              <View style={styles.badge} />
-            ) : null}
-            <Ionicons name={card.icon} size={28} color={light.textPrimary} />
-            <Text style={styles.cardLabel}>{card.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {activeKey === 'gestao' ? (
+        <View style={styles.grid}>
+          {cards.map((card) => (
+            <Pressable
+              key={card.key}
+              disabled={!card.ativo}
+              onPress={() => card.href && router.push(card.href as never)}
+              style={[styles.card, !card.ativo && styles.cardInativo]}
+            >
+              {card.key === 'preservacao' && temPendenciaAtrasada ? (
+                <View style={styles.badge} />
+              ) : null}
+              <Ionicons name={card.icon} size={28} color={light.textPrimary} />
+              <Text style={styles.cardLabel}>{card.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.body}>
+          <View style={styles.placeholderCard}>
+            <Text style={styles.placeholderText}>Conteúdo em construção</Text>
+          </View>
+        </View>
+      )}
+
+      <BottomTabBar
+        items={tabs}
+        activeKey={activeKey}
+        onSelect={(key) => setActiveKey(key as 'gestao' | 'relatorio')}
+      />
     </View>
   );
 }
@@ -151,5 +180,24 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: semantic.overdue,
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  placeholderCard: {
+    flex: 1,
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textSecondary,
   },
 });

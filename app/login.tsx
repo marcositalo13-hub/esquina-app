@@ -12,11 +12,28 @@ import {
 } from 'react-native';
 import { dark, fonts, radius, spacing } from '../src/theme';
 
+type Perfil = 'Administrador' | 'Preservação' | 'Morador';
+
+const perfis: Perfil[] = ['Administrador', 'Preservação', 'Morador'];
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState<Perfil | null>(null);
 
   function handleEntrar() {
+    const perfil = selectedProfile ?? 'Morador';
+
+    if (perfil === 'Administrador') {
+      router.replace('/admin');
+      return;
+    }
+
+    if (perfil === 'Preservação') {
+      router.replace('/preservacao');
+      return;
+    }
+
     router.replace('/home');
   }
 
@@ -32,6 +49,29 @@ export default function Login() {
         <Text style={styles.title}>Aegis Condomínios</Text>
 
         <View style={styles.card}>
+          <Text style={styles.testarComo}>Testar como:</Text>
+          <View style={styles.chipRow}>
+            {perfis.map((perfil) => {
+              const selecionado = selectedProfile === perfil;
+              return (
+                <Pressable
+                  key={perfil}
+                  style={[styles.chip, selecionado && styles.chipSelecionado]}
+                  onPress={() => setSelectedProfile(perfil)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      selecionado && styles.chipTextSelecionado,
+                    ]}
+                  >
+                    {perfil}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           <View style={styles.form}>
             <View style={styles.field}>
               <Text style={styles.label}>Email</Text>
@@ -61,28 +101,6 @@ export default function Login() {
 
             <Pressable style={styles.button} onPress={handleEntrar}>
               <Text style={styles.buttonText}>Entrar</Text>
-            </Pressable>
-          </View>
-
-          <Text style={styles.testarComo}>Testar como:</Text>
-          <View style={styles.testarComoRow}>
-            <Pressable
-              style={styles.testarComoButton}
-              onPress={() => router.replace('/admin')}
-            >
-              <Text style={styles.testarComoButtonText}>Administrador</Text>
-            </Pressable>
-            <Pressable
-              style={styles.testarComoButton}
-              onPress={() => router.replace('/preservacao')}
-            >
-              <Text style={styles.testarComoButtonText}>Preservação</Text>
-            </Pressable>
-            <Pressable
-              style={styles.testarComoButton}
-              onPress={() => router.replace('/home')}
-            >
-              <Text style={styles.testarComoButtonText}>Morador</Text>
             </Pressable>
           </View>
         </View>
@@ -121,6 +139,38 @@ const styles = StyleSheet.create({
     borderColor: dark.border,
     padding: spacing.lg,
   },
+  testarComo: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: dark.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  chip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: dark.border,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+  },
+  chipSelecionado: {
+    backgroundColor: dark.elevated,
+    borderColor: dark.textPrimary,
+  },
+  chipText: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: dark.textSecondary,
+    textAlign: 'center',
+  },
+  chipTextSelecionado: {
+    color: dark.textPrimary,
+  },
   form: {
     gap: spacing.md,
   },
@@ -154,33 +204,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 15,
     color: dark.bg,
-  },
-  testarComo: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: dark.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  testarComoRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  testarComoButton: {
-    flex: 1,
-    backgroundColor: dark.elevated,
-    borderWidth: 1,
-    borderColor: dark.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs,
-    alignItems: 'center',
-  },
-  testarComoButtonText: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    color: dark.textSecondary,
-    textAlign: 'center',
   },
   links: {
     marginTop: spacing.lg,
