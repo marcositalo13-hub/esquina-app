@@ -14,6 +14,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../../src/components/Chip';
+import {
+  type DiaMarcado,
+  MiniCalendar,
+} from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import {
   getCorPrioridade,
@@ -30,6 +34,12 @@ import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 
+function formatarDataExibicao(chave: string) {
+  const [ano, mes, dia] = chave.split('-').map(Number);
+  const data = new Date(ano, mes - 1, dia);
+  return data.toLocaleDateString('pt-BR');
+}
+
 type DateFilter = 'hoje' | 'todas';
 
 export default function AdminPreservacao() {
@@ -41,7 +51,10 @@ export default function AdminPreservacao() {
   const [carregando, setCarregando] = useState(true);
   const [erroLista, setErroLista] = useState<string | null>(null);
 
+  const [calendarioAberto, setCalendarioAberto] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilter>('hoje');
+  const [atrasadasFiltro, setAtrasadasFiltro] = useState(false);
   const [tipoFiltros, setTipoFiltros] = useState<string[]>([]);
   const [prioridadeFiltros, setPrioridadeFiltros] = useState<Prioridade[]>([]);
   const [periodicidadeFiltros, setPeriodicidadeFiltros] = useState<
@@ -129,8 +142,61 @@ export default function AdminPreservacao() {
     return Array.from(contagem.values());
   }, [planos]);
 
-  // Chips de tipo/prioridade/periodicidade filtram a lista de planos.
-  // O alternador Hoje/Todas NUNCA entra aqui — só afeta a barra de progresso.
+  // Calendário: marca TODAS as ordens, sem aplicar nenhum filtro ativo.
+  const markedDates = useMemo(() => {
+    const hojeStr = hoje();
+    const mapa: Record<string, DiaMarcado> = {};
+
+    for (const ordem of ordens) {
+      const atrasada =
+        ordem.status === 'pendente' && ordem.data_prevista < hojeStr;
+
+      if (atrasada) {
+        mapa[ordem.data_prevista] = 'atrasado';
+      } else if (!mapa[ordem.data_prevista]) {
+        mapa[ordem.data_prevista] = 'normal';
+      }
+    }
+
+    return mapa;
+  }, [ordens]);
+
+  // Planos com ao menos uma ordem pendente e atrasada (para o chip
+  // "Atrasadas" e para o badge nos chips de Tipo).
+  const planoIdsAtrasados = useMemo(() => {
+    const hojeStr = hoje();
+    const ids = new Set<string>();
+
+    for (const ordem of ordens) {
+      if (ordem.status === 'pendente' && ordem.data_prevista < hojeStr) {
+        ids.add(ordem.plano_id);
+      }
+    }
+
+    return ids;
+  }, [ordens]);
+
+  // Planos com ao menos uma ordem prevista para o dia selecionado no
+  // calendário. null quando nenhum dia está selecionado.
+  const planoIdsNaDataSelecionada = useMemo(() => {
+    if (!selectedDate) {
+      return null;
+    }
+
+    const ids = new Set<string>();
+    for (const ordem of ordens) {
+      if (ordem.data_prevista === selectedDate) {
+        ids.add(ordem.plano_id);
+      }
+    }
+
+    return ids;
+  }, [ordens, selectedDate]);
+
+  // Chips de tipo/prioridade/periodicidade/atrasadas + dia selecionado
+  // filtram a lista de planos. O alternador Hoje/Todas NUNCA entra aqui —
+  // só afeta a barra de progresso (exceto quando um dia está selecionado,
+  // caso em que ele fica desabilitado e a data escolhida vale para os dois).
   const planosFiltrados = useMemo(() => {
     return planos.filter((plano) => {
       if (tipoFiltros.length > 0 && !tipoFiltros.includes(plano.tipo_id)) {
@@ -148,17 +214,46 @@ export default function AdminPreservacao() {
       ) {
         return false;
       }
+      if (atrasadasFiltro && !planoIdsAtrasados.has(plano.id)) {
+        return false;
+      }
+      if (
+        planoIdsNaDataSelecionada &&
+        !planoIdsNaDataSelecionada.has(plano.id)
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [planos, tipoFiltros, prioridadeFiltros, periodicidadeFiltros]);
+  }, [
+    planos,
+    tipoFiltros,
+    prioridadeFiltros,
+    periodicidadeFiltros,
+    atrasadasFiltro,
+    planoIdsAtrasados,
+    planoIdsNaDataSelecionada,
+  ]);
 
-  // Barra de progresso: mesmos chips de tipo/prioridade/periodicidade, MAIS
-  // o alternador Hoje/Todas (que só afeta este cálculo, nunca a lista).
+  // Barra de progresso: mesmos filtros da lista, mais o escopo de data —
+  // dia selecionado no calendário tem precedência sobre o alternador
+  // Hoje/Todas (que só entra em jogo quando nenhum dia está selecionado).
   const progresso = useMemo(() => {
     const hojeStr = hoje();
 
     const filtradas = ordens.filter((ordem) => {
-      if (dateFilter === 'hoje' && ordem.data_prevista !== hojeStr) {
+      if (selectedDate) {
+        if (ordem.data_prevista !== selectedDate) {
+          return false;
+        }
+      } else if (dateFilter === 'hoje' && ordem.data_prevista !== hojeStr) {
+        return false;
+      }
+
+      if (
+        atrasadasFiltro &&
+        !(ordem.status === 'pendente' && ordem.data_prevista < hojeStr)
+      ) {
         return false;
       }
 
@@ -200,6 +295,8 @@ export default function AdminPreservacao() {
   }, [
     ordens,
     dateFilter,
+    selectedDate,
+    atrasadasFiltro,
     tipoFiltros,
     prioridadeFiltros,
     periodicidadeFiltros,
@@ -222,6 +319,10 @@ export default function AdminPreservacao() {
 
     return ids;
   }, [ordens]);
+
+  function handleSelecionarDia(data: string) {
+    setSelectedDate((atual) => (atual === data ? null : data));
+  }
 
   function toggleTipoFiltro(id: string) {
     setTipoFiltros((atual) =>
@@ -437,6 +538,28 @@ export default function AdminPreservacao() {
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
 
         <View style={styles.painelCard}>
+          <Pressable
+            style={styles.calendarioCabecalho}
+            onPress={() => setCalendarioAberto((v) => !v)}
+          >
+            <Text style={styles.calendarioTitulo}>Calendário</Text>
+            <Ionicons
+              name={calendarioAberto ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={light.textSecondary}
+            />
+          </Pressable>
+
+          {calendarioAberto ? (
+            <MiniCalendar
+              markedDates={markedDates}
+              selectedDate={selectedDate}
+              onSelectDay={handleSelecionarDia}
+            />
+          ) : null}
+        </View>
+
+        <View style={styles.painelCard}>
           <View style={styles.progressoTrilho}>
             <View
               style={[
@@ -494,7 +617,24 @@ export default function AdminPreservacao() {
         </View>
 
         <View style={styles.painelCard}>
-          <View style={styles.segmentedControl}>
+          {selectedDate ? (
+            <Pressable
+              style={styles.filtroDataBanner}
+              onPress={() => setSelectedDate(null)}
+            >
+              <Text style={styles.filtroDataTexto}>
+                Filtrando por: {formatarDataExibicao(selectedDate)} ✕
+              </Text>
+            </Pressable>
+          ) : null}
+
+          <View
+            style={[
+              styles.segmentedControl,
+              selectedDate ? styles.segmentedControlDesabilitado : null,
+            ]}
+            pointerEvents={selectedDate ? 'none' : 'auto'}
+          >
             <Pressable
               style={[
                 styles.segmentButton,
@@ -528,6 +668,28 @@ export default function AdminPreservacao() {
               </Text>
             </Pressable>
           </View>
+
+          <Pressable
+            style={[
+              styles.chipAtrasadas,
+              atrasadasFiltro && styles.chipAtrasadasAtivo,
+            ]}
+            onPress={() => setAtrasadasFiltro((v) => !v)}
+          >
+            <Ionicons
+              name="alert-circle-outline"
+              size={14}
+              color={atrasadasFiltro ? '#FFFFFF' : semantic.overdue}
+            />
+            <Text
+              style={[
+                styles.chipAtrasadasTexto,
+                atrasadasFiltro && styles.chipAtrasadasTextoAtivo,
+              ]}
+            >
+              Atrasadas
+            </Text>
+          </Pressable>
 
           <View style={styles.filtroGrupo}>
             <Text style={styles.label}>Tipo</Text>
@@ -850,6 +1012,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
+  calendarioCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  calendarioTitulo: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
   progressoTrilho: {
     flexDirection: 'row',
     height: 16,
@@ -889,6 +1061,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: light.textSecondary,
   },
+  filtroDataBanner: {
+    alignSelf: 'flex-start',
+  },
+  filtroDataTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: light.brand,
+  },
   segmentedControl: {
     flexDirection: 'row',
     backgroundColor: light.sunken,
@@ -896,6 +1076,9 @@ const styles = StyleSheet.create({
     borderColor: light.border,
     borderRadius: radius.md,
     padding: 2,
+  },
+  segmentedControlDesabilitado: {
+    opacity: 0.4,
   },
   segmentButton: {
     flex: 1,
@@ -913,6 +1096,29 @@ const styles = StyleSheet.create({
   },
   segmentTextAtivo: {
     color: light.textPrimary,
+  },
+  chipAtrasadas: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: semantic.overdue,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.xs,
+    backgroundColor: `${semantic.overdue}1A`,
+  },
+  chipAtrasadasAtivo: {
+    backgroundColor: semantic.overdue,
+  },
+  chipAtrasadasTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: semantic.overdue,
+  },
+  chipAtrasadasTextoAtivo: {
+    color: '#FFFFFF',
   },
   filtroGrupo: {
     gap: spacing.xs,
