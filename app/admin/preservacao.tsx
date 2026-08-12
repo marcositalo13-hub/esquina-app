@@ -20,6 +20,7 @@ import {
 } from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import {
+  formatarDataBR,
   getCorPrioridade,
   type OrdemServico,
   PERIODICIDADES,
@@ -33,12 +34,6 @@ import { supabase } from '../../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
-
-function formatarDataExibicao(chave: string) {
-  const [ano, mes, dia] = chave.split('-').map(Number);
-  const data = new Date(ano, mes - 1, dia);
-  return data.toLocaleDateString('pt-BR');
-}
 
 type DateFilter = 'hoje' | 'todas';
 
@@ -623,7 +618,7 @@ export default function AdminPreservacao() {
               onPress={() => setSelectedDate(null)}
             >
               <Text style={styles.filtroDataTexto}>
-                Filtrando por: {formatarDataExibicao(selectedDate)} ✕
+                Filtrando por: {formatarDataBR(selectedDate)} ✕
               </Text>
             </Pressable>
           ) : null}
@@ -769,8 +764,11 @@ export default function AdminPreservacao() {
                 <Text style={styles.planoTitulo}>{plano.titulo}</Text>
                 <Pressable
                   onPress={() => handleAbrirMenu(plano)}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  style={styles.planoMenuButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={({ pressed }) => [
+                    styles.planoMenuButton,
+                    pressed && styles.planoMenuButtonPressionado,
+                  ]}
                 >
                   <Ionicons
                     name="ellipsis-horizontal"
@@ -790,7 +788,7 @@ export default function AdminPreservacao() {
 
               <View style={styles.planoRodape}>
                 <Text style={styles.planoDetalhe}>
-                  {plano.periodicidade} · {plano.data_inicio}
+                  {plano.periodicidade} · {formatarDataBR(plano.data_inicio)}
                 </Text>
                 <Chip
                   label={plano.prioridade}
@@ -1182,7 +1180,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   planoMenuButton: {
-    padding: 4,
+    padding: 6,
+    borderRadius: radius.sm,
+    zIndex: 10,
+    elevation: 10,
+  },
+  planoMenuButtonPressionado: {
+    backgroundColor: light.sunken,
   },
   planoTitulo: {
     flex: 1,

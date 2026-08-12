@@ -23,6 +23,13 @@ export type Prioridade = 'Baixa' | 'Média' | 'Alta';
 
 export const PRIORIDADES: Prioridade[] = ['Baixa', 'Média', 'Alta'];
 
+// Formata 'AAAA-MM-DD' para 'DD/MM/AAAA'. Apenas para exibição — NÃO usar
+// no campo de input de data, que continua aceitando/mostrando AAAA-MM-DD.
+export function formatarDataBR(data: string): string {
+  const [ano, mes, dia] = data.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
 export function getCorPrioridade(prioridade: Prioridade): string {
   switch (prioridade) {
     case 'Baixa':

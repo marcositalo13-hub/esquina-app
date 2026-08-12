@@ -4,7 +4,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../src/components/Chip';
 import { ScreenBackground } from '../src/components/ScreenBackground';
-import { getCorPrioridade, type OrdemServico } from '../src/data/manutencao';
+import {
+  formatarDataBR,
+  getCorPrioridade,
+  type OrdemServico,
+} from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
@@ -117,7 +121,7 @@ export default function Preservacao() {
                         atrasada && styles.textoAtrasado,
                       ]}
                     >
-                      {ordem.data_prevista}
+                      {formatarDataBR(ordem.data_prevista)}
                       {atrasada ? ' · Atrasada' : ''}
                     </Text>
                     {plano ? (
@@ -172,7 +176,12 @@ export default function Preservacao() {
                     <Text style={styles.cardDetalhe}>
                       Concluída em{' '}
                       {ordem.concluida_em
-                        ? new Date(ordem.concluida_em).toLocaleString('pt-BR')
+                        ? `${formatarDataBR(ordem.concluida_em.slice(0, 10))} às ${new Date(
+                            ordem.concluida_em,
+                          ).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}`
                         : '—'}
                     </Text>
                     {plano ? (
