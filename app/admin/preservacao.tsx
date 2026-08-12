@@ -125,22 +125,6 @@ export default function AdminPreservacao() {
     );
   }, [carregarPlanos, carregarTipos, carregarOrdens]);
 
-  const resumoPorTipo = useMemo(() => {
-    const contagem = new Map<string, { nome: string; total: number }>();
-
-    for (const plano of planos) {
-      const nome = plano.tipos_atividade?.nome ?? 'Sem tipo';
-      const atual = contagem.get(plano.tipo_id);
-      if (atual) {
-        atual.total += 1;
-      } else {
-        contagem.set(plano.tipo_id, { nome, total: 1 });
-      }
-    }
-
-    return Array.from(contagem.values());
-  }, [planos]);
-
   // Calendário: marca TODAS as ordens, sem aplicar nenhum filtro ativo.
   const markedDates = useMemo(() => {
     const hojeStr = hoje();
@@ -416,15 +400,23 @@ export default function AdminPreservacao() {
   }
 
   async function handleMenuExcluirConfirmar(plano: PlanoManutencao) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('planos_manutencao')
       .delete()
-      .eq('id', plano.id);
+      .eq('id', plano.id)
+      .select();
 
     fecharMenu();
 
     if (error) {
       setErroLista(error.message);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setErroLista(
+        'Não foi possível excluir: nenhum registro foi removido. Verifique as permissões de escrita no Supabase.',
+      );
       return;
     }
 
@@ -446,7 +438,7 @@ export default function AdminPreservacao() {
 
     try {
       if (editingId) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('planos_manutencao')
           .update({
             titulo,
@@ -459,10 +451,18 @@ export default function AdminPreservacao() {
             ativo,
             observacoes: observacoes || null,
           })
-          .eq('id', editingId);
+          .eq('id', editingId)
+          .select();
 
         if (error) {
           setErroModal(error.message);
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          setErroModal(
+            'Não foi possível salvar: nenhum registro foi atualizado. Verifique as permissões de escrita no Supabase.',
+          );
           return;
         }
       } else {
@@ -745,21 +745,6 @@ export default function AdminPreservacao() {
             </View>
           </View>
         </View>
-
-        {resumoPorTipo.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.resumoRow}
-          >
-            {resumoPorTipo.map((item) => (
-              <View key={item.nome} style={styles.resumoCard}>
-                <Text style={styles.resumoTotal}>{item.total}</Text>
-                <Text style={styles.resumoNome}>{item.nome}</Text>
-              </View>
-            ))}
-          </ScrollView>
-        ) : null}
 
         <View style={styles.lista}>
           {!carregando && planosFiltrados.length === 0 ? (
@@ -1215,31 +1200,6 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: semantic.overdue,
-  },
-  resumoRow: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  resumoCard: {
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    minWidth: 92,
-  },
-  resumoTotal: {
-    fontFamily: fonts.semiBold,
-    fontSize: 18,
-    color: light.textPrimary,
-  },
-  resumoNome: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: light.textSecondary,
-    textAlign: 'center',
   },
   lista: {
     gap: spacing.sm,
