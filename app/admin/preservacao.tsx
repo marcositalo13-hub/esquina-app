@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +18,7 @@ import { Chip } from '../../src/components/Chip';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import {
   getCorPrioridade,
+  type OrdemServico,
   PERIODICIDADES,
   type Periodicidade,
   type PlanoManutencao,
@@ -24,29 +27,47 @@ import {
   type TipoAtividade,
 } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
-import { fonts, light, radius, semantic, spacing } from '../../src/theme';
+import {
+  fonts,
+  light,
+  motion,
+  radius,
+  semantic,
+  spacing,
+} from '../../src/theme';
+
+const hoje = () => new Date().toISOString().slice(0, 10);
+
+type DateFilter = 'hoje' | 'todas';
 
 export default function AdminPreservacao() {
   const insets = useSafeAreaInsets();
 
   const [planos, setPlanos] = useState<PlanoManutencao[]>([]);
+  const [ordens, setOrdens] = useState<OrdemServico[]>([]);
   const [tiposAtivos, setTiposAtivos] = useState<TipoAtividade[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erroLista, setErroLista] = useState<string | null>(null);
 
+  const [dateFilter, setDateFilter] = useState<DateFilter>('hoje');
+  const [tipoFiltros, setTipoFiltros] = useState<string[]>([]);
+  const [prioridadeFiltros, setPrioridadeFiltros] = useState<Prioridade[]>([]);
+  const [periodicidadeFiltros, setPeriodicidadeFiltros] = useState<
+    Periodicidade[]
+  >([]);
+
   const [modalVisivel, setModalVisivel] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [titulo, setTitulo] = useState('');
   const [tipoId, setTipoId] = useState<string | null>(null);
   const [descricao, setDescricao] = useState('');
   const [local, setLocal] = useState('');
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>('Mensal');
   const [prioridade, setPrioridade] = useState<Prioridade>('Média');
-  const [dataInicio, setDataInicio] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [dataInicio, setDataInicio] = useState(() => hoje());
   const [ativo, setAtivo] = useState(true);
   const [observacoes, setObservacoes] = useState('');
-  const [salvando, setSalvando] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [erroModal, setErroModal] = useState<string | null>(null);
 
   const carregarPlanos = useCallback(async () => {
@@ -64,6 +85,16 @@ export default function AdminPreservacao() {
     setPlanos((data ?? []) as PlanoManutencao[]);
   }, []);
 
+  const carregarOrdens = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('ordens_servico')
+      .select('*, planos_manutencao(*, tipos_atividade(*))');
+
+    if (!error) {
+      setOrdens((data ?? []) as OrdemServico[]);
+    }
+  }, []);
+
   const carregarTipos = useCallback(async () => {
     const { data, error } = await supabase
       .from('tipos_atividade')
@@ -79,12 +110,16 @@ export default function AdminPreservacao() {
     }
   }, []);
 
+  const carregarTudo = useCallback(async () => {
+    await Promise.all([carregarPlanos(), carregarOrdens()]);
+  }, [carregarPlanos, carregarOrdens]);
+
   useEffect(() => {
     setCarregando(true);
-    Promise.all([carregarPlanos(), carregarTipos()]).finally(() =>
-      setCarregando(false),
+    Promise.all([carregarPlanos(), carregarTipos(), carregarOrdens()]).finally(
+      () => setCarregando(false),
     );
-  }, [carregarPlanos, carregarTipos]);
+  }, [carregarPlanos, carregarTipos, carregarOrdens]);
 
   const resumoPorTipo = useMemo(() => {
     const contagem = new Map<string, { nome: string; total: number }>();
@@ -102,13 +137,80 @@ export default function AdminPreservacao() {
     return Array.from(contagem.values());
   }, [planos]);
 
-  function abrirModal() {
-    setErroModal(null);
-    setModalVisivel(true);
+  const progresso = useMemo(() => {
+    const hojeStr = hoje();
+
+    const filtradas = ordens.filter((ordem) => {
+      if (dateFilter === 'hoje' && ordem.data_prevista !== hojeStr) {
+        return false;
+      }
+
+      const plano = ordem.planos_manutencao;
+
+      if (
+        tipoFiltros.length > 0 &&
+        (!plano || !tipoFiltros.includes(plano.tipo_id))
+      ) {
+        return false;
+      }
+
+      if (
+        prioridadeFiltros.length > 0 &&
+        (!plano || !prioridadeFiltros.includes(plano.prioridade))
+      ) {
+        return false;
+      }
+
+      if (
+        periodicidadeFiltros.length > 0 &&
+        (!plano || !periodicidadeFiltros.includes(plano.periodicidade))
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const total = filtradas.length;
+    const concluidas = filtradas.filter((o) => o.status === 'concluida').length;
+    const percentual = total > 0 ? Math.round((concluidas / total) * 100) : 0;
+
+    return { total, concluidas, percentual };
+  }, [
+    ordens,
+    dateFilter,
+    tipoFiltros,
+    prioridadeFiltros,
+    periodicidadeFiltros,
+  ]);
+
+  const progressoAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(progressoAnim, {
+      toValue: progresso.percentual,
+      duration: motion.duration.base,
+      easing: motion.easing,
+      useNativeDriver: false,
+    }).start();
+  }, [progresso.percentual, progressoAnim]);
+
+  function toggleTipoFiltro(id: string) {
+    setTipoFiltros((atual) =>
+      atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id],
+    );
   }
 
-  function fecharModal() {
-    setModalVisivel(false);
+  function togglePrioridadeFiltro(item: Prioridade) {
+    setPrioridadeFiltros((atual) =>
+      atual.includes(item) ? atual.filter((x) => x !== item) : [...atual, item],
+    );
+  }
+
+  function togglePeriodicidadeFiltro(item: Periodicidade) {
+    setPeriodicidadeFiltros((atual) =>
+      atual.includes(item) ? atual.filter((x) => x !== item) : [...atual, item],
+    );
   }
 
   function limparFormulario() {
@@ -117,58 +219,165 @@ export default function AdminPreservacao() {
     setLocal('');
     setPeriodicidade('Mensal');
     setPrioridade('Média');
-    setDataInicio(new Date().toISOString().slice(0, 10));
+    setDataInicio(hoje());
     setAtivo(true);
     setObservacoes('');
   }
 
+  function preencherFormulario(plano: PlanoManutencao) {
+    setTitulo(plano.titulo);
+    setTipoId(plano.tipo_id);
+    setDescricao(plano.descricao ?? '');
+    setLocal(plano.local ?? '');
+    setPeriodicidade(plano.periodicidade);
+    setPrioridade(plano.prioridade);
+    setDataInicio(plano.data_inicio);
+    setAtivo(plano.ativo);
+    setObservacoes(plano.observacoes ?? '');
+  }
+
+  function abrirModalNovo() {
+    limparFormulario();
+    setEditingId(null);
+    setErroModal(null);
+    setModalVisivel(true);
+  }
+
+  function fecharModal() {
+    setModalVisivel(false);
+    setEditingId(null);
+  }
+
+  function handleEditar(plano: PlanoManutencao) {
+    preencherFormulario(plano);
+    setEditingId(plano.id);
+    setErroModal(null);
+    setModalVisivel(true);
+  }
+
+  function handleDuplicar(plano: PlanoManutencao) {
+    preencherFormulario(plano);
+    setTitulo(`${plano.titulo} (cópia)`);
+    setEditingId(null);
+    setErroModal(null);
+    setModalVisivel(true);
+  }
+
+  function handleExcluir(plano: PlanoManutencao) {
+    Alert.alert('Excluir plano?', plano.titulo, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase
+            .from('planos_manutencao')
+            .delete()
+            .eq('id', plano.id);
+
+          if (error) {
+            setErroLista(error.message);
+            return;
+          }
+
+          carregarTudo();
+        },
+      },
+    ]);
+  }
+
+  function handleAbrirMenu(plano: PlanoManutencao) {
+    Alert.alert(plano.titulo, undefined, [
+      { text: 'Editar', onPress: () => handleEditar(plano) },
+      { text: 'Duplicar', onPress: () => handleDuplicar(plano) },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => handleExcluir(plano),
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
+
   async function handleSalvar() {
+    if (isSubmitting) {
+      return;
+    }
+
     if (!titulo.trim() || !tipoId || !dataInicio.trim()) {
       setErroModal('Preencha título, tipo e data de início.');
       return;
     }
 
-    setSalvando(true);
+    setIsSubmitting(true);
     setErroModal(null);
 
-    const { data: plano, error: erroPlano } = await supabase
-      .from('planos_manutencao')
-      .insert({
-        titulo,
-        tipo_id: tipoId,
-        descricao: descricao || null,
-        local: local || null,
-        periodicidade,
-        prioridade,
-        data_inicio: dataInicio,
-        ativo,
-        observacoes: observacoes || null,
-      })
-      .select()
-      .single();
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from('planos_manutencao')
+          .update({
+            titulo,
+            tipo_id: tipoId,
+            descricao: descricao || null,
+            local: local || null,
+            periodicidade,
+            prioridade,
+            data_inicio: dataInicio,
+            ativo,
+            observacoes: observacoes || null,
+          })
+          .eq('id', editingId);
 
-    if (erroPlano || !plano) {
-      setSalvando(false);
-      setErroModal(erroPlano?.message ?? 'Não foi possível salvar o plano.');
-      return;
+        if (error) {
+          setErroModal(error.message);
+          return;
+        }
+      } else {
+        const { data: plano, error: erroPlano } = await supabase
+          .from('planos_manutencao')
+          .insert({
+            titulo,
+            tipo_id: tipoId,
+            descricao: descricao || null,
+            local: local || null,
+            periodicidade,
+            prioridade,
+            data_inicio: dataInicio,
+            ativo,
+            observacoes: observacoes || null,
+          })
+          .select()
+          .single();
+
+        if (erroPlano || !plano) {
+          setErroModal(
+            erroPlano?.message ?? 'Não foi possível salvar o plano.',
+          );
+          return;
+        }
+
+        const { error: erroOrdem } = await supabase
+          .from('ordens_servico')
+          .insert({
+            plano_id: plano.id,
+            data_prevista: dataInicio,
+            status: 'pendente',
+          });
+
+        if (erroOrdem) {
+          setErroModal(erroOrdem.message);
+          return;
+        }
+      }
+
+      limparFormulario();
+      setEditingId(null);
+      setModalVisivel(false);
+      carregarTudo();
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const { error: erroOrdem } = await supabase.from('ordens_servico').insert({
-      plano_id: plano.id,
-      data_prevista: dataInicio,
-      status: 'pendente',
-    });
-
-    setSalvando(false);
-
-    if (erroOrdem) {
-      setErroModal(erroOrdem.message);
-      return;
-    }
-
-    limparFormulario();
-    setModalVisivel(false);
-    carregarPlanos();
   }
 
   return (
@@ -185,13 +394,123 @@ export default function AdminPreservacao() {
 
         <Text style={styles.title}>Preservação e Manutenção</Text>
 
-        <Pressable onPress={abrirModal} style={styles.headerButton}>
+        <Pressable onPress={abrirModalNovo} style={styles.headerButton}>
           <Ionicons name="add-circle-outline" size={24} color={light.brand} />
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.body}>
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
+
+        <View style={styles.painelCard}>
+          <View style={styles.segmentedControl}>
+            <Pressable
+              style={[
+                styles.segmentButton,
+                dateFilter === 'hoje' && styles.segmentButtonAtivo,
+              ]}
+              onPress={() => setDateFilter('hoje')}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  dateFilter === 'hoje' && styles.segmentTextAtivo,
+                ]}
+              >
+                Hoje
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.segmentButton,
+                dateFilter === 'todas' && styles.segmentButtonAtivo,
+              ]}
+              onPress={() => setDateFilter('todas')}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  dateFilter === 'todas' && styles.segmentTextAtivo,
+                ]}
+              >
+                Todas as datas
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.filtroGrupo}>
+            <Text style={styles.label}>Tipo</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {tiposAtivos.map((tipo) => (
+                <Chip
+                  key={tipo.id}
+                  label={tipo.nome}
+                  selected={tipoFiltros.includes(tipo.id)}
+                  onPress={() => toggleTipoFiltro(tipo.id)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.filtroGrupo}>
+            <Text style={styles.label}>Prioridade</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {PRIORIDADES.map((item) => (
+                <Chip
+                  key={item}
+                  label={item}
+                  selected={prioridadeFiltros.includes(item)}
+                  color={getCorPrioridade(item)}
+                  onPress={() => togglePrioridadeFiltro(item)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.filtroGrupo}>
+            <Text style={styles.label}>Periodicidade</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {PERIODICIDADES.map((item) => (
+                <Chip
+                  key={item}
+                  label={item}
+                  selected={periodicidadeFiltros.includes(item)}
+                  onPress={() => togglePeriodicidadeFiltro(item)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.progressoTrilho}>
+            <Animated.View
+              style={[
+                styles.progressoPreenchimento,
+                {
+                  width: progressoAnim.interpolate({
+                    inputRange: [0, 100],
+                    outputRange: ['0%', '100%'],
+                  }),
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.progressoTexto}>
+            {progresso.concluidas} de {progresso.total} concluídas (
+            {progresso.percentual}%)
+          </Text>
+        </View>
 
         {resumoPorTipo.length > 0 ? (
           <ScrollView
@@ -215,6 +534,18 @@ export default function AdminPreservacao() {
 
           {planos.map((plano) => (
             <View key={plano.id} style={styles.planoCard}>
+              <Pressable
+                style={styles.planoMenuButton}
+                onPress={() => handleAbrirMenu(plano)}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="ellipsis-horizontal"
+                  size={18}
+                  color={light.textSecondary}
+                />
+              </Pressable>
+
               <Text style={styles.planoTitulo}>{plano.titulo}</Text>
               <Text style={styles.planoTipo}>
                 {plano.tipos_atividade?.nome ?? 'Sem tipo'}
@@ -250,7 +581,9 @@ export default function AdminPreservacao() {
               contentContainerStyle={styles.modalScroll}
               keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.modalTitulo}>Nova atividade</Text>
+              <Text style={styles.modalTitulo}>
+                {editingId ? 'Editar plano' : 'Nova atividade'}
+              </Text>
 
               <View style={styles.field}>
                 <Text style={styles.label}>Título</Text>
@@ -377,12 +710,16 @@ export default function AdminPreservacao() {
                   <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.modalBotao, styles.modalBotaoSalvar]}
+                  style={[
+                    styles.modalBotao,
+                    styles.modalBotaoSalvar,
+                    isSubmitting && styles.modalBotaoDesabilitado,
+                  ]}
                   onPress={handleSalvar}
-                  disabled={salvando}
+                  disabled={isSubmitting}
                 >
                   <Text style={styles.modalBotaoSalvarTexto}>
-                    {salvando ? 'Salvando…' : 'Salvar'}
+                    {isSubmitting ? 'Salvando…' : 'Salvar'}
                   </Text>
                 </Pressable>
               </View>
@@ -427,6 +764,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: semantic.overdue,
   },
+  painelCard: {
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    padding: 2,
+  },
+  segmentButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+  },
+  segmentButtonAtivo: {
+    backgroundColor: light.card,
+  },
+  segmentText: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  segmentTextAtivo: {
+    color: light.textPrimary,
+  },
+  filtroGrupo: {
+    gap: spacing.xs,
+  },
+  progressoTrilho: {
+    height: 8,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+  },
+  progressoPreenchimento: {
+    height: '100%',
+    backgroundColor: light.brand,
+    borderRadius: radius.sm,
+  },
+  progressoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: light.textSecondary,
+  },
   resumoRow: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
@@ -463,6 +855,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   planoCard: {
+    position: 'relative',
     backgroundColor: light.card,
     borderWidth: 1,
     borderColor: light.border,
@@ -470,10 +863,17 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.xs / 2,
   },
+  planoMenuButton: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    zIndex: 1,
+  },
   planoTitulo: {
     fontFamily: fonts.medium,
     fontSize: 15,
     color: light.textPrimary,
+    paddingRight: spacing.lg,
   },
   planoTipo: {
     fontFamily: fonts.regular,
@@ -571,6 +971,9 @@ const styles = StyleSheet.create({
   },
   modalBotaoSalvar: {
     backgroundColor: light.textPrimary,
+  },
+  modalBotaoDesabilitado: {
+    opacity: 0.6,
   },
   modalBotaoSalvarTexto: {
     fontFamily: fonts.semiBold,

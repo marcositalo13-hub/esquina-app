@@ -46,9 +46,11 @@ create table if not exists planos_manutencao (
 
 -- Ordens de serviço geradas a partir de um plano; tipo/título vêm sempre
 -- via join com planos_manutencao -> tipos_atividade, nunca duplicados aqui.
+-- on delete cascade: excluir um plano remove suas ordens automaticamente
+-- (usado pela ação "Excluir" do card de plano em app/admin/preservacao.tsx).
 create table if not exists ordens_servico (
   id uuid primary key default gen_random_uuid(),
-  plano_id uuid not null references planos_manutencao (id),
+  plano_id uuid not null references planos_manutencao (id) on delete cascade,
   data_prevista date not null,
   status text not null default 'pendente' check (status in ('pendente', 'concluida')),
   concluida_em timestamptz,
@@ -56,6 +58,13 @@ create table if not exists ordens_servico (
   observacao text,
   created_at timestamptz not null default now()
 );
+
+-- Se ordens_servico já existia sem "on delete cascade" (script anterior),
+-- rode isto para corrigir a constraint em vez de recriar a tabela:
+-- alter table ordens_servico drop constraint ordens_servico_plano_id_fkey;
+-- alter table ordens_servico
+--   add constraint ordens_servico_plano_id_fkey
+--   foreign key (plano_id) references planos_manutencao (id) on delete cascade;
 
 -- RLS permissiva para a fase de testes (mesma postura já usada em
 -- cadastros_teste): sem autenticação própria ainda, então libera a anon key.
