@@ -63,11 +63,11 @@ export type StatusOrdemServico = 'pendente' | 'concluida';
 export type OrdemServico = {
   id: string;
   plano_id: string;
-  tipo_id: string;
-  status: StatusOrdemServico;
   data_prevista: string;
+  status: StatusOrdemServico;
   concluida_em: string | null;
   concluida_por: string | null;
+  observacao: string | null;
   created_at: string;
   planos_manutencao?: PlanoManutencao | null;
 };

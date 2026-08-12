@@ -155,9 +155,8 @@ export default function AdminPreservacao() {
 
     const { error: erroOrdem } = await supabase.from('ordens_servico').insert({
       plano_id: plano.id,
-      tipo_id: tipoId,
-      status: 'pendente',
       data_prevista: dataInicio,
+      status: 'pendente',
     });
 
     setSalvando(false);

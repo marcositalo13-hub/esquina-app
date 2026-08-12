@@ -44,16 +44,16 @@ create table if not exists planos_manutencao (
   created_at timestamptz not null default now()
 );
 
--- Ordens de serviço geradas a partir de um plano; a equipe de Preservação
--- conclui apenas as do seu tipo (tipo_id denormalizado para filtro direto).
+-- Ordens de serviço geradas a partir de um plano; tipo/título vêm sempre
+-- via join com planos_manutencao -> tipos_atividade, nunca duplicados aqui.
 create table if not exists ordens_servico (
   id uuid primary key default gen_random_uuid(),
   plano_id uuid not null references planos_manutencao (id),
-  tipo_id uuid not null references tipos_atividade (id),
-  status text not null default 'pendente' check (status in ('pendente', 'concluida')),
   data_prevista date not null,
+  status text not null default 'pendente' check (status in ('pendente', 'concluida')),
   concluida_em timestamptz,
   concluida_por text,
+  observacao text,
   created_at timestamptz not null default now()
 );
 
