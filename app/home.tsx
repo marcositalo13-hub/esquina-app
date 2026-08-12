@@ -118,6 +118,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     paddingHorizontal: spacing.lg,
+    paddingBottom: 90,
   },
   placeholderCard: {
     backgroundColor: light.card,

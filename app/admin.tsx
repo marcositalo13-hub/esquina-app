@@ -149,6 +149,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: spacing.lg,
+    paddingBottom: 90,
     gap: spacing.md,
   },
   card: {
@@ -184,6 +185,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     paddingHorizontal: spacing.lg,
+    paddingBottom: 90,
   },
   placeholderCard: {
     flex: 1,
