@@ -63,6 +63,28 @@ export default function Login() {
               <Text style={styles.buttonText}>Entrar</Text>
             </Pressable>
           </View>
+
+          <Text style={styles.testarComo}>Testar como:</Text>
+          <View style={styles.testarComoRow}>
+            <Pressable
+              style={styles.testarComoButton}
+              onPress={() => router.replace('/admin')}
+            >
+              <Text style={styles.testarComoButtonText}>Administrador</Text>
+            </Pressable>
+            <Pressable
+              style={styles.testarComoButton}
+              onPress={() => router.replace('/preservacao')}
+            >
+              <Text style={styles.testarComoButtonText}>Preservação</Text>
+            </Pressable>
+            <Pressable
+              style={styles.testarComoButton}
+              onPress={() => router.replace('/home')}
+            >
+              <Text style={styles.testarComoButtonText}>Morador</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.links}>
@@ -132,6 +154,33 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 15,
     color: dark.bg,
+  },
+  testarComo: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: dark.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  testarComoRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  testarComoButton: {
+    flex: 1,
+    backgroundColor: dark.elevated,
+    borderWidth: 1,
+    borderColor: dark.border,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+  },
+  testarComoButtonText: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: dark.textSecondary,
+    textAlign: 'center',
   },
   links: {
     marginTop: spacing.lg,
