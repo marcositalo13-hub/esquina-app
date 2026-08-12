@@ -394,8 +394,14 @@ export default function AdminPreservacao() {
 
         <Text style={styles.title}>Preservação e Manutenção</Text>
 
-        <Pressable onPress={abrirModalNovo} style={styles.headerButton}>
-          <Ionicons name="add-circle-outline" size={24} color={light.brand} />
+        <Pressable
+          onPress={abrirModalNovo}
+          style={({ pressed }) => [
+            styles.addButton,
+            pressed && styles.addButtonPressed,
+          ]}
+        >
+          <Ionicons name="add" size={20} color="#FFFFFF" />
         </Pressable>
       </View>
 
@@ -440,11 +446,7 @@ export default function AdminPreservacao() {
 
           <View style={styles.filtroGrupo}>
             <Text style={styles.label}>Tipo</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
+            <View style={styles.chipWrap}>
               {tiposAtivos.map((tipo) => (
                 <Chip
                   key={tipo.id}
@@ -453,7 +455,7 @@ export default function AdminPreservacao() {
                   onPress={() => toggleTipoFiltro(tipo.id)}
                 />
               ))}
-            </ScrollView>
+            </View>
           </View>
 
           <View style={styles.filtroGrupo}>
@@ -477,11 +479,7 @@ export default function AdminPreservacao() {
 
           <View style={styles.filtroGrupo}>
             <Text style={styles.label}>Periodicidade</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
+            <View style={styles.chipWrap}>
               {PERIODICIDADES.map((item) => (
                 <Chip
                   key={item}
@@ -490,7 +488,7 @@ export default function AdminPreservacao() {
                   onPress={() => togglePeriodicidadeFiltro(item)}
                 />
               ))}
-            </ScrollView>
+            </View>
           </View>
 
           <View style={styles.progressoTrilho}>
@@ -598,11 +596,7 @@ export default function AdminPreservacao() {
 
               <View style={styles.field}>
                 <Text style={styles.label}>Tipo</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chipRow}
-                >
+                <View style={styles.chipWrap}>
                   {tiposAtivos.map((tipo) => (
                     <Chip
                       key={tipo.id}
@@ -611,7 +605,7 @@ export default function AdminPreservacao() {
                       onPress={() => setTipoId(tipo.id)}
                     />
                   ))}
-                </ScrollView>
+                </View>
               </View>
 
               <View style={styles.field}>
@@ -683,7 +677,7 @@ export default function AdminPreservacao() {
                 <Switch
                   value={ativo}
                   onValueChange={setAtivo}
-                  trackColor={{ false: light.border, true: light.brandActive }}
+                  trackColor={{ false: light.border, true: light.brand }}
                 />
               </View>
 
@@ -710,10 +704,10 @@ export default function AdminPreservacao() {
                   <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
                 </Pressable>
                 <Pressable
-                  style={[
+                  style={({ pressed }) => [
                     styles.modalBotao,
                     styles.modalBotaoSalvar,
-                    isSubmitting && styles.modalBotaoDesabilitado,
+                    (pressed || isSubmitting) && styles.modalBotaoPressionado,
                   ]}
                   onPress={handleSalvar}
                   disabled={isSubmitting}
@@ -746,6 +740,17 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 32,
     alignItems: 'center',
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: light.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addButtonPressed: {
+    backgroundColor: light.brandPressed,
   },
   title: {
     flex: 1,
@@ -941,7 +946,7 @@ const styles = StyleSheet.create({
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   toggleRow: {
     flexDirection: 'row',
@@ -970,14 +975,14 @@ const styles = StyleSheet.create({
     color: light.textSecondary,
   },
   modalBotaoSalvar: {
-    backgroundColor: light.textPrimary,
+    backgroundColor: light.brand,
   },
-  modalBotaoDesabilitado: {
-    opacity: 0.6,
+  modalBotaoPressionado: {
+    backgroundColor: light.brandPressed,
   },
   modalBotaoSalvarTexto: {
     fontFamily: fonts.semiBold,
     fontSize: 14,
-    color: light.bg,
+    color: '#FFFFFF',
   },
 });

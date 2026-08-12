@@ -1,7 +1,7 @@
-// Regra: a cor de marca (brand) é usada para identidade e estados
-// interativos; as cores de estado (semantic) comunicam exclusivamente
-// status. A marca é dona da faixa azul/violeta e não colide com nenhum
-// status.
+// Regra: a cor de marca (brand) é FUNCIONAL — usada em botões primários,
+// chips selecionados e indicadores ativos — permanecendo fora da família
+// das cores semânticas (verde/âmbar/vermelho), que continuam exclusivas
+// para status.
 import { Easing } from 'react-native';
 
 export const light = {
@@ -13,9 +13,9 @@ export const light = {
   textPrimary: '#22221F',
   textSecondary: '#6B6862',
   textMuted: '#9A968D',
-  brand: '#2F3577',
-  brandActive: '#6067C8',
-  brandWash: '#D8DCF0',
+  brand: '#1F4FE0',
+  brandPressed: '#16358F',
+  brandWash: '#E7ECFC',
 } as const;
 
 export const dark = {

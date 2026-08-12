@@ -111,7 +111,7 @@ export function BottomTabBar({
                   <Ionicons
                     name={isActive ? item.iconActive : item.icon}
                     size={24}
-                    color={isActive ? light.brandActive : light.textPrimary}
+                    color={isActive ? light.brand : light.textPrimary}
                   />
                 </Animated.View>
                 {item.badge ? <View style={styles.badge} /> : null}
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     width: DOT_SIZE,
     height: DOT_SIZE,
     borderRadius: DOT_SIZE / 2,
-    backgroundColor: light.brandActive,
+    backgroundColor: light.brand,
   },
 });
 
