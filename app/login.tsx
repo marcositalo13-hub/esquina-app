@@ -44,11 +44,13 @@ export default function Login() {
 
   return (
     <View style={styles.flex}>
-      <Image
-        source={require('../src/assets/login-background.png')}
-        resizeMode="cover"
-        style={styles.fundo}
-      />
+      <View style={styles.fundoWrapper}>
+        <Image
+          source={require('../src/assets/login-background.png')}
+          resizeMode="cover"
+          style={styles.fundo}
+        />
+      </View>
       <LinearGradient
         colors={[
           'rgba(0, 0, 0, 0.15)',
@@ -150,12 +152,20 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  fundo: {
+  fundoWrapper: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    overflow: 'hidden',
+  },
+  fundo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '130%',
   },
   veu: {
     position: 'absolute',
