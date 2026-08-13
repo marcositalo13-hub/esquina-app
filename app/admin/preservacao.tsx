@@ -12,15 +12,20 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AdiarAcao } from '../../src/components/AdiarAcao';
 import { Chip } from '../../src/components/Chip';
 import {
   type DiaMarcado,
   MiniCalendar,
 } from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
+import { StatusBadge } from '../../src/components/StatusBadge';
 import {
+  adicionarDiasChave,
   formatarDataBR,
+  gerarDatasOcorrencia,
   getCorPrioridade,
+  JANELA_DIAS,
   type OrdemServico,
   PERIODICIDADES,
   type Periodicidade,
@@ -30,6 +35,7 @@ import {
   type TipoAtividade,
 } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
+import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
@@ -45,7 +51,8 @@ export default function AdminPreservacao() {
   const [carregando, setCarregando] = useState(true);
   const [erroLista, setErroLista] = useState<string | null>(null);
 
-  const [calendarioAberto, setCalendarioAberto] = useState(false);
+  const [calendarioFiltrosAberto, setCalendarioFiltrosAberto] = useState(false);
+  const [planosAbertos, setPlanosAbertos] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilter>('hoje');
   const [atrasadasFiltro, setAtrasadasFiltro] = useState(false);
@@ -54,6 +61,10 @@ export default function AdminPreservacao() {
   const [periodicidadeFiltros, setPeriodicidadeFiltros] = useState<
     Periodicidade[]
   >([]);
+
+  const [atualizandoOrdemId, setAtualizandoOrdemId] = useState<string | null>(
+    null,
+  );
 
   const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null);
   const [menuEtapa, setMenuEtapa] = useState<'opcoes' | 'confirmarExclusao'>(
@@ -121,7 +132,14 @@ export default function AdminPreservacao() {
   useEffect(() => {
     setCarregando(true);
     Promise.all([carregarPlanos(), carregarTipos(), carregarOrdens()]).finally(
-      () => setCarregando(false),
+      () => {
+        setCarregando(false);
+        // Top-up silencioso: roda depois do primeiro carregamento, sem
+        // bloquear a tela; só recarrega as ordens ao terminar.
+        preencherOcorrenciasFaltantes().then(() => {
+          carregarOrdens();
+        });
+      },
     );
   }, [carregarPlanos, carregarTipos, carregarOrdens]);
 
@@ -132,7 +150,7 @@ export default function AdminPreservacao() {
 
     for (const ordem of ordens) {
       const atrasada =
-        ordem.status === 'pendente' && ordem.data_prevista < hojeStr;
+        ordem.status !== 'concluida' && ordem.data_prevista < hojeStr;
 
       if (atrasada) {
         mapa[ordem.data_prevista] = 'atrasado';
@@ -144,14 +162,21 @@ export default function AdminPreservacao() {
     return mapa;
   }, [ordens]);
 
-  // Planos com ao menos uma ordem pendente e atrasada (para o chip
-  // "Atrasadas" e para o badge nos chips de Tipo).
+  // Ordens de hoje, para a seção "Atividades do dia" — sem aplicar os
+  // filtros de tipo/prioridade/periodicidade/atrasadas.
+  const atividadesDoDia = useMemo(() => {
+    const hojeStr = hoje();
+    return ordens.filter((o) => o.data_prevista === hojeStr);
+  }, [ordens]);
+
+  // Planos com ao menos uma ordem pendente/em andamento e atrasada (para o
+  // chip "Atrasadas" e para o badge nos chips de Tipo).
   const planoIdsAtrasados = useMemo(() => {
     const hojeStr = hoje();
     const ids = new Set<string>();
 
     for (const ordem of ordens) {
-      if (ordem.status === 'pendente' && ordem.data_prevista < hojeStr) {
+      if (ordem.status !== 'concluida' && ordem.data_prevista < hojeStr) {
         ids.add(ordem.plano_id);
       }
     }
@@ -235,7 +260,7 @@ export default function AdminPreservacao() {
 
       if (
         atrasadasFiltro &&
-        !(ordem.status === 'pendente' && ordem.data_prevista < hojeStr)
+        !(ordem.status !== 'concluida' && ordem.data_prevista < hojeStr)
       ) {
         return false;
       }
@@ -268,10 +293,10 @@ export default function AdminPreservacao() {
 
     const concluidas = filtradas.filter((o) => o.status === 'concluida').length;
     const atrasadas = filtradas.filter(
-      (o) => o.status === 'pendente' && o.data_prevista < hojeStr,
+      (o) => o.status !== 'concluida' && o.data_prevista < hojeStr,
     ).length;
     const pendentes = filtradas.filter(
-      (o) => o.status === 'pendente' && o.data_prevista >= hojeStr,
+      (o) => o.status !== 'concluida' && o.data_prevista >= hojeStr,
     ).length;
 
     return { total: filtradas.length, concluidas, pendentes, atrasadas };
@@ -292,7 +317,7 @@ export default function AdminPreservacao() {
     const ids = new Set<string>();
 
     for (const ordem of ordens) {
-      if (ordem.status === 'pendente' && ordem.data_prevista < hojeStr) {
+      if (ordem.status !== 'concluida' && ordem.data_prevista < hojeStr) {
         const idTipo = ordem.planos_manutencao?.tipo_id;
         if (idTipo) {
           ids.add(idTipo);
@@ -323,6 +348,60 @@ export default function AdminPreservacao() {
     setPeriodicidadeFiltros((atual) =>
       atual.includes(item) ? atual.filter((x) => x !== item) : [...atual, item],
     );
+  }
+
+  async function handleIniciarOrdem(ordemId: string) {
+    setAtualizandoOrdemId(ordemId);
+
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({ status: 'em_andamento' })
+      .eq('id', ordemId);
+
+    setAtualizandoOrdemId(null);
+
+    if (error) {
+      setErroLista(error.message);
+      return;
+    }
+
+    carregarOrdens();
+  }
+
+  async function handleConcluirOrdem(ordemId: string) {
+    setAtualizandoOrdemId(ordemId);
+
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({
+        status: 'concluida',
+        concluida_em: new Date().toISOString(),
+        concluida_por: 'Teste Preservação',
+      })
+      .eq('id', ordemId);
+
+    setAtualizandoOrdemId(null);
+
+    if (error) {
+      setErroLista(error.message);
+      return;
+    }
+
+    carregarOrdens();
+  }
+
+  async function handleAdiarOrdem(ordemId: string, novaData: string) {
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({ data_prevista: novaData })
+      .eq('id', ordemId);
+
+    if (error) {
+      setErroLista(error.message);
+      return;
+    }
+
+    carregarOrdens();
   }
 
   function limparFormulario() {
@@ -489,13 +568,24 @@ export default function AdminPreservacao() {
           return;
         }
 
+        // Gera as ocorrências até hoje + JANELA_DIAS (ou data_inicio +
+        // JANELA_DIAS, o que for maior), não só uma única ordem.
+        const ateDataPorHoje = adicionarDiasChave(hoje(), JANELA_DIAS);
+        const ateDataPorInicio = adicionarDiasChave(dataInicio, JANELA_DIAS);
+        const ateData =
+          ateDataPorHoje > ateDataPorInicio ? ateDataPorHoje : ateDataPorInicio;
+
+        const datas = gerarDatasOcorrencia(dataInicio, periodicidade, ateData);
+
         const { error: erroOrdem } = await supabase
           .from('ordens_servico')
-          .insert({
-            plano_id: plano.id,
-            data_prevista: dataInicio,
-            status: 'pendente',
-          });
+          .insert(
+            datas.map((data) => ({
+              plano_id: plano.id,
+              data_prevista: data,
+              status: 'pendente',
+            })),
+          );
 
         if (erroOrdem) {
           setErroModal(erroOrdem.message);
@@ -543,331 +633,430 @@ export default function AdminPreservacao() {
         <View style={styles.painelCard}>
           <Pressable
             style={styles.calendarioCabecalho}
-            onPress={() => setCalendarioAberto((v) => !v)}
+            onPress={() => setCalendarioFiltrosAberto((v) => !v)}
           >
-            <Text style={styles.calendarioTitulo}>Calendário</Text>
+            <Text style={styles.calendarioTitulo}>Calendário e Filtros</Text>
             <Ionicons
-              name={calendarioAberto ? 'chevron-up' : 'chevron-down'}
+              name={calendarioFiltrosAberto ? 'chevron-up' : 'chevron-down'}
               size={18}
               color={light.textSecondary}
             />
           </Pressable>
 
-          {calendarioAberto ? (
-            <MiniCalendar
-              markedDates={markedDates}
-              selectedDate={selectedDate}
-              onSelectDay={handleSelecionarDia}
-            />
-          ) : null}
-        </View>
+          {calendarioFiltrosAberto ? (
+            <View style={styles.calendarioFiltrosConteudo}>
+              <MiniCalendar
+                markedDates={markedDates}
+                selectedDate={selectedDate}
+                onSelectDay={handleSelecionarDia}
+              />
 
-        <View style={styles.painelCard}>
-          <View style={styles.progressoTrilho}>
-            <View
-              style={[
-                styles.segmento,
-                styles.segmentoConcluidas,
-                { flex: progresso.concluidas },
-              ]}
-            />
-            <View
-              style={[
-                styles.segmento,
-                styles.segmentoPendentes,
-                { flex: progresso.pendentes },
-              ]}
-            />
-            <View
-              style={[
-                styles.segmento,
-                styles.segmentoAtrasadas,
-                { flex: progresso.atrasadas },
-              ]}
-            />
-          </View>
-
-          <View style={styles.contadoresRow}>
-            <View style={styles.contadorItem}>
-              <Text style={[styles.contadorBolinha, { color: semantic.ok }]}>
-                ●
-              </Text>
-              <Text style={styles.contadorTexto}>
-                {progresso.concluidas} concluídas
-              </Text>
-            </View>
-            <View style={styles.contadorItem}>
-              <Text
-                style={[styles.contadorBolinha, { color: light.textMuted }]}
-              >
-                ●
-              </Text>
-              <Text style={styles.contadorTexto}>
-                {progresso.pendentes} pendentes
-              </Text>
-            </View>
-            <View style={styles.contadorItem}>
-              <Text
-                style={[styles.contadorBolinha, { color: semantic.overdue }]}
-              >
-                ●
-              </Text>
-              <Text style={styles.contadorTexto}>
-                {progresso.atrasadas} atrasadas
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.painelCard}>
-          {selectedDate ? (
-            <Pressable
-              style={styles.filtroDataBanner}
-              onPress={() => setSelectedDate(null)}
-            >
-              <Text style={styles.filtroDataTexto}>
-                Filtrando por: {formatarDataBR(selectedDate)} ✕
-              </Text>
-            </Pressable>
-          ) : null}
-
-          <View
-            style={[
-              styles.segmentedControl,
-              selectedDate ? styles.segmentedControlDesabilitado : null,
-            ]}
-            pointerEvents={selectedDate ? 'none' : 'auto'}
-          >
-            <Pressable
-              style={[
-                styles.segmentButton,
-                dateFilter === 'hoje' && styles.segmentButtonAtivo,
-              ]}
-              onPress={() => setDateFilter('hoje')}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  dateFilter === 'hoje' && styles.segmentTextAtivo,
-                ]}
-              >
-                Hoje
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.segmentButton,
-                dateFilter === 'todas' && styles.segmentButtonAtivo,
-              ]}
-              onPress={() => setDateFilter('todas')}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  dateFilter === 'todas' && styles.segmentTextAtivo,
-                ]}
-              >
-                Todas as datas
-              </Text>
-            </Pressable>
-          </View>
-
-          <Pressable
-            style={[
-              styles.chipAtrasadas,
-              atrasadasFiltro && styles.chipAtrasadasAtivo,
-            ]}
-            onPress={() => setAtrasadasFiltro((v) => !v)}
-          >
-            <Ionicons
-              name="alert-circle-outline"
-              size={14}
-              color={atrasadasFiltro ? '#FFFFFF' : semantic.overdue}
-            />
-            <Text
-              style={[
-                styles.chipAtrasadasTexto,
-                atrasadasFiltro && styles.chipAtrasadasTextoAtivo,
-              ]}
-            >
-              Atrasadas
-            </Text>
-          </Pressable>
-
-          <View style={styles.filtroGrupo}>
-            <Text style={styles.label}>Tipo</Text>
-            <View style={styles.chipWrap}>
-              {tiposAtivos.map((tipo) => (
-                <View key={tipo.id}>
-                  <Chip
-                    label={tipo.nome}
-                    selected={tipoFiltros.includes(tipo.id)}
-                    onPress={() => toggleTipoFiltro(tipo.id)}
-                  />
-                  {tiposComAtraso.has(tipo.id) ? (
-                    <View style={styles.chipBadgeDot} />
-                  ) : null}
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.filtroGrupo}>
-            <Text style={styles.label}>Prioridade</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
-              {PRIORIDADES.map((item) => (
-                <Chip
-                  key={item}
-                  label={item}
-                  selected={prioridadeFiltros.includes(item)}
-                  color={getCorPrioridade(item)}
-                  onPress={() => togglePrioridadeFiltro(item)}
+              <View style={styles.progressoTrilho}>
+                <View
+                  style={[
+                    styles.segmento,
+                    styles.segmentoConcluidas,
+                    { flex: progresso.concluidas },
+                  ]}
                 />
-              ))}
-            </ScrollView>
-          </View>
-
-          <View style={styles.filtroGrupo}>
-            <Text style={styles.label}>Periodicidade</Text>
-            <View style={styles.chipWrap}>
-              {PERIODICIDADES.map((item) => (
-                <Chip
-                  key={item}
-                  label={item}
-                  selected={periodicidadeFiltros.includes(item)}
-                  onPress={() => togglePeriodicidadeFiltro(item)}
+                <View
+                  style={[
+                    styles.segmento,
+                    styles.segmentoPendentes,
+                    { flex: progresso.pendentes },
+                  ]}
                 />
-              ))}
-            </View>
-          </View>
-        </View>
+                <View
+                  style={[
+                    styles.segmento,
+                    styles.segmentoAtrasadas,
+                    { flex: progresso.atrasadas },
+                  ]}
+                />
+              </View>
 
-        <View style={styles.lista}>
-          {!carregando && planosFiltrados.length === 0 ? (
-            <Text style={styles.vazio}>Nenhuma atividade cadastrada.</Text>
-          ) : null}
-
-          {planosFiltrados.map((plano) => {
-            const menuAberto = menuAbertoId === plano.id;
-
-            return (
-              <View
-                key={plano.id}
-                style={menuAberto ? styles.planoWrapperMenuAberto : null}
-              >
-                <View style={styles.planoCard}>
-                  <View style={styles.planoCabecalho}>
-                    <Text style={styles.planoTitulo}>{plano.titulo}</Text>
-                    <Pressable
-                      onPress={() => handleAbrirMenu(plano.id)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      style={({ pressed }) => [
-                        styles.planoMenuButton,
-                        pressed && styles.planoMenuButtonPressionado,
-                      ]}
-                    >
-                      <Ionicons
-                        name="ellipsis-horizontal"
-                        size={18}
-                        color={light.textSecondary}
-                      />
-                    </Pressable>
-                  </View>
-
-                  <Text style={styles.planoTipo}>
-                    {plano.tipos_atividade?.nome ?? 'Sem tipo'}
+              <View style={styles.contadoresRow}>
+                <View style={styles.contadorItem}>
+                  <Text
+                    style={[styles.contadorBolinha, { color: semantic.ok }]}
+                  >
+                    ●
                   </Text>
+                  <Text style={styles.contadorTexto}>
+                    {progresso.concluidas} concluídas
+                  </Text>
+                </View>
+                <View style={styles.contadorItem}>
+                  <Text
+                    style={[styles.contadorBolinha, { color: light.textMuted }]}
+                  >
+                    ●
+                  </Text>
+                  <Text style={styles.contadorTexto}>
+                    {progresso.pendentes} pendentes
+                  </Text>
+                </View>
+                <View style={styles.contadorItem}>
+                  <Text
+                    style={[
+                      styles.contadorBolinha,
+                      { color: semantic.overdue },
+                    ]}
+                  >
+                    ●
+                  </Text>
+                  <Text style={styles.contadorTexto}>
+                    {progresso.atrasadas} atrasadas
+                  </Text>
+                </View>
+              </View>
 
-                  {plano.local ? (
+              {selectedDate ? (
+                <Pressable
+                  style={styles.filtroDataBanner}
+                  onPress={() => setSelectedDate(null)}
+                >
+                  <Text style={styles.filtroDataTexto}>
+                    Filtrando por: {formatarDataBR(selectedDate)} ✕
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              <View
+                style={[
+                  styles.segmentedControl,
+                  selectedDate ? styles.segmentedControlDesabilitado : null,
+                ]}
+                pointerEvents={selectedDate ? 'none' : 'auto'}
+              >
+                <Pressable
+                  style={[
+                    styles.segmentButton,
+                    dateFilter === 'hoje' && styles.segmentButtonAtivo,
+                  ]}
+                  onPress={() => setDateFilter('hoje')}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      dateFilter === 'hoje' && styles.segmentTextAtivo,
+                    ]}
+                  >
+                    Hoje
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.segmentButton,
+                    dateFilter === 'todas' && styles.segmentButtonAtivo,
+                  ]}
+                  onPress={() => setDateFilter('todas')}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      dateFilter === 'todas' && styles.segmentTextAtivo,
+                    ]}
+                  >
+                    Todas as datas
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                style={[
+                  styles.chipAtrasadas,
+                  atrasadasFiltro && styles.chipAtrasadasAtivo,
+                ]}
+                onPress={() => setAtrasadasFiltro((v) => !v)}
+              >
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={14}
+                  color={atrasadasFiltro ? '#FFFFFF' : semantic.overdue}
+                />
+                <Text
+                  style={[
+                    styles.chipAtrasadasTexto,
+                    atrasadasFiltro && styles.chipAtrasadasTextoAtivo,
+                  ]}
+                >
+                  Atrasadas
+                </Text>
+              </Pressable>
+
+              <View style={styles.filtroGrupo}>
+                <Text style={styles.label}>Tipo</Text>
+                <View style={styles.chipWrap}>
+                  {tiposAtivos.map((tipo) => (
+                    <View key={tipo.id}>
+                      <Chip
+                        label={tipo.nome}
+                        selected={tipoFiltros.includes(tipo.id)}
+                        onPress={() => toggleTipoFiltro(tipo.id)}
+                      />
+                      {tiposComAtraso.has(tipo.id) ? (
+                        <View style={styles.chipBadgeDot} />
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.filtroGrupo}>
+                <Text style={styles.label}>Prioridade</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipRow}
+                >
+                  {PRIORIDADES.map((item) => (
+                    <Chip
+                      key={item}
+                      label={item}
+                      selected={prioridadeFiltros.includes(item)}
+                      color={getCorPrioridade(item)}
+                      onPress={() => togglePrioridadeFiltro(item)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={styles.filtroGrupo}>
+                <Text style={styles.label}>Periodicidade</Text>
+                <View style={styles.chipWrap}>
+                  {PERIODICIDADES.map((item) => (
+                    <Chip
+                      key={item}
+                      label={item}
+                      selected={periodicidadeFiltros.includes(item)}
+                      onPress={() => togglePeriodicidadeFiltro(item)}
+                    />
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={styles.secaoTitulo}>Atividades do dia</Text>
+
+        {atividadesDoDia.length === 0 ? (
+          <Text style={styles.vazio}>
+            Nenhuma atividade prevista para hoje.
+          </Text>
+        ) : (
+          <View style={styles.lista}>
+            {atividadesDoDia.map((ordem) => {
+              const plano = ordem.planos_manutencao;
+
+              return (
+                <View key={ordem.id} style={styles.planoCard}>
+                  <Text style={styles.planoTitulo}>
+                    {plano?.titulo ?? 'Atividade'}
+                  </Text>
+                  <Text style={styles.planoTipo}>
+                    {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
+                  </Text>
+                  {plano?.local ? (
                     <Text style={styles.planoDetalhe}>{plano.local}</Text>
                   ) : null}
 
                   <View style={styles.planoRodape}>
-                    <Text style={styles.planoDetalhe}>
-                      {plano.periodicidade} ·{' '}
-                      {formatarDataBR(plano.data_inicio)}
-                    </Text>
-                    <Chip
-                      label={plano.prioridade}
-                      color={getCorPrioridade(plano.prioridade)}
-                    />
+                    <StatusBadge ordem={ordem} />
+                    {plano ? (
+                      <Chip
+                        label={plano.prioridade}
+                        color={getCorPrioridade(plano.prioridade)}
+                      />
+                    ) : null}
                   </View>
-                </View>
 
-                {menuAberto ? (
-                  <>
+                  {ordem.status === 'em_andamento' ? (
                     <Pressable
-                      style={styles.menuOverlay}
-                      onPress={fecharMenu}
-                    />
-                    <View style={styles.menuPainel}>
-                      {menuEtapa === 'opcoes' ? (
-                        <>
-                          <Pressable
-                            style={styles.menuItem}
-                            onPress={() => handleMenuEditar(plano)}
-                          >
-                            <Text style={styles.menuItemTexto}>Editar</Text>
-                          </Pressable>
-                          <Pressable
-                            style={styles.menuItem}
-                            onPress={() => handleMenuDuplicar(plano)}
-                          >
-                            <Text style={styles.menuItemTexto}>Duplicar</Text>
-                          </Pressable>
-                          <Pressable
-                            style={styles.menuItem}
-                            onPress={handleMenuPedirConfirmacaoExclusao}
-                          >
-                            <Text
-                              style={[
-                                styles.menuItemTexto,
-                                styles.menuItemExcluirTexto,
-                              ]}
-                            >
-                              Excluir
-                            </Text>
-                          </Pressable>
-                        </>
-                      ) : (
-                        <View style={styles.menuConfirmacao}>
-                          <Text style={styles.menuConfirmacaoTexto}>
-                            Confirmar exclusão?
-                          </Text>
-                          <View style={styles.menuConfirmacaoBotoes}>
-                            <Pressable
-                              style={styles.menuConfirmacaoBotaoCancelar}
-                              onPress={fecharMenu}
-                            >
-                              <Text
-                                style={styles.menuConfirmacaoBotaoCancelarTexto}
-                              >
-                                Cancelar
-                              </Text>
-                            </Pressable>
-                            <Pressable
-                              style={styles.menuConfirmacaoBotaoExcluir}
-                              onPress={() => handleMenuExcluirConfirmar(plano)}
-                            >
-                              <Text
-                                style={styles.menuConfirmacaoBotaoExcluirTexto}
-                              >
-                                Excluir
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      )}
+                      style={styles.botaoConcluirAtividade}
+                      onPress={() => handleConcluirOrdem(ordem.id)}
+                      disabled={atualizandoOrdemId === ordem.id}
+                    >
+                      <Text style={styles.botaoConcluirAtividadeTexto}>
+                        {atualizandoOrdemId === ordem.id
+                          ? 'Concluindo…'
+                          : 'Concluir'}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={styles.botaoIniciarAtividade}
+                      onPress={() => handleIniciarOrdem(ordem.id)}
+                      disabled={atualizandoOrdemId === ordem.id}
+                    >
+                      <Text style={styles.botaoIniciarAtividadeTexto}>
+                        {atualizandoOrdemId === ordem.id
+                          ? 'Iniciando…'
+                          : 'Iniciar'}
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  <AdiarAcao
+                    onConfirmar={(novaData) =>
+                      handleAdiarOrdem(ordem.id, novaData)
+                    }
+                  />
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={styles.painelCard}>
+          <Pressable
+            style={styles.calendarioCabecalho}
+            onPress={() => setPlanosAbertos((v) => !v)}
+          >
+            <Text style={styles.calendarioTitulo}>
+              Todos os planos cadastrados
+            </Text>
+            <Ionicons
+              name={planosAbertos ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={light.textSecondary}
+            />
+          </Pressable>
+
+          {planosAbertos ? (
+            <View style={styles.lista}>
+              {!carregando && planosFiltrados.length === 0 ? (
+                <Text style={styles.vazio}>Nenhuma atividade cadastrada.</Text>
+              ) : null}
+
+              {planosFiltrados.map((plano) => {
+                const menuAberto = menuAbertoId === plano.id;
+
+                return (
+                  <View
+                    key={plano.id}
+                    style={menuAberto ? styles.planoWrapperMenuAberto : null}
+                  >
+                    <View style={styles.planoCard}>
+                      <View style={styles.planoCabecalho}>
+                        <Text style={styles.planoTitulo}>{plano.titulo}</Text>
+                        <Pressable
+                          onPress={() => handleAbrirMenu(plano.id)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={({ pressed }) => [
+                            styles.planoMenuButton,
+                            pressed && styles.planoMenuButtonPressionado,
+                          ]}
+                        >
+                          <Ionicons
+                            name="ellipsis-horizontal"
+                            size={18}
+                            color={light.textSecondary}
+                          />
+                        </Pressable>
+                      </View>
+
+                      <Text style={styles.planoTipo}>
+                        {plano.tipos_atividade?.nome ?? 'Sem tipo'}
+                      </Text>
+
+                      {plano.local ? (
+                        <Text style={styles.planoDetalhe}>{plano.local}</Text>
+                      ) : null}
+
+                      <View style={styles.planoRodape}>
+                        <Text style={styles.planoDetalhe}>
+                          {plano.periodicidade} ·{' '}
+                          {formatarDataBR(plano.data_inicio)}
+                        </Text>
+                        <Chip
+                          label={plano.prioridade}
+                          color={getCorPrioridade(plano.prioridade)}
+                        />
+                      </View>
                     </View>
-                  </>
-                ) : null}
-              </View>
-            );
-          })}
+
+                    {menuAberto ? (
+                      <>
+                        <Pressable
+                          style={styles.menuOverlay}
+                          onPress={fecharMenu}
+                        />
+                        <View style={styles.menuPainel}>
+                          {menuEtapa === 'opcoes' ? (
+                            <>
+                              <Pressable
+                                style={styles.menuItem}
+                                onPress={() => handleMenuEditar(plano)}
+                              >
+                                <Text style={styles.menuItemTexto}>Editar</Text>
+                              </Pressable>
+                              <Pressable
+                                style={styles.menuItem}
+                                onPress={() => handleMenuDuplicar(plano)}
+                              >
+                                <Text style={styles.menuItemTexto}>
+                                  Duplicar
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                style={styles.menuItem}
+                                onPress={handleMenuPedirConfirmacaoExclusao}
+                              >
+                                <Text
+                                  style={[
+                                    styles.menuItemTexto,
+                                    styles.menuItemExcluirTexto,
+                                  ]}
+                                >
+                                  Excluir
+                                </Text>
+                              </Pressable>
+                            </>
+                          ) : (
+                            <View style={styles.menuConfirmacao}>
+                              <Text style={styles.menuConfirmacaoTexto}>
+                                Confirmar exclusão?
+                              </Text>
+                              <View style={styles.menuConfirmacaoBotoes}>
+                                <Pressable
+                                  style={styles.menuConfirmacaoBotaoCancelar}
+                                  onPress={fecharMenu}
+                                >
+                                  <Text
+                                    style={
+                                      styles.menuConfirmacaoBotaoCancelarTexto
+                                    }
+                                  >
+                                    Cancelar
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  style={styles.menuConfirmacaoBotaoExcluir}
+                                  onPress={() =>
+                                    handleMenuExcluirConfirmar(plano)
+                                  }
+                                >
+                                  <Text
+                                    style={
+                                      styles.menuConfirmacaoBotaoExcluirTexto
+                                    }
+                                  >
+                                    Excluir
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                      </>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -1073,6 +1262,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: semantic.overdue,
   },
+  secaoTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 16,
+    color: light.textPrimary,
+  },
   painelCard: {
     backgroundColor: light.card,
     borderWidth: 1,
@@ -1090,6 +1284,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 14,
     color: light.textPrimary,
+  },
+  calendarioFiltrosConteudo: {
+    gap: spacing.md,
   },
   progressoTrilho: {
     flexDirection: 'row',
@@ -1222,6 +1419,31 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs / 2,
+  },
+  botaoIniciarAtividade: {
+    borderWidth: 1,
+    borderColor: light.brand,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs + 2,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  botaoIniciarAtividadeTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: light.brand,
+  },
+  botaoConcluirAtividade: {
+    backgroundColor: light.textPrimary,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs + 2,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  botaoConcluirAtividadeTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: light.bg,
   },
   menuOverlay: {
     position: 'absolute',

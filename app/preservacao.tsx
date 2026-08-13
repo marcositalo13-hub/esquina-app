@@ -2,14 +2,17 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AdiarAcao } from '../src/components/AdiarAcao';
 import { Chip } from '../src/components/Chip';
 import { ScreenBackground } from '../src/components/ScreenBackground';
+import { StatusBadge } from '../src/components/StatusBadge';
 import {
   formatarDataBR,
   getCorPrioridade,
   type OrdemServico,
 } from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
+import { preencherOcorrenciasFaltantes } from '../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
@@ -20,14 +23,14 @@ export default function Preservacao() {
   const [pendentes, setPendentes] = useState<OrdemServico[]>([]);
   const [concluidas, setConcluidas] = useState<OrdemServico[]>([]);
   const [erro, setErro] = useState<string | null>(null);
-  const [concluindoId, setConcluindoId] = useState<string | null>(null);
+  const [atualizandoId, setAtualizandoId] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     const [respostaPendentes, respostaConcluidas] = await Promise.all([
       supabase
         .from('ordens_servico')
         .select('*, planos_manutencao(*, tipos_atividade(*))')
-        .eq('status', 'pendente')
+        .neq('status', 'concluida')
         .order('data_prevista', { ascending: true }),
       supabase
         .from('ordens_servico')
@@ -51,11 +54,33 @@ export default function Preservacao() {
   }, []);
 
   useEffect(() => {
-    carregar();
+    carregar().then(() => {
+      preencherOcorrenciasFaltantes().then(() => {
+        carregar();
+      });
+    });
   }, [carregar]);
 
+  async function handleIniciar(ordem: OrdemServico) {
+    setAtualizandoId(ordem.id);
+
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({ status: 'em_andamento' })
+      .eq('id', ordem.id);
+
+    setAtualizandoId(null);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    carregar();
+  }
+
   async function handleConcluir(ordem: OrdemServico) {
-    setConcluindoId(ordem.id);
+    setAtualizandoId(ordem.id);
 
     const { error } = await supabase
       .from('ordens_servico')
@@ -66,7 +91,21 @@ export default function Preservacao() {
       })
       .eq('id', ordem.id);
 
-    setConcluindoId(null);
+    setAtualizandoId(null);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    carregar();
+  }
+
+  async function handleAdiar(ordemId: string, novaData: string) {
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({ data_prevista: novaData })
+      .eq('id', ordemId);
 
     if (error) {
       setErro(error.message);
@@ -115,15 +154,12 @@ export default function Preservacao() {
                   ) : null}
 
                   <View style={styles.cardRodape}>
-                    <Text
-                      style={[
-                        styles.cardDetalhe,
-                        atrasada && styles.textoAtrasado,
-                      ]}
-                    >
-                      {formatarDataBR(ordem.data_prevista)}
-                      {atrasada ? ' · Atrasada' : ''}
-                    </Text>
+                    <View style={styles.cardRodapeEsquerda}>
+                      <Text style={styles.cardDetalhe}>
+                        {formatarDataBR(ordem.data_prevista)}
+                      </Text>
+                      <StatusBadge ordem={ordem} />
+                    </View>
                     {plano ? (
                       <Chip
                         label={plano.prioridade}
@@ -132,17 +168,33 @@ export default function Preservacao() {
                     ) : null}
                   </View>
 
-                  <Pressable
-                    style={styles.botaoConcluir}
-                    onPress={() => handleConcluir(ordem)}
-                    disabled={concluindoId === ordem.id}
-                  >
-                    <Text style={styles.botaoConcluirTexto}>
-                      {concluindoId === ordem.id
-                        ? 'Concluindo…'
-                        : 'Marcar como concluída'}
-                    </Text>
-                  </Pressable>
+                  {ordem.status === 'em_andamento' ? (
+                    <Pressable
+                      style={styles.botaoConcluir}
+                      onPress={() => handleConcluir(ordem)}
+                      disabled={atualizandoId === ordem.id}
+                    >
+                      <Text style={styles.botaoConcluirTexto}>
+                        {atualizandoId === ordem.id
+                          ? 'Concluindo…'
+                          : 'Concluir'}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={styles.botaoIniciar}
+                      onPress={() => handleIniciar(ordem)}
+                      disabled={atualizandoId === ordem.id}
+                    >
+                      <Text style={styles.botaoIniciarTexto}>
+                        {atualizandoId === ordem.id ? 'Iniciando…' : 'Iniciar'}
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  <AdiarAcao
+                    onConfirmar={(novaData) => handleAdiar(ordem.id, novaData)}
+                  />
                 </View>
               );
             })}
@@ -173,17 +225,20 @@ export default function Preservacao() {
                   ) : null}
 
                   <View style={styles.cardRodape}>
-                    <Text style={styles.cardDetalhe}>
-                      Concluída em{' '}
-                      {ordem.concluida_em
-                        ? `${formatarDataBR(ordem.concluida_em.slice(0, 10))} às ${new Date(
-                            ordem.concluida_em,
-                          ).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}`
-                        : '—'}
-                    </Text>
+                    <View style={styles.cardRodapeEsquerda}>
+                      <Text style={styles.cardDetalhe}>
+                        Concluída em{' '}
+                        {ordem.concluida_em
+                          ? `${formatarDataBR(ordem.concluida_em.slice(0, 10))} às ${new Date(
+                              ordem.concluida_em,
+                            ).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}`
+                          : '—'}
+                      </Text>
+                      <StatusBadge ordem={ordem} />
+                    </View>
                     {plano ? (
                       <Chip
                         label={plano.prioridade}
@@ -277,15 +332,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: light.textMuted,
   },
-  textoAtrasado: {
-    color: semantic.overdue,
-    fontFamily: fonts.medium,
-  },
   cardRodape: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: spacing.xs,
+  },
+  cardRodapeEsquerda: {
+    gap: spacing.xs / 2,
+  },
+  botaoIniciar: {
+    borderWidth: 1,
+    borderColor: light.brand,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs + 2,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  botaoIniciarTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: light.brand,
   },
   botaoConcluir: {
     backgroundColor: light.textPrimary,

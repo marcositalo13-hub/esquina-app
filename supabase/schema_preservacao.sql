@@ -52,7 +52,9 @@ create table if not exists ordens_servico (
   id uuid primary key default gen_random_uuid(),
   plano_id uuid not null references planos_manutencao (id) on delete cascade,
   data_prevista date not null,
-  status text not null default 'pendente' check (status in ('pendente', 'concluida')),
+  status text not null default 'pendente' check (
+    status in ('pendente', 'em_andamento', 'concluida')
+  ),
   concluida_em timestamptz,
   concluida_por text,
   observacao text,
@@ -65,6 +67,13 @@ create table if not exists ordens_servico (
 -- alter table ordens_servico
 --   add constraint ordens_servico_plano_id_fkey
 --   foreign key (plano_id) references planos_manutencao (id) on delete cascade;
+
+-- Se ordens_servico já existia sem 'em_andamento' no check de status
+-- (script anterior), rode isto para corrigir a constraint:
+-- alter table ordens_servico drop constraint ordens_servico_status_check;
+-- alter table ordens_servico
+--   add constraint ordens_servico_status_check
+--   check (status in ('pendente', 'em_andamento', 'concluida'));
 
 -- RLS permissiva para a fase de testes (mesma postura já usada em
 -- cadastros_teste): sem autenticação própria ainda, então libera a anon key.
