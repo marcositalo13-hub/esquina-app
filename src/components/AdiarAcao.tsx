@@ -1,5 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hojeLocal } from '../data/manutencao';
 import { fonts, light, radius, spacing } from '../theme';
 import { MiniCalendar } from './MiniCalendar';
@@ -12,19 +14,16 @@ type AdiarAcaoProps = {
   variant?: 'botao' | 'menuItem';
 };
 
-// Ação "Adiar": abre um popover ancorado com o MiniCalendar (dias antes de
-// hoje desabilitados) + Confirmar/Cancelar. Confirmar só habilita depois de
-// um dia ser tocado. Não mexe em planos_manutencao nem gera novas ordens —
-// só delega a nova data_prevista para o chamador.
+// Ação "Adiar": abre um Modal em tela cheia com o MiniCalendar (dias antes
+// de hoje desabilitados) + Cancelar/Confirmar. Confirmar só habilita depois
+// de um dia ser tocado. Não mexe em planos_manutencao nem gera novas
+// ordens — só delega a nova data_prevista para o chamador.
 export function AdiarAcao({ onConfirmar, variant = 'botao' }: AdiarAcaoProps) {
+  const insets = useSafeAreaInsets();
   const [aberto, setAberto] = useState(false);
   const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
 
-  function alternar() {
-    if (aberto) {
-      setAberto(false);
-      return;
-    }
+  function abrir() {
     setDataSelecionada(null);
     setAberto(true);
   }
@@ -45,57 +44,80 @@ export function AdiarAcao({ onConfirmar, variant = 'botao' }: AdiarAcaoProps) {
 
   const gatilho =
     variant === 'menuItem' ? (
-      <Pressable style={styles.menuItemTrigger} onPress={alternar}>
+      <Pressable style={styles.menuItemTrigger} onPress={abrir}>
         <Text style={styles.menuItemTriggerTexto}>Adiar</Text>
       </Pressable>
     ) : (
-      <Pressable style={styles.botao} onPress={alternar}>
+      <Pressable style={styles.botao} onPress={abrir}>
         <Text style={styles.botaoTexto}>Adiar</Text>
       </Pressable>
     );
 
   return (
-    <View style={aberto ? styles.wrapperAberto : undefined}>
+    <>
       {gatilho}
 
-      {aberto ? (
-        <>
-          <Pressable style={styles.overlay} onPress={cancelar} />
-          <View style={styles.painel}>
+      <Modal
+        visible={aberto}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={cancelar}
+      >
+        <View style={styles.tela}>
+          <View
+            style={[styles.cabecalho, { paddingTop: insets.top + spacing.md }]}
+          >
+            <Pressable
+              style={styles.cabecalhoBotao}
+              onPress={cancelar}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
+            <Text style={styles.titulo}>Adiar atividade</Text>
+            <View style={styles.cabecalhoBotao} />
+          </View>
+
+          <View style={styles.corpo}>
             <MiniCalendar
               markedDates={{}}
               selectedDate={dataSelecionada}
               onSelectDay={setDataSelecionada}
               desabilitarAntesDe={hojeLocal()}
             />
-
-            <View style={styles.botoesRow}>
-              <Pressable style={styles.botaoCancelar} onPress={cancelar}>
-                <Text style={styles.botaoCancelarTexto}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.botaoConfirmar,
-                  !dataSelecionada && styles.botaoConfirmarDesabilitado,
-                ]}
-                onPress={confirmar}
-                disabled={!dataSelecionada}
-              >
-                <Text style={styles.botaoConfirmarTexto}>Confirmar</Text>
-              </Pressable>
-            </View>
           </View>
-        </>
-      ) : null}
-    </View>
+
+          <View
+            style={[
+              styles.rodape,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable style={styles.botaoCancelar} onPress={cancelar}>
+              <Text style={styles.botaoCancelarTexto}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.botaoConfirmar,
+                !dataSelecionada && styles.botaoConfirmarDesabilitado,
+              ]}
+              onPress={confirmar}
+              disabled={!dataSelecionada}
+            >
+              <Text style={styles.botaoConfirmarTexto}>Confirmar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapperAberto: {
-    zIndex: 30,
-    elevation: 30,
-  },
   botao: {
     borderWidth: 1,
     borderColor: light.border,
@@ -118,55 +140,60 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: light.textPrimary,
   },
-  overlay: {
-    position: 'absolute',
-    top: -2000,
-    left: -2000,
-    width: 5000,
-    height: 5000,
-    backgroundColor: 'transparent',
+  tela: {
+    flex: 1,
+    backgroundColor: light.bg,
   },
-  painel: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: spacing.xs,
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: 10,
-    padding: spacing.md,
-    gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  botoesRow: {
+  cabecalho: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  cabecalhoBotao: {
+    width: 32,
+    alignItems: 'center',
+  },
+  titulo: {
+    flex: 1,
+    fontFamily: fonts.semiBold,
+    fontSize: 17,
+    color: light.textPrimary,
+    textAlign: 'center',
+  },
+  corpo: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  rodape: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
   },
   botaoCancelar: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
+    paddingVertical: spacing.sm + 4,
+    borderRadius: radius.md,
     backgroundColor: light.sunken,
     borderWidth: 1,
     borderColor: light.border,
   },
   botaoCancelarTexto: {
     fontFamily: fonts.medium,
-    fontSize: 12,
+    fontSize: 14,
     color: light.textSecondary,
   },
   botaoConfirmar: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
+    paddingVertical: spacing.sm + 4,
+    borderRadius: radius.md,
     backgroundColor: light.brand,
   },
   botaoConfirmarDesabilitado: {
@@ -174,7 +201,7 @@ const styles = StyleSheet.create({
   },
   botaoConfirmarTexto: {
     fontFamily: fonts.semiBold,
-    fontSize: 12,
+    fontSize: 14,
     color: '#FFFFFF',
   },
 });
