@@ -13,12 +13,16 @@ function amanha(): string {
 
 type AdiarAcaoProps = {
   onConfirmar: (novaData: string) => void | Promise<void>;
+  // 'botao': gatilho em bloco com borda (uso padrão, solto no card).
+  // 'menuItem': gatilho como linha de texto simples, para viver dentro de
+  // um menu de 3 pontos (ex.: app/admin/preservacao.tsx).
+  variant?: 'botao' | 'menuItem';
 };
 
-// Botão "Adiar" que revela, inline no próprio card, um campo de data +
-// Confirmar/Cancelar. Não mexe em planos_manutencao nem gera novas ordens —
-// só delega a nova data_prevista para o chamador.
-export function AdiarAcao({ onConfirmar }: AdiarAcaoProps) {
+// Ação "Adiar" que revela, inline, um campo de data + Confirmar/Cancelar.
+// Não mexe em planos_manutencao nem gera novas ordens — só delega a nova
+// data_prevista para o chamador.
+export function AdiarAcao({ onConfirmar, variant = 'botao' }: AdiarAcaoProps) {
   const [aberto, setAberto] = useState(false);
   const [novaData, setNovaData] = useState(amanha);
 
@@ -37,6 +41,14 @@ export function AdiarAcao({ onConfirmar }: AdiarAcaoProps) {
   }
 
   if (!aberto) {
+    if (variant === 'menuItem') {
+      return (
+        <Pressable style={styles.menuItemTrigger} onPress={abrir}>
+          <Text style={styles.menuItemTriggerTexto}>Adiar</Text>
+        </Pressable>
+      );
+    }
+
     return (
       <Pressable style={styles.botao} onPress={abrir}>
         <Text style={styles.botaoTexto}>Adiar</Text>
@@ -45,7 +57,11 @@ export function AdiarAcao({ onConfirmar }: AdiarAcaoProps) {
   }
 
   return (
-    <View style={styles.formulario}>
+    <View
+      style={
+        variant === 'menuItem' ? styles.formularioMenuItem : styles.formulario
+      }
+    >
       <TextInput
         value={novaData}
         onChangeText={setNovaData}
@@ -79,8 +95,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: light.textSecondary,
   },
+  menuItemTrigger: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  menuItemTriggerTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
   formulario: {
     marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  formularioMenuItem: {
+    padding: spacing.md,
     gap: spacing.xs,
   },
   input: {

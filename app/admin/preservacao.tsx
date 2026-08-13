@@ -904,12 +904,6 @@ export default function AdminPreservacao() {
                         />
                       ) : null}
                     </View>
-
-                    <AdiarAcao
-                      onConfirmar={(novaData) =>
-                        handleAdiarOrdem(ordem.id, novaData)
-                      }
-                    />
                   </View>
 
                   {menuAberto ? (
@@ -948,6 +942,13 @@ export default function AdminPreservacao() {
                             </Text>
                           </Pressable>
                         )}
+                        <AdiarAcao
+                          variant="menuItem"
+                          onConfirmar={(novaData) => {
+                            handleAdiarOrdem(ordem.id, novaData);
+                            fecharMenuAtividade();
+                          }}
+                        />
                       </View>
                     </>
                   ) : null}
