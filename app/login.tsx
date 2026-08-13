@@ -1,6 +1,9 @@
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { dark, fonts, radius, spacing } from '../src/theme';
 
 type Perfil = 'Administrador' | 'Preservação' | 'Morador';
@@ -17,6 +21,7 @@ type Perfil = 'Administrador' | 'Preservação' | 'Morador';
 const perfis: Perfil[] = ['Administrador', 'Preservação', 'Morador'];
 
 export default function Login() {
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<Perfil | null>(null);
@@ -38,105 +43,155 @@ export default function Login() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.flex}>
+      <Image
+        source={require('../src/assets/login-background.png')}
+        resizeMode="cover"
+        style={styles.fundo}
+      />
+      <LinearGradient
+        colors={[
+          'rgba(0, 0, 0, 0.15)',
+          'rgba(0, 0, 0, 0.35)',
+          'rgba(0, 0, 0, 0.85)',
+        ]}
+        locations={[0, 0.5, 1]}
+        style={styles.veu}
+      />
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Text style={styles.title}>Aegis Condomínios</Text>
+        <ScrollView
+          contentContainerStyle={[
+            styles.container,
+            { paddingBottom: insets.bottom + spacing.lg },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.title}>Aegis Condomínios</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.testarComo}>Testar como:</Text>
-          <View style={styles.chipRow}>
-            {perfis.map((perfil) => {
-              const selecionado = selectedProfile === perfil;
-              return (
-                <Pressable
-                  key={perfil}
-                  style={[styles.chip, selecionado && styles.chipSelecionado]}
-                  onPress={() => setSelectedProfile(perfil)}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      selecionado && styles.chipTextSelecionado,
-                    ]}
-                  >
-                    {perfil}
-                  </Text>
+          <BlurView intensity={30} tint="dark" style={styles.card}>
+            <View style={styles.cardOverlay} pointerEvents="none" />
+
+            <View style={styles.cardContent}>
+              <Text style={styles.testarComo}>Testar como:</Text>
+              <View style={styles.chipRow}>
+                {perfis.map((perfil) => {
+                  const selecionado = selectedProfile === perfil;
+                  return (
+                    <Pressable
+                      key={perfil}
+                      style={[
+                        styles.chip,
+                        selecionado && styles.chipSelecionado,
+                      ]}
+                      onPress={() => setSelectedProfile(perfil)}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          selecionado && styles.chipTextSelecionado,
+                        ]}
+                      >
+                        {perfil}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.form}>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Email</Text>
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="seu@email.com"
+                    placeholderTextColor={dark.textSecondary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Senha</Text>
+                  <TextInput
+                    value={senha}
+                    onChangeText={setSenha}
+                    placeholder="••••••••"
+                    placeholderTextColor={dark.textSecondary}
+                    secureTextEntry
+                    style={styles.input}
+                  />
+                </View>
+
+                <Pressable style={styles.button} onPress={handleEntrar}>
+                  <Text style={styles.buttonText}>Entrar</Text>
                 </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="seu@email.com"
-                placeholderTextColor={dark.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                style={styles.input}
-              />
+              </View>
             </View>
+          </BlurView>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Senha</Text>
-              <TextInput
-                value={senha}
-                onChangeText={setSenha}
-                placeholder="••••••••"
-                placeholderTextColor={dark.textSecondary}
-                secureTextEntry
-                style={styles.input}
-              />
-            </View>
-
-            <Pressable style={styles.button} onPress={handleEntrar}>
-              <Text style={styles.buttonText}>Entrar</Text>
-            </Pressable>
+          <View style={styles.links}>
+            <Text style={styles.link}>Esqueci minha senha</Text>
+            <Text style={styles.link}>Criar conta</Text>
           </View>
-        </View>
-
-        <View style={styles.links}>
-          <Text style={styles.link}>Esqueci minha senha</Text>
-          <Text style={styles.link}>Criar conta</Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: dark.bg,
+  },
+  fundo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  veu: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   container: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
+    paddingTop: spacing.xl,
   },
   title: {
     fontFamily: fonts.semiBold,
     fontSize: 24,
     color: dark.textPrimary,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.sm,
   },
   card: {
-    backgroundColor: dark.surface,
+    overflow: 'hidden',
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: dark.border,
+    borderColor: 'rgba(46, 46, 44, 0.3)',
+  },
+  cardOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+  },
+  cardContent: {
     padding: spacing.lg,
   },
   testarComo: {
@@ -206,7 +261,7 @@ const styles = StyleSheet.create({
     color: dark.bg,
   },
   links: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     alignItems: 'center',
     gap: spacing.sm,
   },
