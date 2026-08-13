@@ -9,6 +9,9 @@ type MiniCalendarProps = {
   markedDates: Record<string, DiaMarcado>;
   selectedDate: string | null;
   onSelectDay: (date: string) => void;
+  // Quando definido, dias com chave < desabilitarAntesDe ficam com opacity
+  // reduzida e não respondem a toque (ex.: impedir adiar para o passado).
+  desabilitarAntesDe?: string;
 };
 
 const DIAS_SEMANA = [
@@ -90,6 +93,7 @@ export function MiniCalendar({
   markedDates,
   selectedDate,
   onSelectDay,
+  desabilitarAntesDe,
 }: MiniCalendarProps) {
   const [mesVisivel, setMesVisivel] = useState(() => {
     const agora = new Date();
@@ -142,12 +146,23 @@ export function MiniCalendar({
           const marcado = markedDates[celula.chave];
           const isHoje = celula.chave === hojeChave;
           const isSelecionado = celula.chave === selectedDate;
+          const isDesabilitado = desabilitarAntesDe
+            ? celula.chave < desabilitarAntesDe
+            : false;
 
           return (
             <Pressable
               key={celula.chave}
-              style={styles.celula}
-              onPress={() => onSelectDay(celula.chave)}
+              style={[
+                styles.celula,
+                isDesabilitado && styles.celulaDesabilitada,
+              ]}
+              onPress={() => {
+                if (!isDesabilitado) {
+                  onSelectDay(celula.chave);
+                }
+              }}
+              disabled={isDesabilitado}
             >
               <View
                 style={[
@@ -219,6 +234,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.xs / 2,
     gap: 2,
+  },
+  celulaDesabilitada: {
+    opacity: 0.35,
   },
   diaCirculo: {
     width: CELL_SIZE,

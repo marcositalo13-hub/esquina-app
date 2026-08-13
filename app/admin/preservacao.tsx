@@ -25,6 +25,7 @@ import {
   formatarDataBR,
   gerarDatasOcorrencia,
   getCorPrioridade,
+  hojeLocal,
   JANELA_DIAS,
   type OrdemServico,
   PERIODICIDADES,
@@ -38,7 +39,7 @@ import { supabase } from '../../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
-const hoje = () => new Date().toISOString().slice(0, 10);
+const hoje = hojeLocal;
 
 type DateFilter = 'hoje' | 'todas';
 

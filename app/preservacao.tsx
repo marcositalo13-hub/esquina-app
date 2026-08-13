@@ -9,13 +9,14 @@ import { StatusBadge } from '../src/components/StatusBadge';
 import {
   formatarDataBR,
   getCorPrioridade,
+  hojeLocal,
   type OrdemServico,
 } from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
-const hoje = () => new Date().toISOString().slice(0, 10);
+const hoje = hojeLocal;
 
 export default function Preservacao() {
   const insets = useSafeAreaInsets();

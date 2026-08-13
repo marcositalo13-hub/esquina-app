@@ -97,6 +97,15 @@ function paraData(chave: string): Date {
   return new Date(ano, mes - 1, dia);
 }
 
+// Data de hoje em 'AAAA-MM-DD' usando o fuso horário LOCAL do dispositivo
+// (getFullYear/getMonth/getDate) — nunca new Date().toISOString(), que é
+// UTC e diverge do dia local no Brasil (UTC-3) entre ~21h e meia-noite.
+// Única fonte de verdade para "hoje" no app; todo comparativo com
+// data_prevista/data_inicio deve chamar esta função.
+export function hojeLocal(): string {
+  return paraChave(new Date());
+}
+
 // Soma dias corridos a uma chave 'AAAA-MM-DD', retornando outra chave.
 export function adicionarDiasChave(chave: string, dias: number): string {
   const data = paraData(chave);

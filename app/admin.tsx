@@ -8,6 +8,7 @@ import {
   type BottomTabItem,
 } from '../src/components/BottomTabBar';
 import { ScreenBackground } from '../src/components/ScreenBackground';
+import { hojeLocal } from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
@@ -48,7 +49,7 @@ export default function Admin() {
 
   useEffect(() => {
     async function carregarPendencia() {
-      const hoje = new Date().toISOString().slice(0, 10);
+      const hoje = hojeLocal();
       const { data } = await supabase
         .from('ordens_servico')
         .select('id')

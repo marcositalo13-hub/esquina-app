@@ -1,5 +1,9 @@
 @AGENTS.md
 
+## Não Fazer
+
+Campos de data nunca usam digitação livre de texto — sempre reaproveitar o componente MiniCalendar para seleção.
+
 ## Módulo Administrador — especificação (não implementado)
 
 Home do Administrador: painel com 4 cards — "Preservação e Manutenção", "Morador", "Prestadores", "Relatório Geral". Cada card pode exibir um indicador visual (ponto vermelho) quando há pendência associada; a regra de "pendência" por card ainda não está definida.

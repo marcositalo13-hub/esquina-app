@@ -1,13 +1,12 @@
 import {
   adicionarDiasChave,
   gerarDatasOcorrencia,
+  hojeLocal,
   JANELA_DIAS,
   type Periodicidade,
   proximaDataPeriodicidade,
 } from '../data/manutencao';
 import { supabase } from './supabase';
-
-const hoje = () => new Date().toISOString().slice(0, 10);
 
 // Rolling window: para cada plano ativo com periodicidade recorrente,
 // garante que existam ordens_servico geradas até hoje + JANELA_DIAS.
@@ -25,7 +24,7 @@ export async function preencherOcorrenciasFaltantes(): Promise<void> {
       return;
     }
 
-    const ateData = adicionarDiasChave(hoje(), JANELA_DIAS);
+    const ateData = adicionarDiasChave(hojeLocal(), JANELA_DIAS);
 
     for (const plano of planos) {
       const periodicidade = plano.periodicidade as Periodicidade;

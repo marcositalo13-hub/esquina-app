@@ -1,15 +1,8 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { hojeLocal } from '../data/manutencao';
 import { fonts, light, radius, spacing } from '../theme';
-
-function amanha(): string {
-  const data = new Date();
-  data.setDate(data.getDate() + 1);
-  const ano = data.getFullYear();
-  const mes = String(data.getMonth() + 1).padStart(2, '0');
-  const dia = String(data.getDate()).padStart(2, '0');
-  return `${ano}-${mes}-${dia}`;
-}
+import { MiniCalendar } from './MiniCalendar';
 
 type AdiarAcaoProps = {
   onConfirmar: (novaData: string) => void | Promise<void>;
@@ -19,69 +12,90 @@ type AdiarAcaoProps = {
   variant?: 'botao' | 'menuItem';
 };
 
-// Ação "Adiar" que revela, inline, um campo de data + Confirmar/Cancelar.
-// Não mexe em planos_manutencao nem gera novas ordens — só delega a nova
-// data_prevista para o chamador.
+// Ação "Adiar": abre um popover ancorado com o MiniCalendar (dias antes de
+// hoje desabilitados) + Confirmar/Cancelar. Confirmar só habilita depois de
+// um dia ser tocado. Não mexe em planos_manutencao nem gera novas ordens —
+// só delega a nova data_prevista para o chamador.
 export function AdiarAcao({ onConfirmar, variant = 'botao' }: AdiarAcaoProps) {
   const [aberto, setAberto] = useState(false);
-  const [novaData, setNovaData] = useState(amanha);
+  const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
 
-  function abrir() {
-    setNovaData(amanha());
+  function alternar() {
+    if (aberto) {
+      setAberto(false);
+      return;
+    }
+    setDataSelecionada(null);
     setAberto(true);
   }
 
   function cancelar() {
     setAberto(false);
+    setDataSelecionada(null);
   }
 
   async function confirmar() {
-    await onConfirmar(novaData);
+    if (!dataSelecionada) {
+      return;
+    }
+    await onConfirmar(dataSelecionada);
     setAberto(false);
+    setDataSelecionada(null);
   }
 
-  if (!aberto) {
-    if (variant === 'menuItem') {
-      return (
-        <Pressable style={styles.menuItemTrigger} onPress={abrir}>
-          <Text style={styles.menuItemTriggerTexto}>Adiar</Text>
-        </Pressable>
-      );
-    }
-
-    return (
-      <Pressable style={styles.botao} onPress={abrir}>
+  const gatilho =
+    variant === 'menuItem' ? (
+      <Pressable style={styles.menuItemTrigger} onPress={alternar}>
+        <Text style={styles.menuItemTriggerTexto}>Adiar</Text>
+      </Pressable>
+    ) : (
+      <Pressable style={styles.botao} onPress={alternar}>
         <Text style={styles.botaoTexto}>Adiar</Text>
       </Pressable>
     );
-  }
 
   return (
-    <View
-      style={
-        variant === 'menuItem' ? styles.formularioMenuItem : styles.formulario
-      }
-    >
-      <TextInput
-        value={novaData}
-        onChangeText={setNovaData}
-        placeholder="AAAA-MM-DD"
-        placeholderTextColor={light.textSecondary}
-        style={styles.input}
-      />
-      <View style={styles.botoesRow}>
-        <Pressable style={styles.botaoCancelar} onPress={cancelar}>
-          <Text style={styles.botaoCancelarTexto}>Cancelar</Text>
-        </Pressable>
-        <Pressable style={styles.botaoConfirmar} onPress={confirmar}>
-          <Text style={styles.botaoConfirmarTexto}>Confirmar</Text>
-        </Pressable>
-      </View>
+    <View style={aberto ? styles.wrapperAberto : undefined}>
+      {gatilho}
+
+      {aberto ? (
+        <>
+          <Pressable style={styles.overlay} onPress={cancelar} />
+          <View style={styles.painel}>
+            <MiniCalendar
+              markedDates={{}}
+              selectedDate={dataSelecionada}
+              onSelectDay={setDataSelecionada}
+              desabilitarAntesDe={hojeLocal()}
+            />
+
+            <View style={styles.botoesRow}>
+              <Pressable style={styles.botaoCancelar} onPress={cancelar}>
+                <Text style={styles.botaoCancelarTexto}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.botaoConfirmar,
+                  !dataSelecionada && styles.botaoConfirmarDesabilitado,
+                ]}
+                onPress={confirmar}
+                disabled={!dataSelecionada}
+              >
+                <Text style={styles.botaoConfirmarTexto}>Confirmar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapperAberto: {
+    zIndex: 30,
+    elevation: 30,
+  },
   botao: {
     borderWidth: 1,
     borderColor: light.border,
@@ -104,24 +118,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: light.textPrimary,
   },
-  formulario: {
+  overlay: {
+    position: 'absolute',
+    top: -2000,
+    left: -2000,
+    width: 5000,
+    height: 5000,
+    backgroundColor: 'transparent',
+  },
+  painel: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
     marginTop: spacing.xs,
-    gap: spacing.xs,
-  },
-  formularioMenuItem: {
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  input: {
-    backgroundColor: light.sunken,
+    backgroundColor: light.card,
     borderWidth: 1,
     borderColor: light.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs + 2,
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    color: light.textPrimary,
+    borderRadius: 10,
+    padding: spacing.md,
+    gap: spacing.sm,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
   botoesRow: {
     flexDirection: 'row',
@@ -147,6 +168,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.sm,
     backgroundColor: light.brand,
+  },
+  botaoConfirmarDesabilitado: {
+    opacity: 0.4,
   },
   botaoConfirmarTexto: {
     fontFamily: fonts.semiBold,

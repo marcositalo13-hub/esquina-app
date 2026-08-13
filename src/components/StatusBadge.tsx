@@ -1,8 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
-import type { OrdemServico } from '../data/manutencao';
+import { hojeLocal, type OrdemServico } from '../data/manutencao';
 import { fonts, light, radius, semantic, spacing } from '../theme';
-
-const hoje = () => new Date().toISOString().slice(0, 10);
 
 type StatusBadgeInfo = {
   label: string;
@@ -15,7 +13,7 @@ export function getStatusBadgeInfo(ordem: OrdemServico): StatusBadgeInfo {
   if (ordem.status === 'concluida') {
     return { label: 'Concluída', color: semantic.ok };
   }
-  if (ordem.data_prevista < hoje()) {
+  if (ordem.data_prevista < hojeLocal()) {
     return { label: 'Atrasada', color: semantic.overdue };
   }
   if (ordem.status === 'em_andamento') {
