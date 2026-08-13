@@ -65,6 +65,9 @@ export default function AdminPreservacao() {
   const [atualizandoOrdemId, setAtualizandoOrdemId] = useState<string | null>(
     null,
   );
+  const [menuAtividadeAbertaId, setMenuAtividadeAbertaId] = useState<
+    string | null
+  >(null);
 
   const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null);
   const [menuEtapa, setMenuEtapa] = useState<'opcoes' | 'confirmarExclusao'>(
@@ -348,6 +351,14 @@ export default function AdminPreservacao() {
     setPeriodicidadeFiltros((atual) =>
       atual.includes(item) ? atual.filter((x) => x !== item) : [...atual, item],
     );
+  }
+
+  function handleAbrirMenuAtividade(id: string) {
+    setMenuAtividadeAbertaId((atual) => (atual === id ? null : id));
+  }
+
+  function fecharMenuAtividade() {
+    setMenuAtividadeAbertaId(null);
   }
 
   async function handleIniciarOrdem(ordemId: string) {
@@ -849,60 +860,97 @@ export default function AdminPreservacao() {
           <View style={styles.lista}>
             {atividadesDoDia.map((ordem) => {
               const plano = ordem.planos_manutencao;
+              const menuAberto = menuAtividadeAbertaId === ordem.id;
 
               return (
-                <View key={ordem.id} style={styles.planoCard}>
-                  <Text style={styles.planoTitulo}>
-                    {plano?.titulo ?? 'Atividade'}
-                  </Text>
-                  <Text style={styles.planoTipo}>
-                    {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
-                  </Text>
-                  {plano?.local ? (
-                    <Text style={styles.planoDetalhe}>{plano.local}</Text>
-                  ) : null}
+                <View
+                  key={ordem.id}
+                  style={menuAberto ? styles.planoWrapperMenuAberto : null}
+                >
+                  <View style={styles.planoCard}>
+                    <View style={styles.planoCabecalho}>
+                      <Text style={styles.planoTitulo}>
+                        {plano?.titulo ?? 'Atividade'}
+                      </Text>
+                      <Pressable
+                        onPress={() => handleAbrirMenuAtividade(ordem.id)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        style={({ pressed }) => [
+                          styles.planoMenuButton,
+                          pressed && styles.planoMenuButtonPressionado,
+                        ]}
+                      >
+                        <Ionicons
+                          name="ellipsis-horizontal"
+                          size={18}
+                          color={light.textSecondary}
+                        />
+                      </Pressable>
+                    </View>
 
-                  <View style={styles.planoRodape}>
-                    <StatusBadge ordem={ordem} />
-                    {plano ? (
-                      <Chip
-                        label={plano.prioridade}
-                        color={getCorPrioridade(plano.prioridade)}
-                      />
+                    <Text style={styles.planoTipo}>
+                      {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
+                    </Text>
+                    {plano?.local ? (
+                      <Text style={styles.planoDetalhe}>{plano.local}</Text>
                     ) : null}
+
+                    <View style={styles.planoRodape}>
+                      <StatusBadge ordem={ordem} />
+                      {plano ? (
+                        <Chip
+                          label={plano.prioridade}
+                          color={getCorPrioridade(plano.prioridade)}
+                        />
+                      ) : null}
+                    </View>
+
+                    <AdiarAcao
+                      onConfirmar={(novaData) =>
+                        handleAdiarOrdem(ordem.id, novaData)
+                      }
+                    />
                   </View>
 
-                  {ordem.status === 'em_andamento' ? (
-                    <Pressable
-                      style={styles.botaoConcluirAtividade}
-                      onPress={() => handleConcluirOrdem(ordem.id)}
-                      disabled={atualizandoOrdemId === ordem.id}
-                    >
-                      <Text style={styles.botaoConcluirAtividadeTexto}>
-                        {atualizandoOrdemId === ordem.id
-                          ? 'Concluindo…'
-                          : 'Concluir'}
-                      </Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={styles.botaoIniciarAtividade}
-                      onPress={() => handleIniciarOrdem(ordem.id)}
-                      disabled={atualizandoOrdemId === ordem.id}
-                    >
-                      <Text style={styles.botaoIniciarAtividadeTexto}>
-                        {atualizandoOrdemId === ordem.id
-                          ? 'Iniciando…'
-                          : 'Iniciar'}
-                      </Text>
-                    </Pressable>
-                  )}
-
-                  <AdiarAcao
-                    onConfirmar={(novaData) =>
-                      handleAdiarOrdem(ordem.id, novaData)
-                    }
-                  />
+                  {menuAberto ? (
+                    <>
+                      <Pressable
+                        style={styles.menuOverlay}
+                        onPress={fecharMenuAtividade}
+                      />
+                      <View style={styles.menuPainel}>
+                        {ordem.status === 'em_andamento' ? (
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => {
+                              fecharMenuAtividade();
+                              handleConcluirOrdem(ordem.id);
+                            }}
+                          >
+                            <Text style={styles.menuItemTexto}>
+                              {atualizandoOrdemId === ordem.id
+                                ? 'Concluindo…'
+                                : 'Concluir'}
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => {
+                              fecharMenuAtividade();
+                              handleIniciarOrdem(ordem.id);
+                            }}
+                          >
+                            <Text style={styles.menuItemTexto}>
+                              {atualizandoOrdemId === ordem.id
+                                ? 'Iniciando…'
+                                : 'Iniciar'}
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </>
+                  ) : null}
                 </View>
               );
             })}
@@ -1419,31 +1467,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs / 2,
-  },
-  botaoIniciarAtividade: {
-    borderWidth: 1,
-    borderColor: light.brand,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs + 2,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  botaoIniciarAtividadeTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 13,
-    color: light.brand,
-  },
-  botaoConcluirAtividade: {
-    backgroundColor: light.textPrimary,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs + 2,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  botaoConcluirAtividadeTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 13,
-    color: light.bg,
   },
   menuOverlay: {
     position: 'absolute',
