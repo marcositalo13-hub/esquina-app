@@ -813,13 +813,13 @@ export default function AdminPreservacao() {
     }
   }
 
-  function renderAtividadeCard(ordem: OrdemServico) {
+  function renderAtividadeCard(ordem: OrdemServico, compacto = false) {
     const plano = ordem.planos_manutencao;
     const menuAberto = menuAtividadeAbertaId === ordem.id;
 
     return (
       <Fragment key={ordem.id}>
-        <View style={styles.planoCard}>
+        <View style={[styles.planoCard, compacto && styles.planoCardCompacto]}>
           <View style={styles.planoCabecalho}>
             <Text style={styles.planoTitulo}>
               {plano?.titulo ?? 'Atividade'}
@@ -1243,8 +1243,8 @@ export default function AdminPreservacao() {
                   </View>
 
                   {expandida ? (
-                    <View style={styles.lista}>
-                      {itens.map(renderAtividadeCard)}
+                    <View style={styles.atividadesRotaContainer}>
+                      {itens.map((ordem) => renderAtividadeCard(ordem, true))}
                     </View>
                   ) : null}
                 </View>
@@ -1253,7 +1253,9 @@ export default function AdminPreservacao() {
 
             {atividadesAgrupadas.semRota.length > 0 ? (
               <View style={styles.lista}>
-                {atividadesAgrupadas.semRota.map(renderAtividadeCard)}
+                {atividadesAgrupadas.semRota.map((ordem) =>
+                  renderAtividadeCard(ordem),
+                )}
               </View>
             ) : null}
           </View>
@@ -1974,6 +1976,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs / 2,
+  },
+  planoCardCompacto: {
+    borderRadius: 8,
+  },
+  atividadesRotaContainer: {
+    marginLeft: 16,
+    paddingLeft: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.xs,
+    backgroundColor: light.sunken,
+    borderLeftWidth: 3,
+    borderLeftColor: light.brand,
+    borderRadius: radius.sm,
+    gap: spacing.sm,
   },
   menuItem: {
     paddingVertical: spacing.sm,
