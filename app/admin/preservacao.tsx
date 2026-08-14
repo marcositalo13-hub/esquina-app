@@ -118,6 +118,25 @@ export default function AdminPreservacao() {
   const [nomeNovaRota, setNomeNovaRota] = useState('');
   const [criandoRota, setCriandoRota] = useState(false);
   const [erroModalRota, setErroModalRota] = useState<string | null>(null);
+  // Qual fluxo abriu "Nova rota" — decide onde a rota recém-criada deve ser
+  // selecionada automaticamente ao ser criada (ver handleCriarRota).
+  const [origemNovaRota, setOrigemNovaRota] = useState<'plano' | 'atribuir'>(
+    'plano',
+  );
+
+  const [modalAtribuirRotaVisivel, setModalAtribuirRotaVisivel] =
+    useState(false);
+  const [planoAtribuirRotaId, setPlanoAtribuirRotaId] = useState<string | null>(
+    null,
+  );
+  const [rotaOriginalAtribuir, setRotaOriginalAtribuir] = useState<
+    string | null
+  >(null);
+  const [rotaSelecionadaAtribuir, setRotaSelecionadaAtribuir] = useState<
+    string | null
+  >(null);
+  const [atribuindoRota, setAtribuindoRota] = useState(false);
+  const [erroAtribuirRota, setErroAtribuirRota] = useState<string | null>(null);
 
   const carregarPlanos = useCallback(async () => {
     const { data, error } = await supabase
@@ -663,7 +682,8 @@ export default function AdminPreservacao() {
     carregarTudo();
   }
 
-  function abrirModalRota() {
+  function abrirModalRota(origem: 'plano' | 'atribuir' = 'plano') {
+    setOrigemNovaRota(origem);
     setNomeNovaRota('');
     setErroModalRota(null);
     setModalRotaVisivel(true);
@@ -699,11 +719,86 @@ export default function AdminPreservacao() {
       return;
     }
 
+    // Única fonte de estado para rotas: qualquer tela/modal que liste rotas
+    // lê deste mesmo `rotas`, então esta atualização otimista já reflete em
+    // todos os lugares (seletor do modal de plano e lista do modal de
+    // atribuição) sem precisar recarregar a página.
     const novaRota = data as Rota;
     setRotas((atual) => [...atual, novaRota]);
-    handleSelecionarRota(novaRota.id);
+    if (origemNovaRota === 'atribuir') {
+      setRotaSelecionadaAtribuir(novaRota.id);
+    } else {
+      handleSelecionarRota(novaRota.id);
+    }
     setNomeNovaRota('');
     setModalRotaVisivel(false);
+  }
+
+  function abrirModalAtribuirRota(plano: PlanoManutencao) {
+    fecharMenu();
+    fecharMenuAtividade();
+    setPlanoAtribuirRotaId(plano.id);
+    setRotaOriginalAtribuir(plano.rota_id);
+    setRotaSelecionadaAtribuir(plano.rota_id);
+    setErroAtribuirRota(null);
+    setModalAtribuirRotaVisivel(true);
+  }
+
+  function fecharModalAtribuirRota() {
+    setModalAtribuirRotaVisivel(false);
+    setPlanoAtribuirRotaId(null);
+  }
+
+  async function handleConfirmarAtribuirRota() {
+    if (atribuindoRota || !planoAtribuirRotaId) {
+      return;
+    }
+
+    setAtribuindoRota(true);
+    setErroAtribuirRota(null);
+
+    // Só recalcula ordem_na_rota quando a rota selecionada é diferente da
+    // rota original do plano — se o usuário manteve a mesma rota, preserva
+    // a ordem já existente em vez de empurrar o plano para o fim da lista.
+    let ordemNaRotaNovo: number | null = null;
+    if (rotaSelecionadaAtribuir) {
+      if (rotaSelecionadaAtribuir === rotaOriginalAtribuir) {
+        const planoAtual = planos.find((p) => p.id === planoAtribuirRotaId);
+        ordemNaRotaNovo = planoAtual?.ordem_na_rota ?? null;
+      } else {
+        const quantidadeNaRota = planos.filter(
+          (p) => p.rota_id === rotaSelecionadaAtribuir,
+        ).length;
+        ordemNaRotaNovo = quantidadeNaRota + 1;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('planos_manutencao')
+      .update({
+        rota_id: rotaSelecionadaAtribuir,
+        ordem_na_rota: ordemNaRotaNovo,
+      })
+      .eq('id', planoAtribuirRotaId)
+      .select();
+
+    setAtribuindoRota(false);
+
+    if (error) {
+      setErroAtribuirRota(error.message);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setErroAtribuirRota(
+        'Não foi possível atribuir a rota: nenhum registro foi atualizado. Verifique as permissões de escrita no Supabase.',
+      );
+      return;
+    }
+
+    setModalAtribuirRotaVisivel(false);
+    setPlanoAtribuirRotaId(null);
+    carregarTudo();
   }
 
   async function handleSalvar() {
@@ -882,6 +977,12 @@ export default function AdminPreservacao() {
               >
                 <Text style={styles.menuItemTexto}>Duplicar</Text>
               </Pressable>
+              <Pressable
+                style={styles.menuItem}
+                onPress={() => plano && abrirModalAtribuirRota(plano)}
+              >
+                <Text style={styles.menuItemTexto}>Adicionar à rota</Text>
+              </Pressable>
               <AdiarAcao
                 variant="menuItem"
                 onConfirmar={(novaData) => {
@@ -940,6 +1041,58 @@ export default function AdminPreservacao() {
       </Fragment>
     );
   }
+
+  // Overlay de "Nova rota" — renderizado INLINE dentro de qualquer modal que
+  // o acionar (edição de plano ou "Atribuir a uma rota"), em vez de como um
+  // <Modal> próprio empilhado por cima de outro. React Native não lida bem
+  // com dois <Modal> simultaneamente visíveis (o segundo pode não aparecer
+  // ou perder o toque em algumas plataformas) — essa era a causa raiz de
+  // "+ Nova rota" parecer não refletir em lugar nenhum quando acionado pelo
+  // chip dentro do modal de plano.
+  const novaRotaOverlay = modalRotaVisivel ? (
+    <View style={styles.novaRotaOverlay}>
+      <View style={styles.modalRotaCard}>
+        <Text style={styles.modalTitulo}>Nova rota</Text>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Nome da rota</Text>
+          <TextInput
+            value={nomeNovaRota}
+            onChangeText={setNomeNovaRota}
+            placeholder="Nome da rota"
+            placeholderTextColor={light.textSecondary}
+            style={styles.input}
+          />
+        </View>
+
+        {erroModalRota ? (
+          <Text style={styles.erro}>{erroModalRota}</Text>
+        ) : null}
+
+        <View style={styles.modalBotoes}>
+          <Pressable
+            style={[styles.modalBotao, styles.modalBotaoCancelar]}
+            onPress={fecharModalRota}
+          >
+            <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.modalBotao,
+              styles.modalBotaoSalvar,
+              (pressed || criandoRota) && styles.modalBotaoPressionado,
+            ]}
+            onPress={handleCriarRota}
+            disabled={criandoRota}
+          >
+            <Text style={styles.modalBotaoSalvarTexto}>
+              {criandoRota ? 'Criando…' : 'Criar'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  ) : null;
 
   return (
     <View style={styles.container}>
@@ -1180,7 +1333,7 @@ export default function AdminPreservacao() {
 
         <View style={styles.secaoTituloRow}>
           <Text style={styles.secaoTitulo}>Atividades do dia</Text>
-          <Pressable onPress={abrirModalRota}>
+          <Pressable onPress={() => abrirModalRota()}>
             <Text style={styles.novaRotaLink}>+ Nova rota</Text>
           </Pressable>
         </View>
@@ -1350,6 +1503,14 @@ export default function AdminPreservacao() {
                             onPress={() => handleMenuDuplicar(plano)}
                           >
                             <Text style={styles.menuItemTexto}>Duplicar</Text>
+                          </Pressable>
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => abrirModalAtribuirRota(plano)}
+                          >
+                            <Text style={styles.menuItemTexto}>
+                              Adicionar à rota
+                            </Text>
                           </Pressable>
                           {proximaOrdem ? (
                             <AdiarAcao
@@ -1647,56 +1808,119 @@ export default function AdminPreservacao() {
               </View>
             </ScrollView>
           </View>
+          {novaRotaOverlay}
         </View>
       </Modal>
 
       <Modal
-        visible={modalRotaVisivel}
-        transparent
-        animationType="fade"
-        onRequestClose={fecharModalRota}
+        visible={modalAtribuirRotaVisivel}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={fecharModalAtribuirRota}
       >
-        <View style={styles.overlay}>
-          <View style={styles.modalRotaCard}>
-            <Text style={styles.modalTitulo}>Nova rota</Text>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Nome da rota</Text>
-              <TextInput
-                value={nomeNovaRota}
-                onChangeText={setNomeNovaRota}
-                placeholder="Nome da rota"
-                placeholderTextColor={light.textSecondary}
-                style={styles.input}
+        <View style={styles.telaAtribuir}>
+          <View
+            style={[
+              styles.cabecalhoAtribuir,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={styles.cabecalhoAtribuirBotao}
+              onPress={fecharModalAtribuirRota}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
               />
-            </View>
-
-            {erroModalRota ? (
-              <Text style={styles.erro}>{erroModalRota}</Text>
-            ) : null}
-
-            <View style={styles.modalBotoes}>
-              <Pressable
-                style={[styles.modalBotao, styles.modalBotaoCancelar]}
-                onPress={fecharModalRota}
-              >
-                <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.modalBotao,
-                  styles.modalBotaoSalvar,
-                  (pressed || criandoRota) && styles.modalBotaoPressionado,
-                ]}
-                onPress={handleCriarRota}
-                disabled={criandoRota}
-              >
-                <Text style={styles.modalBotaoSalvarTexto}>
-                  {criandoRota ? 'Criando…' : 'Criar'}
-                </Text>
-              </Pressable>
-            </View>
+            </Pressable>
+            <Text style={styles.tituloAtribuir}>Atribuir a uma rota</Text>
+            <View style={styles.cabecalhoAtribuirBotao} />
           </View>
+
+          <ScrollView contentContainerStyle={styles.corpoAtribuir}>
+            <Pressable
+              style={styles.linhaRota}
+              onPress={() => setRotaSelecionadaAtribuir(null)}
+            >
+              <Text style={styles.linhaRotaTexto}>Nenhuma</Text>
+              <View
+                style={[
+                  styles.linhaRotaIndicador,
+                  rotaSelecionadaAtribuir === null &&
+                    styles.linhaRotaIndicadorSelecionado,
+                ]}
+              >
+                {rotaSelecionadaAtribuir === null ? (
+                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                ) : null}
+              </View>
+            </Pressable>
+
+            {rotas
+              .filter((rota) => rota.ativo)
+              .map((rota) => (
+                <Pressable
+                  key={rota.id}
+                  style={styles.linhaRota}
+                  onPress={() => setRotaSelecionadaAtribuir(rota.id)}
+                >
+                  <Text style={styles.linhaRotaTexto}>{rota.nome}</Text>
+                  <View
+                    style={[
+                      styles.linhaRotaIndicador,
+                      rotaSelecionadaAtribuir === rota.id &&
+                        styles.linhaRotaIndicadorSelecionado,
+                    ]}
+                  >
+                    {rotaSelecionadaAtribuir === rota.id ? (
+                      <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))}
+
+            <Pressable
+              style={styles.novaRotaLinkAtribuir}
+              onPress={() => abrirModalRota('atribuir')}
+            >
+              <Text style={styles.novaRotaLinkAtribuirTexto}>+ Nova rota</Text>
+            </Pressable>
+
+            {erroAtribuirRota ? (
+              <Text style={styles.erro}>{erroAtribuirRota}</Text>
+            ) : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.rodapeAtribuir,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={styles.botaoCancelarAtribuir}
+              onPress={fecharModalAtribuirRota}
+            >
+              <Text style={styles.botaoCancelarAtribuirTexto}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.botaoConfirmarAtribuir,
+                atribuindoRota && styles.botaoConfirmarAtribuirDesabilitado,
+              ]}
+              onPress={handleConfirmarAtribuirRota}
+              disabled={atribuindoRota}
+            >
+              <Text style={styles.botaoConfirmarAtribuirTexto}>
+                {atribuindoRota ? 'Salvando…' : 'Confirmar'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {novaRotaOverlay}
         </View>
       </Modal>
     </View>
@@ -2177,6 +2401,118 @@ const styles = StyleSheet.create({
     backgroundColor: light.brandPressed,
   },
   modalBotaoSalvarTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  novaRotaOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+    zIndex: 20,
+    elevation: 20,
+  },
+  telaAtribuir: {
+    flex: 1,
+    backgroundColor: light.bg,
+  },
+  cabecalhoAtribuir: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  cabecalhoAtribuirBotao: {
+    width: 32,
+    alignItems: 'center',
+  },
+  tituloAtribuir: {
+    flex: 1,
+    fontFamily: fonts.semiBold,
+    fontSize: 17,
+    color: light.textPrimary,
+    textAlign: 'center',
+  },
+  corpoAtribuir: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: spacing.xs,
+  },
+  linhaRota: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: light.border,
+  },
+  linhaRotaTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: light.textPrimary,
+  },
+  linhaRotaIndicador: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: light.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linhaRotaIndicadorSelecionado: {
+    backgroundColor: light.brand,
+    borderColor: light.brand,
+  },
+  novaRotaLinkAtribuir: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  novaRotaLinkAtribuirTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.brand,
+  },
+  rodapeAtribuir: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
+  },
+  botaoCancelarAtribuir: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 4,
+    borderRadius: radius.md,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  botaoCancelarAtribuirTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textSecondary,
+  },
+  botaoConfirmarAtribuir: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 4,
+    borderRadius: radius.md,
+    backgroundColor: light.brand,
+  },
+  botaoConfirmarAtribuirDesabilitado: {
+    opacity: 0.4,
+  },
+  botaoConfirmarAtribuirTexto: {
     fontFamily: fonts.semiBold,
     fontSize: 14,
     color: '#FFFFFF',
