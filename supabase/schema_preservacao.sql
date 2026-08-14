@@ -75,11 +75,17 @@ create table if not exists ordens_servico (
   status text not null default 'pendente' check (
     status in ('pendente', 'em_andamento', 'concluida')
   ),
+  iniciado_em timestamptz,
   concluida_em timestamptz,
   concluida_por text,
   observacao text,
   created_at timestamptz not null default now()
 );
+
+-- Se ordens_servico já existia sem iniciado_em (script anterior), rode isto
+-- para adicionar a coluna em vez de recriar a tabela — usada pelo fluxo
+-- guiado (ExecucaoGuiada) para calcular o tempo gasto em cada atividade:
+-- alter table ordens_servico add column if not exists iniciado_em timestamptz;
 
 -- Se ordens_servico já existia sem "on delete cascade" (script anterior),
 -- rode isto para corrigir a constraint em vez de recriar a tabela:

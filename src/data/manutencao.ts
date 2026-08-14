@@ -81,6 +81,7 @@ export type OrdemServico = {
   plano_id: string;
   data_prevista: string;
   status: StatusOrdemServico;
+  iniciado_em: string | null;
   concluida_em: string | null;
   concluida_por: string | null;
   observacao: string | null;
@@ -178,6 +179,21 @@ export function gerarDatasOcorrencia(
   }
 
   return datas;
+}
+
+// Formata uma duração em segundos como "12min" (abaixo de 60min) ou
+// "1h 20min" (60min ou mais) — usado para exibir o tempo gasto numa
+// atividade concluída (concluida_em - iniciado_em).
+export function formatarDuracao(segundos: number): string {
+  const minutosTotais = Math.max(0, Math.round(segundos / 60));
+
+  if (minutosTotais < 60) {
+    return `${minutosTotais}min`;
+  }
+
+  const horas = Math.floor(minutosTotais / 60);
+  const minutos = minutosTotais % 60;
+  return `${horas}h ${minutos}min`;
 }
 
 // Cor do indicador de progresso de um grupo (rota): verde se 100%

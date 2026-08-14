@@ -31,6 +31,7 @@ import { StatusBadge } from '../../src/components/StatusBadge';
 import {
   adicionarDiasChave,
   formatarDataBR,
+  formatarDuracao,
   gerarDatasOcorrencia,
   getCorPrioridade,
   hojeLocal,
@@ -911,6 +912,14 @@ export default function AdminPreservacao() {
   function renderAtividadeCard(ordem: OrdemServico, compacto = false) {
     const plano = ordem.planos_manutencao;
     const menuAberto = menuAtividadeAbertaId === ordem.id;
+    const tempoExecucaoTexto =
+      ordem.status === 'concluida' && ordem.iniciado_em && ordem.concluida_em
+        ? formatarDuracao(
+            (new Date(ordem.concluida_em).getTime() -
+              new Date(ordem.iniciado_em).getTime()) /
+              1000,
+          )
+        : null;
 
     return (
       <Fragment key={ordem.id}>
@@ -948,7 +957,14 @@ export default function AdminPreservacao() {
           ) : null}
 
           <View style={styles.planoRodape}>
-            <StatusBadge ordem={ordem} />
+            <View style={styles.planoRodapeEsquerda}>
+              <StatusBadge ordem={ordem} />
+              {tempoExecucaoTexto ? (
+                <Text style={styles.tempoExecucao}>
+                  Tempo: {tempoExecucaoTexto}
+                </Text>
+              ) : null}
+            </View>
             {plano ? (
               <Chip
                 label={plano.prioridade}
@@ -2309,6 +2325,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: spacing.xs,
+  },
+  planoRodapeEsquerda: {
+    gap: spacing.xs / 2,
+  },
+  tempoExecucao: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
   },
   overlay: {
     flex: 1,

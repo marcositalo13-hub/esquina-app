@@ -4,6 +4,10 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdiarAcao } from '../src/components/AdiarAcao';
 import { Chip } from '../src/components/Chip';
+import {
+  ExecucaoGuiada,
+  type ExecucaoOrdemItem,
+} from '../src/components/ExecucaoGuiada';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { StatusBadge } from '../src/components/StatusBadge';
 import {
@@ -22,15 +26,40 @@ const hoje = hojeLocal;
 
 type GrupoRota = { rota: Rota; itens: OrdemServico[] };
 
+type ExecucaoAtiva = {
+  ordens: ExecucaoOrdemItem[];
+  tituloContexto: string | null;
+};
+
+// Converte uma ordem (com plano/tipo já embutidos pela consulta) para o
+// formato enxuto que o ExecucaoGuiada espera.
+function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
+  const plano = ordem.planos_manutencao;
+  return {
+    id: ordem.id,
+    titulo: plano?.titulo ?? 'Atividade',
+    tipo: plano?.tipos_atividade?.nome ?? 'Sem tipo',
+    local: plano?.local ?? null,
+    descricao: plano?.descricao ?? null,
+    observacoes: plano?.observacoes ?? null,
+  };
+}
+
+// Frase convidativa do card de rota — varia só no singular/plural.
+function fraseResumoRota(total: number): string {
+  if (total === 1) {
+    return '1 atividade programada para hoje. Vamos começar?';
+  }
+  return `${total} atividades programadas para hoje. Vamos começar?`;
+}
+
 export default function Preservacao() {
   const insets = useSafeAreaInsets();
 
   const [pendentes, setPendentes] = useState<OrdemServico[]>([]);
   const [concluidas, setConcluidas] = useState<OrdemServico[]>([]);
   const [erro, setErro] = useState<string | null>(null);
-  const [atualizandoId, setAtualizandoId] = useState<string | null>(null);
-  const [iniciandoRotaId, setIniciandoRotaId] = useState<string | null>(null);
-  const [rotaExpandidaId, setRotaExpandidaId] = useState<string | null>(null);
+  const [execucao, setExecucao] = useState<ExecucaoAtiva | null>(null);
 
   const carregar = useCallback(async () => {
     const [respostaPendentes, respostaConcluidas] = await Promise.all([
@@ -119,46 +148,6 @@ export default function Preservacao() {
     );
   }, [concluidas]);
 
-  async function handleIniciar(ordem: OrdemServico) {
-    setAtualizandoId(ordem.id);
-
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({ status: 'em_andamento' })
-      .eq('id', ordem.id);
-
-    setAtualizandoId(null);
-
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    carregar();
-  }
-
-  async function handleConcluir(ordem: OrdemServico) {
-    setAtualizandoId(ordem.id);
-
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({
-        status: 'concluida',
-        concluida_em: new Date().toISOString(),
-        concluida_por: 'Teste Preservação',
-      })
-      .eq('id', ordem.id);
-
-    setAtualizandoId(null);
-
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    carregar();
-  }
-
   async function handleAdiar(ordemId: string, novaData: string) {
     const { error } = await supabase
       .from('ordens_servico')
@@ -173,28 +162,27 @@ export default function Preservacao() {
     carregar();
   }
 
-  async function handleIniciarRota(grupo: GrupoRota) {
-    setIniciandoRotaId(grupo.rota.id);
-
-    const idsPendentes = grupo.itens
+  // Não faz mais update em lote — apenas monta a lista de ordens pendentes
+  // (na ordem de ordem_na_rota, já garantida por resumoRotas) e abre o
+  // fluxo guiado, que marca cada ordem como iniciada ao entrar na etapa.
+  function handleIniciarRota(grupo: GrupoRota) {
+    const itensPendentes = grupo.itens
       .filter((o) => o.status === 'pendente')
-      .map((o) => o.id);
+      .map(paraItemExecucao);
 
-    if (idsPendentes.length > 0) {
-      const { error } = await supabase
-        .from('ordens_servico')
-        .update({ status: 'em_andamento' })
-        .in('id', idsPendentes);
-
-      if (error) {
-        setErro(error.message);
-        setIniciandoRotaId(null);
-        return;
-      }
+    if (itensPendentes.length === 0) {
+      return;
     }
 
-    setIniciandoRotaId(null);
-    setRotaExpandidaId(grupo.rota.id);
+    setExecucao({ ordens: itensPendentes, tituloContexto: grupo.rota.nome });
+  }
+
+  function handleIniciarAvulsa(ordem: OrdemServico) {
+    setExecucao({ ordens: [paraItemExecucao(ordem)], tituloContexto: null });
+  }
+
+  function handleFinalizarExecucao() {
+    setExecucao(null);
     carregar();
   }
 
@@ -231,8 +219,6 @@ export default function Preservacao() {
                   concluidasCount,
                   iniciadasCount,
                 );
-                const expandida =
-                  rotaExpandidaId === grupo.rota.id || !temPendente;
 
                 return (
                   <View key={grupo.rota.id} style={styles.resumoRotaCard}>
@@ -248,7 +234,7 @@ export default function Preservacao() {
                           {grupo.rota.nome}
                         </Text>
                         <Text style={styles.resumoRotaContagem}>
-                          {concluidasCount}/{grupo.itens.length} hoje
+                          {fraseResumoRota(grupo.itens.length)}
                         </Text>
                       </View>
                     </View>
@@ -257,69 +243,11 @@ export default function Preservacao() {
                       <Pressable
                         style={styles.botaoIniciarRota}
                         onPress={() => handleIniciarRota(grupo)}
-                        disabled={iniciandoRotaId === grupo.rota.id}
                       >
                         <Text style={styles.botaoIniciarRotaTexto}>
-                          {iniciandoRotaId === grupo.rota.id
-                            ? 'Iniciando…'
-                            : 'Iniciar Rota'}
+                          Iniciar Rota
                         </Text>
                       </Pressable>
-                    ) : null}
-
-                    {expandida ? (
-                      <View style={styles.resumoRotaLista}>
-                        {grupo.itens.map((ordem) => {
-                          const plano = ordem.planos_manutencao;
-
-                          return (
-                            <View key={ordem.id} style={styles.card}>
-                              <Text style={styles.cardTitulo}>
-                                {plano?.titulo ?? 'Atividade'}
-                              </Text>
-                              <Text style={styles.cardTipo}>
-                                {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
-                              </Text>
-                              {plano?.local ? (
-                                <Text style={styles.cardDetalhe}>
-                                  {plano.local}
-                                </Text>
-                              ) : null}
-
-                              <View style={styles.cardRodape}>
-                                <StatusBadge ordem={ordem} />
-                                {plano ? (
-                                  <Chip
-                                    label={plano.prioridade}
-                                    color={getCorPrioridade(plano.prioridade)}
-                                  />
-                                ) : null}
-                              </View>
-
-                              {ordem.status !== 'concluida' ? (
-                                <>
-                                  <Pressable
-                                    style={styles.botaoConcluir}
-                                    onPress={() => handleConcluir(ordem)}
-                                    disabled={atualizandoId === ordem.id}
-                                  >
-                                    <Text style={styles.botaoConcluirTexto}>
-                                      {atualizandoId === ordem.id
-                                        ? 'Concluindo…'
-                                        : 'Concluir'}
-                                    </Text>
-                                  </Pressable>
-                                  <AdiarAcao
-                                    onConfirmar={(novaData) =>
-                                      handleAdiar(ordem.id, novaData)
-                                    }
-                                  />
-                                </>
-                              ) : null}
-                            </View>
-                          );
-                        })}
-                      </View>
                     ) : null}
                   </View>
                 );
@@ -367,29 +295,12 @@ export default function Preservacao() {
                     ) : null}
                   </View>
 
-                  {ordem.status === 'em_andamento' ? (
-                    <Pressable
-                      style={styles.botaoConcluir}
-                      onPress={() => handleConcluir(ordem)}
-                      disabled={atualizandoId === ordem.id}
-                    >
-                      <Text style={styles.botaoConcluirTexto}>
-                        {atualizandoId === ordem.id
-                          ? 'Concluindo…'
-                          : 'Concluir'}
-                      </Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={styles.botaoIniciar}
-                      onPress={() => handleIniciar(ordem)}
-                      disabled={atualizandoId === ordem.id}
-                    >
-                      <Text style={styles.botaoIniciarTexto}>
-                        {atualizandoId === ordem.id ? 'Iniciando…' : 'Iniciar'}
-                      </Text>
-                    </Pressable>
-                  )}
+                  <Pressable
+                    style={styles.botaoIniciar}
+                    onPress={() => handleIniciarAvulsa(ordem)}
+                  >
+                    <Text style={styles.botaoIniciarTexto}>Iniciar</Text>
+                  </Pressable>
 
                   <AdiarAcao
                     onConfirmar={(novaData) => handleAdiar(ordem.id, novaData)}
@@ -451,6 +362,14 @@ export default function Preservacao() {
           </View>
         )}
       </ScrollView>
+
+      {execucao ? (
+        <ExecucaoGuiada
+          ordens={execucao.ordens}
+          tituloContexto={execucao.tituloContexto}
+          onFinish={handleFinalizarExecucao}
+        />
+      ) : null}
     </View>
   );
 }
