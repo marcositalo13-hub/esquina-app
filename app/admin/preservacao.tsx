@@ -2331,7 +2331,7 @@ const styles = StyleSheet.create({
   },
   tempoExecucao: {
     fontFamily: fonts.regular,
-    fontSize: 12,
+    fontSize: 13,
     color: light.textSecondary,
   },
   overlay: {

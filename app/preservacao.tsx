@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdiarAcao } from '../src/components/AdiarAcao';
@@ -31,6 +32,16 @@ type ExecucaoAtiva = {
   tituloContexto: string | null;
 };
 
+// Aviso inline exibido no próprio card (rota ou atividade avulsa) quando o
+// "Iniciar" não encontra nada pendente, ou quando a consulta falha.
+type AvisoCard = {
+  id: string;
+  texto: string;
+  erro: boolean;
+};
+
+const AVISO_DURACAO_MS = 4000;
+
 // Converte uma ordem (com plano/tipo já embutidos pela consulta) para o
 // formato enxuto que o ExecucaoGuiada espera.
 function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
@@ -60,6 +71,22 @@ export default function Preservacao() {
   const [concluidas, setConcluidas] = useState<OrdemServico[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [execucao, setExecucao] = useState<ExecucaoAtiva | null>(null);
+  const [verificandoId, setVerificandoId] = useState<string | null>(null);
+  const [avisoRota, setAvisoRota] = useState<AvisoCard | null>(null);
+  const [avisoAvulsa, setAvisoAvulsa] = useState<AvisoCard | null>(null);
+  const avisoRotaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const avisoAvulsaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (avisoRotaTimeout.current) {
+        clearTimeout(avisoRotaTimeout.current);
+      }
+      if (avisoAvulsaTimeout.current) {
+        clearTimeout(avisoAvulsaTimeout.current);
+      }
+    };
+  }, []);
 
   const carregar = useCallback(async () => {
     const [respostaPendentes, respostaConcluidas] = await Promise.all([
@@ -162,23 +189,121 @@ export default function Preservacao() {
     carregar();
   }
 
-  // Não faz mais update em lote — apenas monta a lista de ordens pendentes
-  // (na ordem de ordem_na_rota, já garantida por resumoRotas) e abre o
-  // fluxo guiado, que marca cada ordem como iniciada ao entrar na etapa.
-  function handleIniciarRota(grupo: GrupoRota) {
-    const itensPendentes = grupo.itens
-      .filter((o) => o.status === 'pendente')
-      .map(paraItemExecucao);
-
-    if (itensPendentes.length === 0) {
-      return;
+  function mostrarAvisoRota(rotaId: string, texto: string, erro: boolean) {
+    if (avisoRotaTimeout.current) {
+      clearTimeout(avisoRotaTimeout.current);
     }
-
-    setExecucao({ ordens: itensPendentes, tituloContexto: grupo.rota.nome });
+    setAvisoRota({ id: rotaId, texto, erro });
+    avisoRotaTimeout.current = setTimeout(
+      () => setAvisoRota(null),
+      AVISO_DURACAO_MS,
+    );
   }
 
-  function handleIniciarAvulsa(ordem: OrdemServico) {
-    setExecucao({ ordens: [paraItemExecucao(ordem)], tituloContexto: null });
+  function mostrarAvisoAvulsa(ordemId: string, texto: string, erro: boolean) {
+    if (avisoAvulsaTimeout.current) {
+      clearTimeout(avisoAvulsaTimeout.current);
+    }
+    setAvisoAvulsa({ id: ordemId, texto, erro });
+    avisoAvulsaTimeout.current = setTimeout(
+      () => setAvisoAvulsa(null),
+      AVISO_DURACAO_MS,
+    );
+  }
+
+  // Rede de segurança: busca as ordens pendentes da rota DIRETO no banco
+  // (em vez de confiar no estado local, que pode estar desatualizado) antes
+  // de abrir o fluxo. Array vazio → aviso inline no card, sem abrir o
+  // fluxo. Falha na consulta → mesmo lugar, mensagem em semantic.overdue.
+  async function handleIniciarRota(grupo: GrupoRota) {
+    setAvisoRota(null);
+    setVerificandoId(grupo.rota.id);
+
+    try {
+      const { data, error } = await supabase
+        .from('ordens_servico')
+        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+        .eq('status', 'pendente')
+        .eq('data_prevista', hoje());
+
+      if (error) {
+        throw error;
+      }
+
+      const itensPendentes = ((data ?? []) as OrdemServico[])
+        .filter((o) => o.planos_manutencao?.rota_id === grupo.rota.id)
+        .sort((a, b) => {
+          const ordemA = a.planos_manutencao?.ordem_na_rota ?? 0;
+          const ordemB = b.planos_manutencao?.ordem_na_rota ?? 0;
+          return ordemA - ordemB;
+        })
+        .map(paraItemExecucao);
+
+      if (itensPendentes.length === 0) {
+        mostrarAvisoRota(
+          grupo.rota.id,
+          'Todas as atividades desta rota já foram concluídas hoje.',
+          false,
+        );
+        return;
+      }
+
+      setExecucao({ ordens: itensPendentes, tituloContexto: grupo.rota.nome });
+    } catch (err) {
+      mostrarAvisoRota(
+        grupo.rota.id,
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar as atividades desta rota.',
+        true,
+      );
+    } finally {
+      setVerificandoId(null);
+    }
+  }
+
+  // Mesma rede de segurança para uma atividade avulsa: confirma no banco
+  // que a ordem ainda está pendente antes de abrir o fluxo.
+  async function handleIniciarAvulsa(ordem: OrdemServico) {
+    setAvisoAvulsa(null);
+    setVerificandoId(ordem.id);
+
+    try {
+      const { data, error } = await supabase
+        .from('ordens_servico')
+        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+        .eq('id', ordem.id)
+        .eq('status', 'pendente')
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        mostrarAvisoAvulsa(
+          ordem.id,
+          'Esta atividade já foi concluída ou não está mais disponível.',
+          false,
+        );
+        return;
+      }
+
+      setExecucao({
+        ordens: [paraItemExecucao(data as OrdemServico)],
+        tituloContexto: null,
+      });
+    } catch (err) {
+      mostrarAvisoAvulsa(
+        ordem.id,
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível iniciar esta atividade.',
+        true,
+      );
+    } finally {
+      setVerificandoId(null);
+    }
   }
 
   function handleFinalizarExecucao() {
@@ -211,9 +336,17 @@ export default function Preservacao() {
                 const iniciadasCount = grupo.itens.filter(
                   (o) => o.status !== 'pendente',
                 ).length;
+                // Único critério para mostrar "Iniciar Rota": existe ao
+                // menos uma ordem de hoje, nesta rota, com status
+                // 'pendente' — nada de contagens/caches derivados.
                 const temPendente = grupo.itens.some(
                   (o) => o.status === 'pendente',
                 );
+                // 100% concluída: todas as ordens de hoje da rota estão
+                // 'concluida' (logo, nenhuma pendente nem em_andamento).
+                const todasConcluidas =
+                  grupo.itens.length > 0 &&
+                  concluidasCount === grupo.itens.length;
                 const cor = corIndicadorGrupo(
                   grupo.itens.length,
                   concluidasCount,
@@ -243,11 +376,31 @@ export default function Preservacao() {
                       <Pressable
                         style={styles.botaoIniciarRota}
                         onPress={() => handleIniciarRota(grupo)}
+                        disabled={verificandoId === grupo.rota.id}
                       >
                         <Text style={styles.botaoIniciarRotaTexto}>
-                          Iniciar Rota
+                          {verificandoId === grupo.rota.id
+                            ? 'Verificando…'
+                            : 'Iniciar Rota'}
                         </Text>
                       </Pressable>
+                    ) : todasConcluidas ? (
+                      <View style={styles.rotaConcluidaIndicador}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={18}
+                          color={semantic.ok}
+                        />
+                        <Text style={styles.rotaConcluidaTexto}>
+                          Todas as atividades concluídas
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {avisoRota?.id === grupo.rota.id ? (
+                      <Text style={avisoRota.erro ? styles.erro : styles.aviso}>
+                        {avisoRota.texto}
+                      </Text>
                     ) : null}
                   </View>
                 );
@@ -298,9 +451,18 @@ export default function Preservacao() {
                   <Pressable
                     style={styles.botaoIniciar}
                     onPress={() => handleIniciarAvulsa(ordem)}
+                    disabled={verificandoId === ordem.id}
                   >
-                    <Text style={styles.botaoIniciarTexto}>Iniciar</Text>
+                    <Text style={styles.botaoIniciarTexto}>
+                      {verificandoId === ordem.id ? 'Verificando…' : 'Iniciar'}
+                    </Text>
                   </Pressable>
+
+                  {avisoAvulsa?.id === ordem.id ? (
+                    <Text style={avisoAvulsa.erro ? styles.erro : styles.aviso}>
+                      {avisoAvulsa.texto}
+                    </Text>
+                  ) : null}
 
                   <AdiarAcao
                     onConfirmar={(novaData) => handleAdiar(ordem.id, novaData)}
@@ -406,6 +568,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: semantic.overdue,
   },
+  aviso: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
   secaoTitulo: {
     fontFamily: fonts.semiBold,
     fontSize: 15,
@@ -462,6 +629,18 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 15,
     color: '#FFFFFF',
+  },
+  rotaConcluidaIndicador: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm + 2,
+  },
+  rotaConcluidaTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: semantic.ok,
   },
   resumoRotaLista: {
     gap: spacing.sm,
