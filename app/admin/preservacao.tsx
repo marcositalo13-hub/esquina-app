@@ -22,7 +22,6 @@ import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import {
   adicionarDiasChave,
-  corIndicadorGrupo,
   formatarDataBR,
   gerarDatasOcorrencia,
   getCorPrioridade,
@@ -68,6 +67,9 @@ export default function AdminPreservacao() {
 
   const [atualizandoOrdemId, setAtualizandoOrdemId] = useState<string | null>(
     null,
+  );
+  const [rotasExpandidas, setRotasExpandidas] = useState<Set<string>>(
+    () => new Set(),
   );
   const [menuAtividadeAbertaId, setMenuAtividadeAbertaId] = useState<
     string | null
@@ -432,6 +434,18 @@ export default function AdminPreservacao() {
     setPeriodicidadeFiltros((atual) =>
       atual.includes(item) ? atual.filter((x) => x !== item) : [...atual, item],
     );
+  }
+
+  function toggleRotaExpandida(rotaId: string) {
+    setRotasExpandidas((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(rotaId)) {
+        novo.delete(rotaId);
+      } else {
+        novo.add(rotaId);
+      }
+      return novo;
+    });
   }
 
   function handleAbrirMenuAtividade(id: string) {
@@ -1157,32 +1171,58 @@ export default function AdminPreservacao() {
               const concluidas = itens.filter(
                 (o) => o.status === 'concluida',
               ).length;
-              const iniciadas = itens.filter(
-                (o) => o.status !== 'pendente',
-              ).length;
-              const cor = corIndicadorGrupo(
-                itens.length,
-                concluidas,
-                iniciadas,
-              );
+              const percentual =
+                itens.length > 0
+                  ? Math.round((concluidas / itens.length) * 100)
+                  : 0;
+              const expandida = rotasExpandidas.has(rota.id);
 
               return (
                 <View key={rota.id} style={styles.grupoRota}>
-                  <View style={styles.grupoRotaCabecalho}>
-                    <View
-                      style={[
-                        styles.grupoRotaIndicador,
-                        { backgroundColor: cor },
-                      ]}
-                    />
-                    <Text style={styles.grupoRotaTitulo}>{rota.nome}</Text>
-                    <Text style={styles.grupoRotaContagem}>
-                      {concluidas}/{itens.length} hoje
+                  <View style={styles.grupoRotaResumoCard}>
+                    <Text style={styles.grupoRotaResumoTitulo}>
+                      {rota.nome}
                     </Text>
+                    <Text style={styles.grupoRotaResumoSubtitulo}>
+                      {itens.length} atividades programadas para o dia
+                    </Text>
+
+                    <View style={styles.grupoRotaProgressoRow}>
+                      <View style={styles.grupoRotaProgressoTrilho}>
+                        <View
+                          style={[
+                            styles.grupoRotaProgressoPreenchimento,
+                            { width: `${percentual}%` },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.grupoRotaProgressoTexto}>
+                        {percentual}%
+                      </Text>
+                    </View>
+
+                    <Pressable
+                      style={styles.grupoRotaExpandirRow}
+                      onPress={() => toggleRotaExpandida(rota.id)}
+                    >
+                      <Text style={styles.grupoRotaExpandirTexto}>
+                        {expandida
+                          ? 'Recolher atividades'
+                          : 'Expandir atividades'}
+                      </Text>
+                      <Ionicons
+                        name={expandida ? 'chevron-up' : 'chevron-down'}
+                        size={16}
+                        color={light.brand}
+                      />
+                    </Pressable>
                   </View>
-                  <View style={styles.lista}>
-                    {itens.map(renderAtividadeCard)}
-                  </View>
+
+                  {expandida ? (
+                    <View style={styles.lista}>
+                      {itens.map(renderAtividadeCard)}
+                    </View>
+                  ) : null}
                 </View>
               );
             })}
@@ -1843,26 +1883,65 @@ const styles = StyleSheet.create({
   grupoRota: {
     gap: spacing.sm,
   },
-  grupoRotaCabecalho: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  grupoRotaResumoCard: {
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
     gap: spacing.xs,
   },
-  grupoRotaIndicador: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  grupoRotaTitulo: {
-    flex: 1,
-    fontFamily: fonts.medium,
-    fontSize: 14,
+  grupoRotaResumoTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 15,
     color: light.textPrimary,
   },
-  grupoRotaContagem: {
+  grupoRotaResumoSubtitulo: {
     fontFamily: fonts.regular,
     fontSize: 12,
     color: light.textSecondary,
+  },
+  grupoRotaProgressoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  grupoRotaProgressoTrilho: {
+    flex: 1,
+    height: 8,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  grupoRotaProgressoPreenchimento: {
+    height: '100%',
+    backgroundColor: semantic.ok,
+    borderRadius: 4,
+  },
+  grupoRotaProgressoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: light.textSecondary,
+    minWidth: 36,
+    textAlign: 'right',
+  },
+  grupoRotaExpandirRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
+  },
+  grupoRotaExpandirTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.brand,
   },
   lista: {
     gap: spacing.sm,
