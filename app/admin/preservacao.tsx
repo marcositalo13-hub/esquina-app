@@ -1,6 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Modal,
   Pressable,
@@ -13,6 +20,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdiarAcao } from '../../src/components/AdiarAcao';
+import { type AnchorPosition, CardMenu } from '../../src/components/CardMenu';
 import { Chip } from '../../src/components/Chip';
 import {
   type DiaMarcado,
@@ -77,11 +85,16 @@ export default function AdminPreservacao() {
   const [menuAtividadeEtapa, setMenuAtividadeEtapa] = useState<
     'opcoes' | 'confirmarExclusao'
   >('opcoes');
+  const [menuAtividadeAncora, setMenuAtividadeAncora] =
+    useState<AnchorPosition>({ x: 0, y: 0 });
+  const menuAtividadeIconRefs = useRef<Map<string, View>>(new Map());
 
   const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null);
   const [menuEtapa, setMenuEtapa] = useState<'opcoes' | 'confirmarExclusao'>(
     'opcoes',
   );
+  const [menuAncora, setMenuAncora] = useState<AnchorPosition>({ x: 0, y: 0 });
+  const menuIconRefs = useRef<Map<string, View>>(new Map());
 
   const [modalVisivel, setModalVisivel] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -449,8 +462,17 @@ export default function AdminPreservacao() {
   }
 
   function handleAbrirMenuAtividade(id: string) {
-    setMenuAtividadeAbertaId((atual) => (atual === id ? null : id));
-    setMenuAtividadeEtapa('opcoes');
+    if (menuAtividadeAbertaId === id) {
+      fecharMenuAtividade();
+      return;
+    }
+
+    const ref = menuAtividadeIconRefs.current.get(id);
+    ref?.measureInWindow((x, y, _width, height) => {
+      setMenuAtividadeAncora({ x, y: y + height });
+      setMenuAtividadeAbertaId(id);
+      setMenuAtividadeEtapa('opcoes');
+    });
   }
 
   function fecharMenuAtividade() {
@@ -579,8 +601,17 @@ export default function AdminPreservacao() {
   }
 
   function handleAbrirMenu(id: string) {
-    setMenuAbertoId((atual) => (atual === id ? null : id));
-    setMenuEtapa('opcoes');
+    if (menuAbertoId === id) {
+      fecharMenu();
+      return;
+    }
+
+    const ref = menuIconRefs.current.get(id);
+    ref?.measureInWindow((x, y, _width, height) => {
+      setMenuAncora({ x, y: y + height });
+      setMenuAbertoId(id);
+      setMenuEtapa('opcoes');
+    });
   }
 
   function fecharMenu() {
@@ -787,16 +818,18 @@ export default function AdminPreservacao() {
     const menuAberto = menuAtividadeAbertaId === ordem.id;
 
     return (
-      <View
-        key={ordem.id}
-        style={menuAberto ? styles.planoWrapperMenuAberto : null}
-      >
+      <Fragment key={ordem.id}>
         <View style={styles.planoCard}>
           <View style={styles.planoCabecalho}>
             <Text style={styles.planoTitulo}>
               {plano?.titulo ?? 'Atividade'}
             </Text>
             <Pressable
+              ref={(el) => {
+                if (el) {
+                  menuAtividadeIconRefs.current.set(ordem.id, el);
+                }
+              }}
               onPress={() => handleAbrirMenuAtividade(ordem.id)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={({ pressed }) => [
@@ -830,90 +863,81 @@ export default function AdminPreservacao() {
           </View>
         </View>
 
-        {menuAberto ? (
-          <>
-            <Pressable
-              style={styles.menuOverlay}
-              onPress={fecharMenuAtividade}
-            />
-            <View style={styles.menuPainel}>
-              {menuAtividadeEtapa === 'opcoes' ? (
-                <>
-                  <Pressable
-                    style={styles.menuItem}
-                    onPress={() => plano && handleMenuEditar(plano)}
-                  >
-                    <Text style={styles.menuItemTexto}>Editar</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.menuItem}
-                    onPress={() => plano && handleMenuDuplicar(plano)}
-                  >
-                    <Text style={styles.menuItemTexto}>Duplicar</Text>
-                  </Pressable>
-                  <AdiarAcao
-                    variant="menuItem"
-                    onConfirmar={(novaData) => {
-                      handleAdiarOrdem(ordem.id, novaData);
-                      fecharMenuAtividade();
-                    }}
-                  />
-                  <Pressable
-                    style={styles.menuItem}
-                    onPress={() => {
-                      fecharMenuAtividade();
-                      handleConcluirOrdem(ordem.id);
-                    }}
-                  >
-                    <Text style={styles.menuItemTexto}>
-                      {atualizandoOrdemId === ordem.id
-                        ? 'Concluindo…'
-                        : 'Concluir'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.menuItem}
-                    onPress={handleMenuAtividadePedirConfirmacaoExclusao}
-                  >
-                    <Text
-                      style={[
-                        styles.menuItemTexto,
-                        styles.menuItemExcluirTexto,
-                      ]}
-                    >
-                      Excluir
-                    </Text>
-                  </Pressable>
-                </>
-              ) : (
-                <View style={styles.menuConfirmacao}>
-                  <Text style={styles.menuConfirmacaoTexto}>
-                    Confirmar exclusão?
+        <CardMenu
+          visible={menuAberto}
+          onClose={fecharMenuAtividade}
+          anchorPosition={menuAtividadeAncora}
+        >
+          {menuAtividadeEtapa === 'opcoes' ? (
+            <>
+              <Pressable
+                style={styles.menuItem}
+                onPress={() => plano && handleMenuEditar(plano)}
+              >
+                <Text style={styles.menuItemTexto}>Editar</Text>
+              </Pressable>
+              <Pressable
+                style={styles.menuItem}
+                onPress={() => plano && handleMenuDuplicar(plano)}
+              >
+                <Text style={styles.menuItemTexto}>Duplicar</Text>
+              </Pressable>
+              <AdiarAcao
+                variant="menuItem"
+                onConfirmar={(novaData) => {
+                  handleAdiarOrdem(ordem.id, novaData);
+                  fecharMenuAtividade();
+                }}
+              />
+              <Pressable
+                style={styles.menuItem}
+                onPress={() => {
+                  fecharMenuAtividade();
+                  handleConcluirOrdem(ordem.id);
+                }}
+              >
+                <Text style={styles.menuItemTexto}>
+                  {atualizandoOrdemId === ordem.id ? 'Concluindo…' : 'Concluir'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.menuItem}
+                onPress={handleMenuAtividadePedirConfirmacaoExclusao}
+              >
+                <Text
+                  style={[styles.menuItemTexto, styles.menuItemExcluirTexto]}
+                >
+                  Excluir
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <View style={styles.menuConfirmacao}>
+              <Text style={styles.menuConfirmacaoTexto}>
+                Confirmar exclusão?
+              </Text>
+              <View style={styles.menuConfirmacaoBotoes}>
+                <Pressable
+                  style={styles.menuConfirmacaoBotaoCancelar}
+                  onPress={fecharMenuAtividade}
+                >
+                  <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>
+                    Cancelar
                   </Text>
-                  <View style={styles.menuConfirmacaoBotoes}>
-                    <Pressable
-                      style={styles.menuConfirmacaoBotaoCancelar}
-                      onPress={fecharMenuAtividade}
-                    >
-                      <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>
-                        Cancelar
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.menuConfirmacaoBotaoExcluir}
-                      onPress={() => plano && handleMenuExcluirConfirmar(plano)}
-                    >
-                      <Text style={styles.menuConfirmacaoBotaoExcluirTexto}>
-                        Excluir
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              )}
+                </Pressable>
+                <Pressable
+                  style={styles.menuConfirmacaoBotaoExcluir}
+                  onPress={() => plano && handleMenuExcluirConfirmar(plano)}
+                >
+                  <Text style={styles.menuConfirmacaoBotaoExcluirTexto}>
+                    Excluir
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-          </>
-        ) : null}
-      </View>
+          )}
+        </CardMenu>
+      </Fragment>
     );
   }
 
@@ -1261,14 +1285,16 @@ export default function AdminPreservacao() {
                 const proximaOrdem = encontrarProximaOrdemPendente(plano.id);
 
                 return (
-                  <View
-                    key={plano.id}
-                    style={menuAberto ? styles.planoWrapperMenuAberto : null}
-                  >
+                  <Fragment key={plano.id}>
                     <View style={styles.planoCard}>
                       <View style={styles.planoCabecalho}>
                         <Text style={styles.planoTitulo}>{plano.titulo}</Text>
                         <Pressable
+                          ref={(el) => {
+                            if (el) {
+                              menuIconRefs.current.set(plano.id, el);
+                            }
+                          }}
                           onPress={() => handleAbrirMenu(plano.id)}
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           style={({ pressed }) => [
@@ -1304,138 +1330,126 @@ export default function AdminPreservacao() {
                       </View>
                     </View>
 
-                    {menuAberto ? (
-                      <>
-                        <Pressable
-                          style={styles.menuOverlay}
-                          onPress={fecharMenu}
-                        />
-                        <View style={styles.menuPainel}>
-                          {menuEtapa === 'opcoes' ? (
-                            <>
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={() => handleMenuEditar(plano)}
-                              >
-                                <Text style={styles.menuItemTexto}>Editar</Text>
-                              </Pressable>
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={() => handleMenuDuplicar(plano)}
-                              >
-                                <Text style={styles.menuItemTexto}>
-                                  Duplicar
-                                </Text>
-                              </Pressable>
-                              {proximaOrdem ? (
-                                <AdiarAcao
-                                  variant="menuItem"
-                                  onConfirmar={(novaData) => {
-                                    handleAdiarOrdem(proximaOrdem.id, novaData);
-                                    fecharMenu();
-                                  }}
-                                />
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.menuItem,
-                                    styles.menuItemDesabilitado,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.menuItemTexto,
-                                      styles.menuItemTextoDesabilitado,
-                                    ]}
-                                  >
-                                    Adiar
-                                  </Text>
-                                </View>
-                              )}
-                              {proximaOrdem ? (
-                                <Pressable
-                                  style={styles.menuItem}
-                                  onPress={() => {
-                                    fecharMenu();
-                                    handleConcluirOrdem(proximaOrdem.id);
-                                  }}
-                                >
-                                  <Text style={styles.menuItemTexto}>
-                                    {atualizandoOrdemId === proximaOrdem.id
-                                      ? 'Concluindo…'
-                                      : 'Concluir'}
-                                  </Text>
-                                </Pressable>
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.menuItem,
-                                    styles.menuItemDesabilitado,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.menuItemTexto,
-                                      styles.menuItemTextoDesabilitado,
-                                    ]}
-                                  >
-                                    Concluir
-                                  </Text>
-                                </View>
-                              )}
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={handleMenuPedirConfirmacaoExclusao}
-                              >
-                                <Text
-                                  style={[
-                                    styles.menuItemTexto,
-                                    styles.menuItemExcluirTexto,
-                                  ]}
-                                >
-                                  Excluir
-                                </Text>
-                              </Pressable>
-                            </>
+                    <CardMenu
+                      visible={menuAberto}
+                      onClose={fecharMenu}
+                      anchorPosition={menuAncora}
+                    >
+                      {menuEtapa === 'opcoes' ? (
+                        <>
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => handleMenuEditar(plano)}
+                          >
+                            <Text style={styles.menuItemTexto}>Editar</Text>
+                          </Pressable>
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={() => handleMenuDuplicar(plano)}
+                          >
+                            <Text style={styles.menuItemTexto}>Duplicar</Text>
+                          </Pressable>
+                          {proximaOrdem ? (
+                            <AdiarAcao
+                              variant="menuItem"
+                              onConfirmar={(novaData) => {
+                                handleAdiarOrdem(proximaOrdem.id, novaData);
+                                fecharMenu();
+                              }}
+                            />
                           ) : (
-                            <View style={styles.menuConfirmacao}>
-                              <Text style={styles.menuConfirmacaoTexto}>
-                                Confirmar exclusão?
+                            <View
+                              style={[
+                                styles.menuItem,
+                                styles.menuItemDesabilitado,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.menuItemTexto,
+                                  styles.menuItemTextoDesabilitado,
+                                ]}
+                              >
+                                Adiar
                               </Text>
-                              <View style={styles.menuConfirmacaoBotoes}>
-                                <Pressable
-                                  style={styles.menuConfirmacaoBotaoCancelar}
-                                  onPress={fecharMenu}
-                                >
-                                  <Text
-                                    style={
-                                      styles.menuConfirmacaoBotaoCancelarTexto
-                                    }
-                                  >
-                                    Cancelar
-                                  </Text>
-                                </Pressable>
-                                <Pressable
-                                  style={styles.menuConfirmacaoBotaoExcluir}
-                                  onPress={() =>
-                                    handleMenuExcluirConfirmar(plano)
-                                  }
-                                >
-                                  <Text
-                                    style={
-                                      styles.menuConfirmacaoBotaoExcluirTexto
-                                    }
-                                  >
-                                    Excluir
-                                  </Text>
-                                </Pressable>
-                              </View>
                             </View>
                           )}
+                          {proximaOrdem ? (
+                            <Pressable
+                              style={styles.menuItem}
+                              onPress={() => {
+                                fecharMenu();
+                                handleConcluirOrdem(proximaOrdem.id);
+                              }}
+                            >
+                              <Text style={styles.menuItemTexto}>
+                                {atualizandoOrdemId === proximaOrdem.id
+                                  ? 'Concluindo…'
+                                  : 'Concluir'}
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <View
+                              style={[
+                                styles.menuItem,
+                                styles.menuItemDesabilitado,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.menuItemTexto,
+                                  styles.menuItemTextoDesabilitado,
+                                ]}
+                              >
+                                Concluir
+                              </Text>
+                            </View>
+                          )}
+                          <Pressable
+                            style={styles.menuItem}
+                            onPress={handleMenuPedirConfirmacaoExclusao}
+                          >
+                            <Text
+                              style={[
+                                styles.menuItemTexto,
+                                styles.menuItemExcluirTexto,
+                              ]}
+                            >
+                              Excluir
+                            </Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <View style={styles.menuConfirmacao}>
+                          <Text style={styles.menuConfirmacaoTexto}>
+                            Confirmar exclusão?
+                          </Text>
+                          <View style={styles.menuConfirmacaoBotoes}>
+                            <Pressable
+                              style={styles.menuConfirmacaoBotaoCancelar}
+                              onPress={fecharMenu}
+                            >
+                              <Text
+                                style={styles.menuConfirmacaoBotaoCancelarTexto}
+                              >
+                                Cancelar
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              style={styles.menuConfirmacaoBotaoExcluir}
+                              onPress={() => handleMenuExcluirConfirmar(plano)}
+                            >
+                              <Text
+                                style={styles.menuConfirmacaoBotaoExcluirTexto}
+                              >
+                                Excluir
+                              </Text>
+                            </Pressable>
+                          </View>
                         </View>
-                      </>
-                    ) : null}
-                  </View>
+                      )}
+                    </CardMenu>
+                  </Fragment>
                 );
               })}
             </View>
@@ -1953,10 +1967,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
-  planoWrapperMenuAberto: {
-    zIndex: 20,
-    elevation: 20,
-  },
   planoCard: {
     backgroundColor: light.card,
     borderWidth: 1,
@@ -1964,30 +1974,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs / 2,
-  },
-  menuOverlay: {
-    position: 'absolute',
-    top: -2000,
-    left: -2000,
-    width: 5000,
-    height: 5000,
-    backgroundColor: 'transparent',
-  },
-  menuPainel: {
-    position: 'absolute',
-    top: 44,
-    right: spacing.md,
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: 10,
-    paddingVertical: spacing.xs,
-    minWidth: 160,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
   },
   menuItem: {
     paddingVertical: spacing.sm,
