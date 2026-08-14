@@ -24,6 +24,19 @@ from (
 ) as v(nome, ordem)
 where not exists (select 1 from tipos_atividade);
 
+-- Rotas: agrupamento ordenado de planos, criado pelo Administrador e
+-- executado em lote pela Preservação via "Iniciar Rota".
+create table if not exists rotas (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  ativo boolean not null default true
+);
+
+alter table rotas enable row level security;
+
+create policy "rotas anon all" on rotas
+  for all to anon using (true) with check (true);
+
 -- Planos de manutenção cadastrados pelo Administrador.
 create table if not exists planos_manutencao (
   id uuid primary key default gen_random_uuid(),
@@ -41,8 +54,15 @@ create table if not exists planos_manutencao (
   data_inicio date not null,
   ativo boolean not null default true,
   observacoes text,
+  rota_id uuid references rotas (id),
+  ordem_na_rota integer,
   created_at timestamptz not null default now()
 );
+
+-- Se planos_manutencao já existia sem rota_id/ordem_na_rota (script
+-- anterior), rode isto para adicionar as colunas em vez de recriar a tabela:
+-- alter table planos_manutencao add column if not exists rota_id uuid references rotas (id);
+-- alter table planos_manutencao add column if not exists ordem_na_rota integer;
 
 -- Ordens de serviço geradas a partir de um plano; tipo/título vêm sempre
 -- via join com planos_manutencao -> tipos_atividade, nunca duplicados aqui.

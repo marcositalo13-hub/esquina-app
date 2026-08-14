@@ -1,4 +1,4 @@
-import { semantic } from '../theme';
+import { light, semantic } from '../theme';
 
 export type Periodicidade =
   | 'Única'
@@ -50,6 +50,12 @@ export type TipoAtividade = {
   ativo: boolean;
 };
 
+export type Rota = {
+  id: string;
+  nome: string;
+  ativo: boolean;
+};
+
 export type PlanoManutencao = {
   id: string;
   titulo: string;
@@ -61,8 +67,11 @@ export type PlanoManutencao = {
   data_inicio: string;
   ativo: boolean;
   observacoes: string | null;
+  rota_id: string | null;
+  ordem_na_rota: number | null;
   created_at: string;
   tipos_atividade?: TipoAtividade | null;
+  rotas?: Rota | null;
 };
 
 export type StatusOrdemServico = 'pendente' | 'em_andamento' | 'concluida';
@@ -169,4 +178,22 @@ export function gerarDatasOcorrencia(
   }
 
   return datas;
+}
+
+// Cor do indicador de progresso de um grupo (rota): verde se 100%
+// concluído, marca se algo já foi iniciado/concluído, neutro se nada
+// começou ainda. Usado tanto em "Atividades do dia" (admin) quanto no
+// "Resumo do dia" (execução).
+export function corIndicadorGrupo(
+  total: number,
+  concluidas: number,
+  iniciadas: number,
+): string {
+  if (total > 0 && concluidas === total) {
+    return semantic.ok;
+  }
+  if (iniciadas > 0) {
+    return light.brand;
+  }
+  return light.textMuted;
 }

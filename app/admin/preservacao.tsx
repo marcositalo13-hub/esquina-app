@@ -22,6 +22,7 @@ import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import {
   adicionarDiasChave,
+  corIndicadorGrupo,
   formatarDataBR,
   gerarDatasOcorrencia,
   getCorPrioridade,
@@ -33,6 +34,7 @@ import {
   type PlanoManutencao,
   PRIORIDADES,
   type Prioridade,
+  type Rota,
   type TipoAtividade,
 } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
@@ -49,6 +51,7 @@ export default function AdminPreservacao() {
   const [planos, setPlanos] = useState<PlanoManutencao[]>([]);
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
   const [tiposAtivos, setTiposAtivos] = useState<TipoAtividade[]>([]);
+  const [rotas, setRotas] = useState<Rota[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erroLista, setErroLista] = useState<string | null>(null);
 
@@ -69,6 +72,9 @@ export default function AdminPreservacao() {
   const [menuAtividadeAbertaId, setMenuAtividadeAbertaId] = useState<
     string | null
   >(null);
+  const [menuAtividadeEtapa, setMenuAtividadeEtapa] = useState<
+    'opcoes' | 'confirmarExclusao'
+  >('opcoes');
 
   const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null);
   const [menuEtapa, setMenuEtapa] = useState<'opcoes' | 'confirmarExclusao'>(
@@ -86,13 +92,22 @@ export default function AdminPreservacao() {
   const [dataInicio, setDataInicio] = useState(() => hoje());
   const [ativo, setAtivo] = useState(true);
   const [observacoes, setObservacoes] = useState('');
+  const [rotaId, setRotaId] = useState<string | null>(null);
+  const [ordemNaRota, setOrdemNaRota] = useState('');
+  const [ordemNaRotaEditadoManualmente, setOrdemNaRotaEditadoManualmente] =
+    useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [erroModal, setErroModal] = useState<string | null>(null);
+
+  const [modalRotaVisivel, setModalRotaVisivel] = useState(false);
+  const [nomeNovaRota, setNomeNovaRota] = useState('');
+  const [criandoRota, setCriandoRota] = useState(false);
+  const [erroModalRota, setErroModalRota] = useState<string | null>(null);
 
   const carregarPlanos = useCallback(async () => {
     const { data, error } = await supabase
       .from('planos_manutencao')
-      .select('*, tipos_atividade(*)')
+      .select('*, tipos_atividade(*), rotas(*)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -107,7 +122,7 @@ export default function AdminPreservacao() {
   const carregarOrdens = useCallback(async () => {
     const { data, error } = await supabase
       .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*))');
+      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))');
 
     if (!error) {
       setOrdens((data ?? []) as OrdemServico[]);
@@ -129,23 +144,37 @@ export default function AdminPreservacao() {
     }
   }, []);
 
+  const carregarRotas = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('rotas')
+      .select('*')
+      .order('nome', { ascending: true });
+
+    if (!error) {
+      setRotas((data ?? []) as Rota[]);
+    }
+  }, []);
+
   const carregarTudo = useCallback(async () => {
     await Promise.all([carregarPlanos(), carregarOrdens()]);
   }, [carregarPlanos, carregarOrdens]);
 
   useEffect(() => {
     setCarregando(true);
-    Promise.all([carregarPlanos(), carregarTipos(), carregarOrdens()]).finally(
-      () => {
-        setCarregando(false);
-        // Top-up silencioso: roda depois do primeiro carregamento, sem
-        // bloquear a tela; só recarrega as ordens ao terminar.
-        preencherOcorrenciasFaltantes().then(() => {
-          carregarOrdens();
-        });
-      },
-    );
-  }, [carregarPlanos, carregarTipos, carregarOrdens]);
+    Promise.all([
+      carregarPlanos(),
+      carregarTipos(),
+      carregarOrdens(),
+      carregarRotas(),
+    ]).finally(() => {
+      setCarregando(false);
+      // Top-up silencioso: roda depois do primeiro carregamento, sem
+      // bloquear a tela; só recarrega as ordens ao terminar.
+      preencherOcorrenciasFaltantes().then(() => {
+        carregarOrdens();
+      });
+    });
+  }, [carregarPlanos, carregarTipos, carregarOrdens, carregarRotas]);
 
   // Calendário: marca TODAS as ordens, sem aplicar nenhum filtro ativo.
   const markedDates = useMemo(() => {
@@ -172,6 +201,39 @@ export default function AdminPreservacao() {
     const hojeStr = hoje();
     return ordens.filter((o) => o.data_prevista === hojeStr);
   }, [ordens]);
+
+  // Agrupa as atividades de hoje por rota (ordenadas por ordem_na_rota).
+  // Atividades sem rota ficam soltas em semRota.
+  const atividadesAgrupadas = useMemo(() => {
+    const grupos = new Map<string, { rota: Rota; itens: OrdemServico[] }>();
+    const semRota: OrdemServico[] = [];
+
+    for (const ordem of atividadesDoDia) {
+      const plano = ordem.planos_manutencao;
+      const rota = plano?.rotas;
+
+      if (plano?.rota_id && rota) {
+        const grupo = grupos.get(plano.rota_id);
+        if (grupo) {
+          grupo.itens.push(ordem);
+        } else {
+          grupos.set(plano.rota_id, { rota, itens: [ordem] });
+        }
+      } else {
+        semRota.push(ordem);
+      }
+    }
+
+    for (const grupo of grupos.values()) {
+      grupo.itens.sort((a, b) => {
+        const ordemA = a.planos_manutencao?.ordem_na_rota ?? 0;
+        const ordemB = b.planos_manutencao?.ordem_na_rota ?? 0;
+        return ordemA - ordemB;
+      });
+    }
+
+    return { grupos: Array.from(grupos.values()), semRota };
+  }, [atividadesDoDia]);
 
   // Planos com ao menos uma ordem pendente/em andamento e atrasada (para o
   // chip "Atrasadas" e para o badge nos chips de Tipo).
@@ -332,6 +394,24 @@ export default function AdminPreservacao() {
     return ids;
   }, [ordens]);
 
+  // Ocorrência pendente mais próxima de um plano — usada por Concluir/Adiar
+  // no menu de "Todos os planos cadastrados" (que representa o plano, não
+  // uma ordem específica).
+  function encontrarProximaOrdemPendente(planoId: string): OrdemServico | null {
+    let proxima: OrdemServico | null = null;
+
+    for (const ordem of ordens) {
+      if (ordem.plano_id !== planoId || ordem.status !== 'pendente') {
+        continue;
+      }
+      if (!proxima || ordem.data_prevista < proxima.data_prevista) {
+        proxima = ordem;
+      }
+    }
+
+    return proxima;
+  }
+
   function handleSelecionarDia(data: string) {
     setSelectedDate((atual) => (atual === data ? null : data));
   }
@@ -356,28 +436,16 @@ export default function AdminPreservacao() {
 
   function handleAbrirMenuAtividade(id: string) {
     setMenuAtividadeAbertaId((atual) => (atual === id ? null : id));
+    setMenuAtividadeEtapa('opcoes');
   }
 
   function fecharMenuAtividade() {
     setMenuAtividadeAbertaId(null);
+    setMenuAtividadeEtapa('opcoes');
   }
 
-  async function handleIniciarOrdem(ordemId: string) {
-    setAtualizandoOrdemId(ordemId);
-
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({ status: 'em_andamento' })
-      .eq('id', ordemId);
-
-    setAtualizandoOrdemId(null);
-
-    if (error) {
-      setErroLista(error.message);
-      return;
-    }
-
-    carregarOrdens();
+  function handleMenuAtividadePedirConfirmacaoExclusao() {
+    setMenuAtividadeEtapa('confirmarExclusao');
   }
 
   async function handleConcluirOrdem(ordemId: string) {
@@ -425,6 +493,9 @@ export default function AdminPreservacao() {
     setDataInicio(hoje());
     setAtivo(true);
     setObservacoes('');
+    setRotaId(null);
+    setOrdemNaRota('');
+    setOrdemNaRotaEditadoManualmente(false);
   }
 
   function preencherFormulario(plano: PlanoManutencao) {
@@ -437,6 +508,33 @@ export default function AdminPreservacao() {
     setDataInicio(plano.data_inicio);
     setAtivo(plano.ativo);
     setObservacoes(plano.observacoes ?? '');
+    setRotaId(plano.rota_id);
+    setOrdemNaRota(
+      plano.ordem_na_rota !== null ? String(plano.ordem_na_rota) : '',
+    );
+    setOrdemNaRotaEditadoManualmente(plano.ordem_na_rota !== null);
+  }
+
+  function handleSelecionarRota(novaRotaId: string | null) {
+    setRotaId(novaRotaId);
+
+    if (!novaRotaId) {
+      setOrdemNaRota('');
+      setOrdemNaRotaEditadoManualmente(false);
+      return;
+    }
+
+    if (!ordemNaRotaEditadoManualmente) {
+      const quantidadeNaRota = planos.filter(
+        (p) => p.rota_id === novaRotaId,
+      ).length;
+      setOrdemNaRota(String(quantidadeNaRota + 1));
+    }
+  }
+
+  function handleAlterarOrdemNaRotaManual(valor: string) {
+    setOrdemNaRota(valor);
+    setOrdemNaRotaEditadoManualmente(true);
   }
 
   function abrirModalNovo() {
@@ -476,13 +574,18 @@ export default function AdminPreservacao() {
     setMenuEtapa('opcoes');
   }
 
+  // Compartilhados entre o menu de "Atividades do dia" e o de "Todos os
+  // planos cadastrados" — fecham os dois menus, já que operam sobre o
+  // plano independente de onde foram acionados.
   function handleMenuEditar(plano: PlanoManutencao) {
     fecharMenu();
+    fecharMenuAtividade();
     handleEditar(plano);
   }
 
   function handleMenuDuplicar(plano: PlanoManutencao) {
     fecharMenu();
+    fecharMenuAtividade();
     handleDuplicar(plano);
   }
 
@@ -498,6 +601,7 @@ export default function AdminPreservacao() {
       .select();
 
     fecharMenu();
+    fecharMenuAtividade();
 
     if (error) {
       setErroLista(error.message);
@@ -514,6 +618,49 @@ export default function AdminPreservacao() {
     carregarTudo();
   }
 
+  function abrirModalRota() {
+    setNomeNovaRota('');
+    setErroModalRota(null);
+    setModalRotaVisivel(true);
+  }
+
+  function fecharModalRota() {
+    setModalRotaVisivel(false);
+  }
+
+  async function handleCriarRota() {
+    if (criandoRota) {
+      return;
+    }
+
+    if (!nomeNovaRota.trim()) {
+      setErroModalRota('Informe o nome da rota.');
+      return;
+    }
+
+    setCriandoRota(true);
+    setErroModalRota(null);
+
+    const { data, error } = await supabase
+      .from('rotas')
+      .insert({ nome: nomeNovaRota.trim(), ativo: true })
+      .select()
+      .single();
+
+    setCriandoRota(false);
+
+    if (error || !data) {
+      setErroModalRota(error?.message ?? 'Não foi possível criar a rota.');
+      return;
+    }
+
+    const novaRota = data as Rota;
+    setRotas((atual) => [...atual, novaRota]);
+    handleSelecionarRota(novaRota.id);
+    setNomeNovaRota('');
+    setModalRotaVisivel(false);
+  }
+
   async function handleSalvar() {
     if (isSubmitting) {
       return;
@@ -526,6 +673,9 @@ export default function AdminPreservacao() {
 
     setIsSubmitting(true);
     setErroModal(null);
+
+    const ordemNaRotaNumero =
+      rotaId && ordemNaRota.trim() ? Number(ordemNaRota) : null;
 
     try {
       if (editingId) {
@@ -541,6 +691,8 @@ export default function AdminPreservacao() {
             data_inicio: dataInicio,
             ativo,
             observacoes: observacoes || null,
+            rota_id: rotaId,
+            ordem_na_rota: ordemNaRotaNumero,
           })
           .eq('id', editingId)
           .select();
@@ -569,6 +721,8 @@ export default function AdminPreservacao() {
             data_inicio: dataInicio,
             ativo,
             observacoes: observacoes || null,
+            rota_id: rotaId,
+            ordem_na_rota: ordemNaRotaNumero,
           })
           .select()
           .single();
@@ -612,6 +766,141 @@ export default function AdminPreservacao() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function renderAtividadeCard(ordem: OrdemServico) {
+    const plano = ordem.planos_manutencao;
+    const menuAberto = menuAtividadeAbertaId === ordem.id;
+
+    return (
+      <View
+        key={ordem.id}
+        style={menuAberto ? styles.planoWrapperMenuAberto : null}
+      >
+        <View style={styles.planoCard}>
+          <View style={styles.planoCabecalho}>
+            <Text style={styles.planoTitulo}>
+              {plano?.titulo ?? 'Atividade'}
+            </Text>
+            <Pressable
+              onPress={() => handleAbrirMenuAtividade(ordem.id)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={({ pressed }) => [
+                styles.planoMenuButton,
+                pressed && styles.planoMenuButtonPressionado,
+              ]}
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={18}
+                color={light.textSecondary}
+              />
+            </Pressable>
+          </View>
+
+          <Text style={styles.planoTipo}>
+            {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
+          </Text>
+          {plano?.local ? (
+            <Text style={styles.planoDetalhe}>{plano.local}</Text>
+          ) : null}
+
+          <View style={styles.planoRodape}>
+            <StatusBadge ordem={ordem} />
+            {plano ? (
+              <Chip
+                label={plano.prioridade}
+                color={getCorPrioridade(plano.prioridade)}
+              />
+            ) : null}
+          </View>
+        </View>
+
+        {menuAberto ? (
+          <>
+            <Pressable
+              style={styles.menuOverlay}
+              onPress={fecharMenuAtividade}
+            />
+            <View style={styles.menuPainel}>
+              {menuAtividadeEtapa === 'opcoes' ? (
+                <>
+                  <Pressable
+                    style={styles.menuItem}
+                    onPress={() => plano && handleMenuEditar(plano)}
+                  >
+                    <Text style={styles.menuItemTexto}>Editar</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.menuItem}
+                    onPress={() => plano && handleMenuDuplicar(plano)}
+                  >
+                    <Text style={styles.menuItemTexto}>Duplicar</Text>
+                  </Pressable>
+                  <AdiarAcao
+                    variant="menuItem"
+                    onConfirmar={(novaData) => {
+                      handleAdiarOrdem(ordem.id, novaData);
+                      fecharMenuAtividade();
+                    }}
+                  />
+                  <Pressable
+                    style={styles.menuItem}
+                    onPress={() => {
+                      fecharMenuAtividade();
+                      handleConcluirOrdem(ordem.id);
+                    }}
+                  >
+                    <Text style={styles.menuItemTexto}>
+                      {atualizandoOrdemId === ordem.id
+                        ? 'Concluindo…'
+                        : 'Concluir'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.menuItem}
+                    onPress={handleMenuAtividadePedirConfirmacaoExclusao}
+                  >
+                    <Text
+                      style={[
+                        styles.menuItemTexto,
+                        styles.menuItemExcluirTexto,
+                      ]}
+                    >
+                      Excluir
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <View style={styles.menuConfirmacao}>
+                  <Text style={styles.menuConfirmacaoTexto}>
+                    Confirmar exclusão?
+                  </Text>
+                  <View style={styles.menuConfirmacaoBotoes}>
+                    <Pressable
+                      style={styles.menuConfirmacaoBotaoCancelar}
+                      onPress={fecharMenuAtividade}
+                    >
+                      <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>
+                        Cancelar
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.menuConfirmacaoBotaoExcluir}
+                      onPress={() => plano && handleMenuExcluirConfirmar(plano)}
+                    >
+                      <Text style={styles.menuConfirmacaoBotaoExcluirTexto}>
+                        Excluir
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+            </View>
+          </>
+        ) : null}
+      </View>
+    );
   }
 
   return (
@@ -851,111 +1140,58 @@ export default function AdminPreservacao() {
           ) : null}
         </View>
 
-        <Text style={styles.secaoTitulo}>Atividades do dia</Text>
+        <View style={styles.secaoTituloRow}>
+          <Text style={styles.secaoTitulo}>Atividades do dia</Text>
+          <Pressable onPress={abrirModalRota}>
+            <Text style={styles.novaRotaLink}>+ Nova rota</Text>
+          </Pressable>
+        </View>
 
         {atividadesDoDia.length === 0 ? (
           <Text style={styles.vazio}>
             Nenhuma atividade prevista para hoje.
           </Text>
         ) : (
-          <View style={styles.lista}>
-            {atividadesDoDia.map((ordem) => {
-              const plano = ordem.planos_manutencao;
-              const menuAberto = menuAtividadeAbertaId === ordem.id;
+          <View style={styles.listaGrupos}>
+            {atividadesAgrupadas.grupos.map(({ rota, itens }) => {
+              const concluidas = itens.filter(
+                (o) => o.status === 'concluida',
+              ).length;
+              const iniciadas = itens.filter(
+                (o) => o.status !== 'pendente',
+              ).length;
+              const cor = corIndicadorGrupo(
+                itens.length,
+                concluidas,
+                iniciadas,
+              );
 
               return (
-                <View
-                  key={ordem.id}
-                  style={menuAberto ? styles.planoWrapperMenuAberto : null}
-                >
-                  <View style={styles.planoCard}>
-                    <View style={styles.planoCabecalho}>
-                      <Text style={styles.planoTitulo}>
-                        {plano?.titulo ?? 'Atividade'}
-                      </Text>
-                      <Pressable
-                        onPress={() => handleAbrirMenuAtividade(ordem.id)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        style={({ pressed }) => [
-                          styles.planoMenuButton,
-                          pressed && styles.planoMenuButtonPressionado,
-                        ]}
-                      >
-                        <Ionicons
-                          name="ellipsis-horizontal"
-                          size={18}
-                          color={light.textSecondary}
-                        />
-                      </Pressable>
-                    </View>
-
-                    <Text style={styles.planoTipo}>
-                      {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
+                <View key={rota.id} style={styles.grupoRota}>
+                  <View style={styles.grupoRotaCabecalho}>
+                    <View
+                      style={[
+                        styles.grupoRotaIndicador,
+                        { backgroundColor: cor },
+                      ]}
+                    />
+                    <Text style={styles.grupoRotaTitulo}>{rota.nome}</Text>
+                    <Text style={styles.grupoRotaContagem}>
+                      {concluidas}/{itens.length} hoje
                     </Text>
-                    {plano?.local ? (
-                      <Text style={styles.planoDetalhe}>{plano.local}</Text>
-                    ) : null}
-
-                    <View style={styles.planoRodape}>
-                      <StatusBadge ordem={ordem} />
-                      {plano ? (
-                        <Chip
-                          label={plano.prioridade}
-                          color={getCorPrioridade(plano.prioridade)}
-                        />
-                      ) : null}
-                    </View>
                   </View>
-
-                  {menuAberto ? (
-                    <>
-                      <Pressable
-                        style={styles.menuOverlay}
-                        onPress={fecharMenuAtividade}
-                      />
-                      <View style={styles.menuPainel}>
-                        {ordem.status === 'em_andamento' ? (
-                          <Pressable
-                            style={styles.menuItem}
-                            onPress={() => {
-                              fecharMenuAtividade();
-                              handleConcluirOrdem(ordem.id);
-                            }}
-                          >
-                            <Text style={styles.menuItemTexto}>
-                              {atualizandoOrdemId === ordem.id
-                                ? 'Concluindo…'
-                                : 'Concluir'}
-                            </Text>
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            style={styles.menuItem}
-                            onPress={() => {
-                              fecharMenuAtividade();
-                              handleIniciarOrdem(ordem.id);
-                            }}
-                          >
-                            <Text style={styles.menuItemTexto}>
-                              {atualizandoOrdemId === ordem.id
-                                ? 'Iniciando…'
-                                : 'Iniciar'}
-                            </Text>
-                          </Pressable>
-                        )}
-                        <AdiarAcao
-                          variant="menuItem"
-                          onConfirmar={(novaData) => {
-                            handleAdiarOrdem(ordem.id, novaData);
-                            fecharMenuAtividade();
-                          }}
-                        />
-                      </View>
-                    </>
-                  ) : null}
+                  <View style={styles.lista}>
+                    {itens.map(renderAtividadeCard)}
+                  </View>
                 </View>
               );
             })}
+
+            {atividadesAgrupadas.semRota.length > 0 ? (
+              <View style={styles.lista}>
+                {atividadesAgrupadas.semRota.map(renderAtividadeCard)}
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -982,6 +1218,7 @@ export default function AdminPreservacao() {
 
               {planosFiltrados.map((plano) => {
                 const menuAberto = menuAbertoId === plano.id;
+                const proximaOrdem = encontrarProximaOrdemPendente(plano.id);
 
                 return (
                   <View
@@ -1050,6 +1287,62 @@ export default function AdminPreservacao() {
                                   Duplicar
                                 </Text>
                               </Pressable>
+                              {proximaOrdem ? (
+                                <AdiarAcao
+                                  variant="menuItem"
+                                  onConfirmar={(novaData) => {
+                                    handleAdiarOrdem(proximaOrdem.id, novaData);
+                                    fecharMenu();
+                                  }}
+                                />
+                              ) : (
+                                <View
+                                  style={[
+                                    styles.menuItem,
+                                    styles.menuItemDesabilitado,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.menuItemTexto,
+                                      styles.menuItemTextoDesabilitado,
+                                    ]}
+                                  >
+                                    Adiar
+                                  </Text>
+                                </View>
+                              )}
+                              {proximaOrdem ? (
+                                <Pressable
+                                  style={styles.menuItem}
+                                  onPress={() => {
+                                    fecharMenu();
+                                    handleConcluirOrdem(proximaOrdem.id);
+                                  }}
+                                >
+                                  <Text style={styles.menuItemTexto}>
+                                    {atualizandoOrdemId === proximaOrdem.id
+                                      ? 'Concluindo…'
+                                      : 'Concluir'}
+                                  </Text>
+                                </Pressable>
+                              ) : (
+                                <View
+                                  style={[
+                                    styles.menuItem,
+                                    styles.menuItemDesabilitado,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.menuItemTexto,
+                                      styles.menuItemTextoDesabilitado,
+                                    ]}
+                                  >
+                                    Concluir
+                                  </Text>
+                                </View>
+                              )}
                               <Pressable
                                 style={styles.menuItem}
                                 onPress={handleMenuPedirConfirmacaoExclusao}
@@ -1205,6 +1498,42 @@ export default function AdminPreservacao() {
               </View>
 
               <View style={styles.field}>
+                <Text style={styles.label}>Rota</Text>
+                <View style={styles.chipWrap}>
+                  <Chip
+                    label="Nenhuma"
+                    selected={rotaId === null}
+                    onPress={() => handleSelecionarRota(null)}
+                  />
+                  {rotas
+                    .filter((rota) => rota.ativo)
+                    .map((rota) => (
+                      <Chip
+                        key={rota.id}
+                        label={rota.nome}
+                        selected={rotaId === rota.id}
+                        onPress={() => handleSelecionarRota(rota.id)}
+                      />
+                    ))}
+                  <Chip label="+ Nova rota" onPress={abrirModalRota} />
+                </View>
+              </View>
+
+              {rotaId ? (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Ordem na rota</Text>
+                  <TextInput
+                    value={ordemNaRota}
+                    onChangeText={handleAlterarOrdemNaRotaManual}
+                    placeholder="1"
+                    placeholderTextColor={light.textSecondary}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+              ) : null}
+
+              <View style={styles.field}>
                 <Text style={styles.label}>Data de início (AAAA-MM-DD)</Text>
                 <TextInput
                   value={dataInicio}
@@ -1264,6 +1593,56 @@ export default function AdminPreservacao() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={modalRotaVisivel}
+        transparent
+        animationType="fade"
+        onRequestClose={fecharModalRota}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modalRotaCard}>
+            <Text style={styles.modalTitulo}>Nova rota</Text>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Nome da rota</Text>
+              <TextInput
+                value={nomeNovaRota}
+                onChangeText={setNomeNovaRota}
+                placeholder="Nome da rota"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            {erroModalRota ? (
+              <Text style={styles.erro}>{erroModalRota}</Text>
+            ) : null}
+
+            <View style={styles.modalBotoes}>
+              <Pressable
+                style={[styles.modalBotao, styles.modalBotaoCancelar]}
+                onPress={fecharModalRota}
+              >
+                <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalBotao,
+                  styles.modalBotaoSalvar,
+                  (pressed || criandoRota) && styles.modalBotaoPressionado,
+                ]}
+                onPress={handleCriarRota}
+                disabled={criandoRota}
+              >
+                <Text style={styles.modalBotaoSalvarTexto}>
+                  {criandoRota ? 'Criando…' : 'Criar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1312,10 +1691,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: semantic.overdue,
   },
+  secaoTituloRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   secaoTitulo: {
     fontFamily: fonts.semiBold,
     fontSize: 16,
     color: light.textPrimary,
+  },
+  novaRotaLink: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.brand,
   },
   painelCard: {
     backgroundColor: light.card,
@@ -1448,6 +1837,33 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: semantic.overdue,
   },
+  listaGrupos: {
+    gap: spacing.md,
+  },
+  grupoRota: {
+    gap: spacing.sm,
+  },
+  grupoRotaCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  grupoRotaIndicador: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  grupoRotaTitulo: {
+    flex: 1,
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  grupoRotaContagem: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
+  },
   lista: {
     gap: spacing.sm,
   },
@@ -1498,10 +1914,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
+  menuItemDesabilitado: {
+    opacity: 0.4,
+  },
   menuItemTexto: {
     fontFamily: fonts.regular,
     fontSize: 14,
     color: light.textPrimary,
+  },
+  menuItemTextoDesabilitado: {
+    color: light.textMuted,
   },
   menuItemExcluirTexto: {
     color: semantic.overdue,
@@ -1593,6 +2015,12 @@ const styles = StyleSheet.create({
     backgroundColor: light.card,
     borderRadius: radius.lg,
     maxHeight: '85%',
+  },
+  modalRotaCard: {
+    backgroundColor: light.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   modalScroll: {
     padding: spacing.lg,

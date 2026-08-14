@@ -17,3 +17,5 @@ Login Preservação (equipe interna do condomínio — zeladoria, limpeza, manut
 Nota de terminologia: não confundir com o login "Prestador" (módulo separado, marketplace de terceiros atendendo moradores diretamente — sem relação com ordens de serviço internas).
 
 Pendente de decisão antes de implementar: regra exata de pendência por card; lista completa de tipos do catálogo; se "Relatório Geral" e "Morador" (dentro do Administrador) têm escopo próprio a especificar.
+
+Rotas: agrupamento ordenado de atividades (planos com `rota_id`/`ordem_na_rota`), criado pelo Administrador em Preservação e Manutenção, executado em lote pela Preservação via "Iniciar Rota" (Resumo do dia).
