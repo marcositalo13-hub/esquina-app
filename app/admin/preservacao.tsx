@@ -1481,6 +1481,14 @@ export default function AdminPreservacao() {
                         </Pressable>
                       </View>
 
+                      {plano.rota_id && plano.rotas ? (
+                        <View style={styles.rotaChip}>
+                          <Text style={styles.rotaChipTexto}>
+                            {plano.rotas.nome}
+                          </Text>
+                        </View>
+                      ) : null}
+
                       <Text style={styles.planoTipo}>
                         {plano.tipos_atividade?.nome ?? 'Sem tipo'}
                       </Text>
@@ -2309,6 +2317,18 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 15,
     color: light.textPrimary,
+  },
+  rotaChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: light.brandWash,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 2,
+  },
+  rotaChipTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: light.brand,
   },
   planoTipo: {
     fontFamily: fonts.regular,
