@@ -1199,6 +1199,8 @@ export default function AdminPreservacao() {
                 <Text style={styles.menuItemTexto}>Adicionar à rota</Text>
               </Pressable>
               <AdiarAcao
+                ordemId={ordem.id}
+                planoId={ordem.plano_id}
                 variant="menuItem"
                 onConfirmar={(novaData) => {
                   handleAdiarOrdem(ordem.id, novaData);
@@ -1788,6 +1790,8 @@ export default function AdminPreservacao() {
                           </Pressable>
                           {proximaOrdem ? (
                             <AdiarAcao
+                              ordemId={proximaOrdem.id}
+                              planoId={proximaOrdem.plano_id}
                               variant="menuItem"
                               onConfirmar={(novaData) => {
                                 handleAdiarOrdem(proximaOrdem.id, novaData);

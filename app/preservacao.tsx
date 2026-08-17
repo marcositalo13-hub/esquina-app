@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AdiarAcao } from '../src/components/AdiarAcao';
 import { Chip } from '../src/components/Chip';
 import {
   ExecucaoGuiada,
@@ -106,6 +105,10 @@ export default function Preservacao() {
         .from('ordens_servico')
         .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
         .neq('status', 'concluida')
+        // A equipe de execução nunca vê atrasadas: só "pendentes" de hoje
+        // (nunca data_prevista < hoje). Atrasadas seguem visíveis só para
+        // o Administrador em app/admin/preservacao.tsx.
+        .eq('data_prevista', hoje())
         .order('data_prevista', { ascending: true }),
       supabase
         .from('ordens_servico')
@@ -234,20 +237,6 @@ export default function Preservacao() {
       (o) => !(o.data_prevista === hojeStr && o.planos_manutencao?.rota_id),
     );
   }, [concluidas]);
-
-  async function handleAdiar(ordemId: string, novaData: string) {
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({ data_prevista: novaData })
-      .eq('id', ordemId);
-
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    carregar();
-  }
 
   function mostrarAvisoRota(rotaId: string, texto: string, erro: boolean) {
     if (avisoRotaTimeout.current) {
@@ -580,10 +569,6 @@ export default function Preservacao() {
                       {avisoAvulsa.texto}
                     </Text>
                   ) : null}
-
-                  <AdiarAcao
-                    onConfirmar={(novaData) => handleAdiar(ordem.id, novaData)}
-                  />
                 </View>
               );
             })}
