@@ -79,22 +79,19 @@ export default function Preservacao() {
   const [execucao, setExecucao] = useState<ExecucaoAtiva | null>(null);
   const [verificandoId, setVerificandoId] = useState<string | null>(null);
   const [avisoRota, setAvisoRota] = useState<AvisoCard | null>(null);
-  const [avisoAvulsa, setAvisoAvulsa] = useState<AvisoCard | null>(null);
   const avisoRotaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const avisoAvulsaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fila de reprovações pendentes — interceptam a tela em tela cheia, uma
-  // de cada vez, até esvaziar (ver renderização mais abaixo).
+  // Fila de reprovações pendentes — alimenta o badge do sino. A tela cheia
+  // só abre quando o sino é tocado (handleAbrirNotificacoes), uma
+  // reprovação por vez, até esvaziar (ver renderização mais abaixo).
   const [reprovacoes, setReprovacoes] = useState<OrdemServico[]>([]);
   const [processandoReprovacao, setProcessandoReprovacao] = useState(false);
+  const [modalReprovacaoVisivel, setModalReprovacaoVisivel] = useState(false);
 
   useEffect(() => {
     return () => {
       if (avisoRotaTimeout.current) {
         clearTimeout(avisoRotaTimeout.current);
-      }
-      if (avisoAvulsaTimeout.current) {
-        clearTimeout(avisoAvulsaTimeout.current);
       }
     };
   }, []);
@@ -141,7 +138,9 @@ export default function Preservacao() {
 
   // Verifica se há atividades reprovadas pendentes de "leitura" pela
   // equipe de execução. Roda no mount e sempre que a tela ganha foco de
-  // novo (ex.: volta de outra aba) via useFocusEffect.
+  // novo (ex.: volta de outra aba) via useFocusEffect. Só alimenta a
+  // contagem/badge do sino — não abre mais a tela cheia sozinha (ver
+  // handleAbrirNotificacoes).
   const verificarReprovacoes = useCallback(async () => {
     const { data, error } = await supabase
       .from('ordens_servico')
@@ -162,6 +161,28 @@ export default function Preservacao() {
       verificarReprovacoes();
     }, [verificarReprovacoes]),
   );
+
+  // Realtime: qualquer mudança em ordens_servico (concluída em outro
+  // dispositivo, reprovada pelo admin, nova ocorrência gerada, etc.)
+  // refaz os mesmos refetches já usados para atualizar a tela — sem
+  // duplicar a lógica de busca.
+  useEffect(() => {
+    const canal = supabase
+      .channel('preservacao-execucao-ordens-servico')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ordens_servico' },
+        () => {
+          carregar();
+          verificarReprovacoes();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, [carregar, verificarReprovacoes]);
 
   const reprovacaoAtual = reprovacoes[0] ?? null;
 
@@ -184,7 +205,24 @@ export default function Preservacao() {
       return;
     }
 
-    setReprovacoes((atual) => atual.slice(1));
+    setReprovacoes((atual) => {
+      const restante = atual.slice(1);
+      if (restante.length === 0) {
+        // Fila esvaziou — fecha o modal em vez de deixá-lo "armado" para
+        // reabrir sozinho quando uma reprovação nova chegar via Realtime.
+        setModalReprovacaoVisivel(false);
+      }
+      return restante;
+    });
+  }
+
+  // Sino: só abre a tela cheia se houver alguma reprovação pendente. Com
+  // contador zerado, o toque não faz nada.
+  function handleAbrirNotificacoes() {
+    if (reprovacoes.length === 0) {
+      return;
+    }
+    setModalReprovacaoVisivel(true);
   }
 
   // Resumo do dia: agrupa por rota apenas as ordens de HOJE que têm rota.
@@ -221,16 +259,9 @@ export default function Preservacao() {
     return Array.from(grupos.values());
   }, [pendentes, concluidas]);
 
-  // Atividades de hoje COM rota já aparecem no Resumo do dia — somem das
-  // seções Pendentes/Concluídas para não duplicar. Sem rota (hoje ou não) e
-  // qualquer outra data continuam aparecendo normalmente.
-  const pendentesExibidas = useMemo(() => {
-    const hojeStr = hoje();
-    return pendentes.filter(
-      (o) => !(o.data_prevista === hojeStr && o.planos_manutencao?.rota_id),
-    );
-  }, [pendentes]);
-
+  // Atividades de hoje COM rota já aparecem no Resumo do dia — somem da
+  // seção Concluídas para não duplicar. Sem rota (hoje ou não) e qualquer
+  // outra data continuam aparecendo normalmente.
   const concluidasExibidas = useMemo(() => {
     const hojeStr = hoje();
     return concluidas.filter(
@@ -245,17 +276,6 @@ export default function Preservacao() {
     setAvisoRota({ id: rotaId, texto, erro });
     avisoRotaTimeout.current = setTimeout(
       () => setAvisoRota(null),
-      AVISO_DURACAO_MS,
-    );
-  }
-
-  function mostrarAvisoAvulsa(ordemId: string, texto: string, erro: boolean) {
-    if (avisoAvulsaTimeout.current) {
-      clearTimeout(avisoAvulsaTimeout.current);
-    }
-    setAvisoAvulsa({ id: ordemId, texto, erro });
-    avisoAvulsaTimeout.current = setTimeout(
-      () => setAvisoAvulsa(null),
       AVISO_DURACAO_MS,
     );
   }
@@ -311,50 +331,6 @@ export default function Preservacao() {
     }
   }
 
-  // Mesma rede de segurança para uma atividade avulsa: confirma no banco
-  // que a ordem ainda está pendente antes de abrir o fluxo.
-  async function handleIniciarAvulsa(ordem: OrdemServico) {
-    setAvisoAvulsa(null);
-    setVerificandoId(ordem.id);
-
-    try {
-      const { data, error } = await supabase
-        .from('ordens_servico')
-        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
-        .eq('id', ordem.id)
-        .eq('status', 'pendente')
-        .maybeSingle();
-
-      if (error) {
-        throw error;
-      }
-
-      if (!data) {
-        mostrarAvisoAvulsa(
-          ordem.id,
-          'Esta atividade já foi concluída ou não está mais disponível.',
-          false,
-        );
-        return;
-      }
-
-      setExecucao({
-        ordens: [paraItemExecucao(data as OrdemServico)],
-        tituloContexto: null,
-      });
-    } catch (err) {
-      mostrarAvisoAvulsa(
-        ordem.id,
-        err instanceof Error
-          ? err.message
-          : 'Não foi possível iniciar esta atividade.',
-        true,
-      );
-    } finally {
-      setVerificandoId(null);
-    }
-  }
-
   function handleFinalizarExecucao() {
     setExecucao(null);
     carregar();
@@ -362,7 +338,7 @@ export default function Preservacao() {
 
   return (
     <View style={styles.container}>
-      {reprovacaoAtual ? (
+      {modalReprovacaoVisivel && reprovacaoAtual ? (
         <Modal
           visible
           transparent={false}
@@ -423,9 +399,33 @@ export default function Preservacao() {
 
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.title}>Preservação</Text>
-        <Pressable onPress={() => router.replace('/login')}>
-          <Text style={styles.trocarPerfil}>Trocar perfil</Text>
-        </Pressable>
+        <View style={styles.headerAcoes}>
+          <Pressable
+            style={styles.sinoBotao}
+            onPress={handleAbrirNotificacoes}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={
+                reprovacoes.length > 0
+                  ? 'notifications'
+                  : 'notifications-outline'
+              }
+              size={22}
+              color={light.textPrimary}
+            />
+            {reprovacoes.length > 0 ? (
+              <View style={styles.sinoBadge}>
+                <Text style={styles.sinoBadgeTexto}>
+                  {reprovacoes.length > 9 ? '9+' : reprovacoes.length}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable onPress={() => router.replace('/login')}>
+            <Text style={styles.trocarPerfil}>Trocar perfil</Text>
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.body}>
@@ -515,66 +515,6 @@ export default function Preservacao() {
           </>
         ) : null}
 
-        <Text style={styles.secaoTitulo}>Pendentes</Text>
-        {pendentesExibidas.length === 0 ? (
-          <Text style={styles.vazio}>Nenhuma ordem pendente.</Text>
-        ) : (
-          <View style={styles.lista}>
-            {pendentesExibidas.map((ordem) => {
-              const atrasada = ordem.data_prevista < hoje();
-              const plano = ordem.planos_manutencao;
-
-              return (
-                <View
-                  key={ordem.id}
-                  style={[styles.card, atrasada && styles.cardAtrasada]}
-                >
-                  <Text style={styles.cardTitulo}>
-                    {plano?.titulo ?? 'Atividade'}
-                  </Text>
-                  <Text style={styles.cardTipo}>
-                    {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
-                  </Text>
-                  {plano?.local ? (
-                    <Text style={styles.cardDetalhe}>{plano.local}</Text>
-                  ) : null}
-
-                  <View style={styles.cardRodape}>
-                    <View style={styles.cardRodapeEsquerda}>
-                      <Text style={styles.cardDetalhe}>
-                        {formatarDataBR(ordem.data_prevista)}
-                      </Text>
-                      <StatusBadge ordem={ordem} />
-                    </View>
-                    {plano ? (
-                      <Chip
-                        label={plano.prioridade}
-                        color={getCorPrioridade(plano.prioridade)}
-                      />
-                    ) : null}
-                  </View>
-
-                  <Pressable
-                    style={styles.botaoIniciar}
-                    onPress={() => handleIniciarAvulsa(ordem)}
-                    disabled={verificandoId === ordem.id}
-                  >
-                    <Text style={styles.botaoIniciarTexto}>
-                      {verificandoId === ordem.id ? 'Verificando…' : 'Iniciar'}
-                    </Text>
-                  </Pressable>
-
-                  {avisoAvulsa?.id === ordem.id ? (
-                    <Text style={avisoAvulsa.erro ? styles.erro : styles.aviso}>
-                      {avisoAvulsa.texto}
-                    </Text>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
         <Text style={styles.secaoTitulo}>Concluídas</Text>
         {concluidasExibidas.length === 0 ? (
           <Text style={styles.vazio}>Nenhuma ordem concluída.</Text>
@@ -659,6 +599,32 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     color: light.textSecondary,
+  },
+  headerAcoes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  sinoBotao: {
+    position: 'relative',
+    padding: 2,
+  },
+  sinoBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: semantic.overdue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sinoBadgeTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 10,
+    color: '#FFFFFF',
   },
   body: {
     paddingHorizontal: spacing.lg,
@@ -755,9 +721,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.xs / 2,
   },
-  cardAtrasada: {
-    borderColor: semantic.overdue,
-  },
   cardConcluida: {
     opacity: 0.6,
   },
@@ -784,31 +747,6 @@ const styles = StyleSheet.create({
   },
   cardRodapeEsquerda: {
     gap: spacing.xs / 2,
-  },
-  botaoIniciar: {
-    borderWidth: 1,
-    borderColor: light.brand,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs + 2,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  botaoIniciarTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 13,
-    color: light.brand,
-  },
-  botaoConcluir: {
-    backgroundColor: light.textPrimary,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs + 2,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  botaoConcluirTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 13,
-    color: light.bg,
   },
   telaReprovacao: {
     flex: 1,

@@ -237,6 +237,27 @@ export default function AdminPreservacao() {
     });
   }, [carregarPlanos, carregarTipos, carregarOrdens, carregarRotas]);
 
+  // Realtime: qualquer INSERT/UPDATE/DELETE em ordens_servico (feito por
+  // este admin, pela execução, ou por outra sessão) refaz o mesmo refetch
+  // já usado para atualizar "Atividades do dia"/agrupamentos por rota —
+  // sem duplicar a lógica de busca.
+  useEffect(() => {
+    const canal = supabase
+      .channel('admin-preservacao-ordens-servico')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ordens_servico' },
+        () => {
+          carregarOrdens();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, [carregarOrdens]);
+
   // Calendário: marca TODAS as ordens, sem aplicar nenhum filtro ativo.
   const markedDates = useMemo(() => {
     const hojeStr = hoje();
