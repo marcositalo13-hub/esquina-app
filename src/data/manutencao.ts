@@ -65,7 +65,6 @@ export type PlanoManutencao = {
   periodicidade: Periodicidade;
   prioridade: Prioridade;
   data_inicio: string;
-  ativo: boolean;
   observacoes: string | null;
   rota_id: string | null;
   ordem_na_rota: number | null;

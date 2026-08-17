@@ -10,7 +10,7 @@ Home do Administrador: painel com 4 cards — "Preservação e Manutenção", "M
 
 Card "Preservação e Manutenção" ao ser tocado abre: (1) resumo das atividades agrupadas por tipo/classificação (ex: Limpeza, Manutenção Preventiva, Hidráulica, Elétrica); (2) lista das atividades cadastradas com status, abaixo do resumo.
 
-Cadastro de nova atividade: acessível por ícone no canto superior direito da tela de Preservação e Manutenção, abre em card modal sobreposto (não página cheia). Campos: título, tipo (catálogo controlado: Limpeza, Hidráulica, Elétrica, e outros a definir — não é texto livre), descrição, local, periodicidade (Única/Diária/Semanal/Mensal/Trimestral/Semestral/Anual), prioridade (Baixa/Média/Alta), data de início, ativo (boolean), observações.
+Cadastro de nova atividade: acessível por ícone no canto superior direito da tela de Preservação e Manutenção, abre em card modal sobreposto (não página cheia). Campos: título, tipo (catálogo controlado: Limpeza, Hidráulica, Elétrica, e outros a definir — não é texto livre), descrição, local, periodicidade (Única/Diária/Semanal/Mensal/Trimestral/Semestral/Anual), prioridade (Baixa/Média/Alta), data de início, rota (obrigatória — sem opção "Nenhuma"), observações. Sem campo "ativo" (removido da UI; a coluna segue existindo na tabela planos_manutencao, apenas sem uso, até ser removida via SQL separadamente).
 
 Login Preservação (equipe interna do condomínio — zeladoria, limpeza, manutenção contratada direta pelo síndico): vê e conclui apenas as ordens de serviço cujo tipo corresponde à sua especialidade/função. Filtro por tipo é a razão da classificação ser catálogo controlado, não texto livre.
 

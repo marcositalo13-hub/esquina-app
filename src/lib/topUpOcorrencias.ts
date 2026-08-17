@@ -8,16 +8,15 @@ import {
 } from '../data/manutencao';
 import { supabase } from './supabase';
 
-// Rolling window: para cada plano ativo com periodicidade recorrente,
-// garante que existam ordens_servico geradas até hoje + JANELA_DIAS.
-// Roda em background após o primeiro carregamento da tela — best-effort,
-// não bloqueia a renderização e ignora falhas silenciosamente.
+// Rolling window: para cada plano com periodicidade recorrente, garante
+// que existam ordens_servico geradas até hoje + JANELA_DIAS. Roda em
+// background após o primeiro carregamento da tela — best-effort, não
+// bloqueia a renderização e ignora falhas silenciosamente.
 export async function preencherOcorrenciasFaltantes(): Promise<void> {
   try {
     const { data: planos, error: erroPlanos } = await supabase
       .from('planos_manutencao')
       .select('id, data_inicio, periodicidade')
-      .eq('ativo', true)
       .neq('periodicidade', 'Única');
 
     if (erroPlanos || !planos || planos.length === 0) {

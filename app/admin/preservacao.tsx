@@ -13,7 +13,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -106,7 +105,6 @@ export default function AdminPreservacao() {
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>('Mensal');
   const [prioridade, setPrioridade] = useState<Prioridade>('Média');
   const [dataInicio, setDataInicio] = useState(() => hoje());
-  const [ativo, setAtivo] = useState(true);
   const [observacoes, setObservacoes] = useState('');
   const [rotaId, setRotaId] = useState<string | null>(null);
   const [ordemNaRota, setOrdemNaRota] = useState('');
@@ -594,7 +592,6 @@ export default function AdminPreservacao() {
     setPeriodicidade('Mensal');
     setPrioridade('Média');
     setDataInicio(hoje());
-    setAtivo(true);
     setObservacoes('');
     setRotaId(null);
     setOrdemNaRota('');
@@ -609,7 +606,6 @@ export default function AdminPreservacao() {
     setPeriodicidade(plano.periodicidade);
     setPrioridade(plano.prioridade);
     setDataInicio(plano.data_inicio);
-    setAtivo(plano.ativo);
     setObservacoes(plano.observacoes ?? '');
     setRotaId(plano.rota_id);
     setOrdemNaRota(
@@ -798,7 +794,7 @@ export default function AdminPreservacao() {
   }
 
   async function handleConfirmarAtribuirRota() {
-    if (atribuindoRota || !planoAtribuirRotaId) {
+    if (atribuindoRota || !planoAtribuirRotaId || !rotaSelecionadaAtribuir) {
       return;
     }
 
@@ -1027,8 +1023,8 @@ export default function AdminPreservacao() {
       return;
     }
 
-    if (!titulo.trim() || !tipoId || !dataInicio.trim()) {
-      setErroModal('Preencha título, tipo e data de início.');
+    if (!titulo.trim() || !tipoId || !dataInicio.trim() || !rotaId) {
+      setErroModal('Preencha título, tipo, data de início e rota.');
       return;
     }
 
@@ -1050,7 +1046,6 @@ export default function AdminPreservacao() {
             periodicidade,
             prioridade,
             data_inicio: dataInicio,
-            ativo,
             observacoes: observacoes || null,
             rota_id: rotaId,
             ordem_na_rota: ordemNaRotaNumero,
@@ -1080,7 +1075,6 @@ export default function AdminPreservacao() {
             periodicidade,
             prioridade,
             data_inicio: dataInicio,
-            ativo,
             observacoes: observacoes || null,
             rota_id: rotaId,
             ordem_na_rota: ordemNaRotaNumero,
@@ -2051,11 +2045,6 @@ export default function AdminPreservacao() {
               <View style={styles.field}>
                 <Text style={styles.label}>Rota</Text>
                 <View style={styles.chipWrap}>
-                  <Chip
-                    label="Nenhuma"
-                    selected={rotaId === null}
-                    onPress={() => handleSelecionarRota(null)}
-                  />
                   {rotas
                     .filter((rota) => rota.ativo)
                     .map((rota) => (
@@ -2095,15 +2084,6 @@ export default function AdminPreservacao() {
                 />
               </View>
 
-              <View style={styles.toggleRow}>
-                <Text style={styles.label}>Ativo</Text>
-                <Switch
-                  value={ativo}
-                  onValueChange={setAtivo}
-                  trackColor={{ false: light.border, true: light.brand }}
-                />
-              </View>
-
               <View style={styles.field}>
                 <Text style={styles.label}>Observações</Text>
                 <TextInput
@@ -2130,10 +2110,11 @@ export default function AdminPreservacao() {
                   style={({ pressed }) => [
                     styles.modalBotao,
                     styles.modalBotaoSalvar,
-                    (pressed || isSubmitting) && styles.modalBotaoPressionado,
+                    (pressed || isSubmitting || !rotaId) &&
+                      styles.modalBotaoPressionado,
                   ]}
                   onPress={handleSalvar}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !rotaId}
                 >
                   <Text style={styles.modalBotaoSalvarTexto}>
                     {isSubmitting ? 'Salvando…' : 'Salvar'}
@@ -2175,24 +2156,6 @@ export default function AdminPreservacao() {
           </View>
 
           <ScrollView contentContainerStyle={styles.corpoAtribuir}>
-            <Pressable
-              style={styles.linhaRota}
-              onPress={() => setRotaSelecionadaAtribuir(null)}
-            >
-              <Text style={styles.linhaRotaTexto}>Nenhuma</Text>
-              <View
-                style={[
-                  styles.linhaRotaIndicador,
-                  rotaSelecionadaAtribuir === null &&
-                    styles.linhaRotaIndicadorSelecionado,
-                ]}
-              >
-                {rotaSelecionadaAtribuir === null ? (
-                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                ) : null}
-              </View>
-            </Pressable>
-
             {rotas
               .filter((rota) => rota.ativo)
               .map((rota) => (
@@ -2243,10 +2206,11 @@ export default function AdminPreservacao() {
             <Pressable
               style={[
                 styles.botaoConfirmarAtribuir,
-                atribuindoRota && styles.botaoConfirmarAtribuirDesabilitado,
+                (atribuindoRota || !rotaSelecionadaAtribuir) &&
+                  styles.botaoConfirmarAtribuirDesabilitado,
               ]}
               onPress={handleConfirmarAtribuirRota}
-              disabled={atribuindoRota}
+              disabled={atribuindoRota || !rotaSelecionadaAtribuir}
             >
               <Text style={styles.botaoConfirmarAtribuirTexto}>
                 {atribuindoRota ? 'Salvando…' : 'Confirmar'}
@@ -3007,11 +2971,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   modalBotoes: {
     flexDirection: 'row',
