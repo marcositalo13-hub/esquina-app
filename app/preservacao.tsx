@@ -38,8 +38,8 @@ type ExecucaoAtiva = {
   tituloContexto: string | null;
 };
 
-// Aviso inline exibido no próprio card (rota ou atividade avulsa) quando o
-// "Iniciar" não encontra nada pendente, ou quando a consulta falha.
+// Aviso inline exibido no próprio card de rota quando "Iniciar Rota"/
+// "Continuar" não encontra nada acionável, ou quando a consulta falha.
 type AvisoCard = {
   id: string;
   texto: string;
@@ -59,7 +59,19 @@ function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
     local: plano?.local ?? null,
     descricao: plano?.descricao ?? null,
     observacoes: plano?.observacoes ?? null,
+    status: ordem.status,
+    iniciadoEm: ordem.iniciado_em,
+    pausadoEm: ordem.pausado_em,
+    tempoPausadoSegundos: ordem.tempo_pausado_segundos,
   };
+}
+
+// Uma rota é "continuação" (em vez de início novo) quando ao menos uma
+// ordem dela já está em_andamento ou já tem iniciado_em preenchido.
+function ehContinuacao(itens: OrdemServico[]): boolean {
+  return itens.some(
+    (o) => o.status === 'em_andamento' || o.iniciado_em !== null,
+  );
 }
 
 // Frase convidativa do card de rota — varia só no singular/plural.
@@ -280,9 +292,10 @@ export default function Preservacao() {
     );
   }
 
-  // Rede de segurança: busca as ordens pendentes da rota DIRETO no banco
+  // Rede de segurança: busca as ordens acionáveis da rota DIRETO no banco
   // (em vez de confiar no estado local, que pode estar desatualizado) antes
-  // de abrir o fluxo. Array vazio → aviso inline no card, sem abrir o
+  // de abrir o fluxo — inclui 'pendente' E 'em_andamento' (continuação),
+  // não só 'pendente'. Array vazio → aviso inline no card, sem abrir o
   // fluxo. Falha na consulta → mesmo lugar, mensagem em semantic.overdue.
   async function handleIniciarRota(grupo: GrupoRota) {
     setAvisoRota(null);
@@ -292,14 +305,14 @@ export default function Preservacao() {
       const { data, error } = await supabase
         .from('ordens_servico')
         .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
-        .eq('status', 'pendente')
+        .in('status', ['pendente', 'em_andamento'])
         .eq('data_prevista', hoje());
 
       if (error) {
         throw error;
       }
 
-      const itensPendentes = ((data ?? []) as OrdemServico[])
+      const itensAcionaveis = ((data ?? []) as OrdemServico[])
         .filter((o) => o.planos_manutencao?.rota_id === grupo.rota.id)
         .sort((a, b) => {
           const ordemA = a.planos_manutencao?.ordem_na_rota ?? 0;
@@ -308,7 +321,7 @@ export default function Preservacao() {
         })
         .map(paraItemExecucao);
 
-      if (itensPendentes.length === 0) {
+      if (itensAcionaveis.length === 0) {
         mostrarAvisoRota(
           grupo.rota.id,
           'Todas as atividades desta rota já foram concluídas hoje.',
@@ -317,7 +330,10 @@ export default function Preservacao() {
         return;
       }
 
-      setExecucao({ ordens: itensPendentes, tituloContexto: grupo.rota.nome });
+      setExecucao({
+        ordens: itensAcionaveis,
+        tituloContexto: grupo.rota.nome,
+      });
     } catch (err) {
       mostrarAvisoRota(
         grupo.rota.id,
@@ -442,12 +458,19 @@ export default function Preservacao() {
                 const iniciadasCount = grupo.itens.filter(
                   (o) => o.status !== 'pendente',
                 ).length;
-                // Único critério para mostrar "Iniciar Rota": existe ao
-                // menos uma ordem de hoje, nesta rota, com status
-                // 'pendente' — nada de contagens/caches derivados.
+                // Mostra o botão quando existe ao menos uma ordem de hoje,
+                // nesta rota, ainda 'pendente' OU 'em_andamento' (uma
+                // 'em_andamento' sem tudo mais concluído é uma rota pausada
+                // no meio — precisa continuar aparecendo acionável).
                 const temPendente = grupo.itens.some(
                   (o) => o.status === 'pendente',
                 );
+                const temAcao =
+                  temPendente ||
+                  grupo.itens.some((o) => o.status === 'em_andamento');
+                // Continuação: ao menos uma ordem já foi iniciada — o botão
+                // vira "Continuar" e o fluxo pula transição/checklist.
+                const continuacao = ehContinuacao(grupo.itens);
                 // 100% concluída: todas as ordens de hoje da rota estão
                 // 'concluida' (logo, nenhuma pendente nem em_andamento).
                 const todasConcluidas =
@@ -478,7 +501,7 @@ export default function Preservacao() {
                       </View>
                     </View>
 
-                    {temPendente ? (
+                    {temAcao ? (
                       <Pressable
                         style={styles.botaoIniciarRota}
                         onPress={() => handleIniciarRota(grupo)}
@@ -487,7 +510,9 @@ export default function Preservacao() {
                         <Text style={styles.botaoIniciarRotaTexto}>
                           {verificandoId === grupo.rota.id
                             ? 'Verificando…'
-                            : 'Iniciar Rota'}
+                            : continuacao
+                              ? 'Continuar'
+                              : 'Iniciar Rota'}
                         </Text>
                       </Pressable>
                     ) : todasConcluidas ? (

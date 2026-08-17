@@ -82,6 +82,8 @@ create table if not exists ordens_servico (
   motivo_reprovacao text,
   reprovacao_pendente boolean not null default false,
   reprovada_em timestamptz,
+  pausado_em timestamptz,
+  tempo_pausado_segundos integer not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -97,6 +99,13 @@ create table if not exists ordens_servico (
 -- alter table ordens_servico add column if not exists motivo_reprovacao text;
 -- alter table ordens_servico add column if not exists reprovacao_pendente boolean not null default false;
 -- alter table ordens_servico add column if not exists reprovada_em timestamptz;
+
+-- Se ordens_servico já existia sem as colunas de pausa (script anterior),
+-- rode isto para adicioná-las em vez de recriar a tabela — usadas pelo
+-- botão "Pausar"/"Retomar atividade" do fluxo guiado (ExecucaoGuiada) e
+-- pelo cálculo de "Tempo: Xmin" em app/admin/preservacao.tsx:
+-- alter table ordens_servico add column if not exists pausado_em timestamptz;
+-- alter table ordens_servico add column if not exists tempo_pausado_segundos integer not null default 0;
 
 -- Se ordens_servico já existia sem "on delete cascade" (script anterior),
 -- rode isto para corrigir a constraint em vez de recriar a tabela:

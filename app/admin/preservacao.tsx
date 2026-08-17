@@ -1135,9 +1135,13 @@ export default function AdminPreservacao() {
     const tempoExecucaoTexto =
       ordem.status === 'concluida' && ordem.iniciado_em && ordem.concluida_em
         ? formatarDuracao(
-            (new Date(ordem.concluida_em).getTime() -
-              new Date(ordem.iniciado_em).getTime()) /
-              1000,
+            Math.max(
+              0,
+              (new Date(ordem.concluida_em).getTime() -
+                new Date(ordem.iniciado_em).getTime()) /
+                1000 -
+                ordem.tempo_pausado_segundos,
+            ),
           )
         : null;
 
