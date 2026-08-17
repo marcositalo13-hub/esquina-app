@@ -1,7 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdiarAcao } from '../src/components/AdiarAcao';
 import { Chip } from '../src/components/Chip';
@@ -77,6 +84,11 @@ export default function Preservacao() {
   const avisoRotaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const avisoAvulsaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fila de reprovações pendentes — interceptam a tela em tela cheia, uma
+  // de cada vez, até esvaziar (ver renderização mais abaixo).
+  const [reprovacoes, setReprovacoes] = useState<OrdemServico[]>([]);
+  const [processandoReprovacao, setProcessandoReprovacao] = useState(false);
+
   useEffect(() => {
     return () => {
       if (avisoRotaTimeout.current) {
@@ -123,6 +135,54 @@ export default function Preservacao() {
       });
     });
   }, [carregar]);
+
+  // Verifica se há atividades reprovadas pendentes de "leitura" pela
+  // equipe de execução. Roda no mount e sempre que a tela ganha foco de
+  // novo (ex.: volta de outra aba) via useFocusEffect.
+  const verificarReprovacoes = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('ordens_servico')
+      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .eq('reprovacao_pendente', true)
+      .order('reprovada_em', { ascending: true });
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    setReprovacoes((data ?? []) as OrdemServico[]);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      verificarReprovacoes();
+    }, [verificarReprovacoes]),
+  );
+
+  const reprovacaoAtual = reprovacoes[0] ?? null;
+
+  async function handleEntenderReprovacao() {
+    if (!reprovacaoAtual || processandoReprovacao) {
+      return;
+    }
+
+    setProcessandoReprovacao(true);
+
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({ reprovacao_pendente: false })
+      .eq('id', reprovacaoAtual.id);
+
+    setProcessandoReprovacao(false);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    setReprovacoes((atual) => atual.slice(1));
+  }
 
   // Resumo do dia: agrupa por rota apenas as ordens de HOJE que têm rota.
   const resumoRotas = useMemo(() => {
@@ -313,6 +373,63 @@ export default function Preservacao() {
 
   return (
     <View style={styles.container}>
+      {reprovacaoAtual ? (
+        <Modal
+          visible
+          transparent={false}
+          animationType="fade"
+          onRequestClose={() => {}}
+        >
+          <View
+            style={[
+              styles.telaReprovacao,
+              {
+                paddingTop: insets.top + spacing.xl,
+                paddingBottom: insets.bottom + spacing.xl,
+              },
+            ]}
+          >
+            <Ionicons name="alert-circle" size={72} color="#FFFFFF" />
+            <Text style={styles.reprovacaoTitulo}>Atividade reprovada</Text>
+
+            <View style={styles.reprovacaoInfo}>
+              <Text style={styles.reprovacaoNome}>
+                {reprovacaoAtual.planos_manutencao?.titulo ?? 'Atividade'}
+              </Text>
+              <Text style={styles.reprovacaoDetalhe}>
+                {reprovacaoAtual.planos_manutencao?.tipos_atividade?.nome ??
+                  'Sem tipo'}
+              </Text>
+              {reprovacaoAtual.planos_manutencao?.local ? (
+                <Text style={styles.reprovacaoDetalhe}>
+                  {reprovacaoAtual.planos_manutencao.local}
+                </Text>
+              ) : null}
+
+              <Text style={styles.reprovacaoMotivoLabel}>Motivo</Text>
+              <Text style={styles.reprovacaoMotivoTexto}>
+                {reprovacaoAtual.motivo_reprovacao?.trim()
+                  ? reprovacaoAtual.motivo_reprovacao
+                  : 'Nenhum motivo informado'}
+              </Text>
+            </View>
+
+            <Pressable
+              style={[
+                styles.reprovacaoBotao,
+                processandoReprovacao && styles.reprovacaoBotaoDesabilitado,
+              ]}
+              onPress={handleEntenderReprovacao}
+              disabled={processandoReprovacao}
+            >
+              <Text style={styles.reprovacaoBotaoTexto}>
+                {processandoReprovacao ? 'Salvando…' : 'Entendido'}
+              </Text>
+            </Pressable>
+          </View>
+        </Modal>
+      ) : null}
+
       <ScreenBackground />
 
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
@@ -707,5 +824,64 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 13,
     color: light.bg,
+  },
+  telaReprovacao: {
+    flex: 1,
+    backgroundColor: semantic.overdue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  reprovacaoTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 22,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  reprovacaoInfo: {
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.xs,
+  },
+  reprovacaoNome: {
+    fontFamily: fonts.semiBold,
+    fontSize: 17,
+    color: '#FFFFFF',
+  },
+  reprovacaoDetalhe: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  reprovacaoMotivoLabel: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.85)',
+    marginTop: spacing.sm,
+  },
+  reprovacaoMotivoTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: '#FFFFFF',
+    lineHeight: 21,
+  },
+  reprovacaoBotao: {
+    alignSelf: 'stretch',
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + 4,
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  reprovacaoBotaoDesabilitado: {
+    opacity: 0.7,
+  },
+  reprovacaoBotaoTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 15,
+    color: semantic.overdue,
   },
 });

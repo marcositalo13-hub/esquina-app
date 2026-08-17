@@ -85,6 +85,9 @@ export type OrdemServico = {
   concluida_em: string | null;
   concluida_por: string | null;
   observacao: string | null;
+  motivo_reprovacao: string | null;
+  reprovacao_pendente: boolean;
+  reprovada_em: string | null;
   created_at: string;
   planos_manutencao?: PlanoManutencao | null;
 };

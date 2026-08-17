@@ -79,6 +79,9 @@ create table if not exists ordens_servico (
   concluida_em timestamptz,
   concluida_por text,
   observacao text,
+  motivo_reprovacao text,
+  reprovacao_pendente boolean not null default false,
+  reprovada_em timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -86,6 +89,14 @@ create table if not exists ordens_servico (
 -- para adicionar a coluna em vez de recriar a tabela — usada pelo fluxo
 -- guiado (ExecucaoGuiada) para calcular o tempo gasto em cada atividade:
 -- alter table ordens_servico add column if not exists iniciado_em timestamptz;
+
+-- Se ordens_servico já existia sem as colunas de reprovação (script
+-- anterior), rode isto para adicioná-las em vez de recriar a tabela —
+-- usadas pela ação "Reprovar" (app/admin/preservacao.tsx) e pela
+-- interceptação em tela cheia na execução (app/preservacao.tsx):
+-- alter table ordens_servico add column if not exists motivo_reprovacao text;
+-- alter table ordens_servico add column if not exists reprovacao_pendente boolean not null default false;
+-- alter table ordens_servico add column if not exists reprovada_em timestamptz;
 
 -- Se ordens_servico já existia sem "on delete cascade" (script anterior),
 -- rode isto para corrigir a constraint em vez de recriar a tabela:

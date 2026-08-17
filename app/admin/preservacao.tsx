@@ -139,6 +139,32 @@ export default function AdminPreservacao() {
   const [atribuindoRota, setAtribuindoRota] = useState(false);
   const [erroAtribuirRota, setErroAtribuirRota] = useState<string | null>(null);
 
+  const [modoSelecaoPlanos, setModoSelecaoPlanos] = useState(false);
+  const [planosSelecionados, setPlanosSelecionados] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const [modalEdicaoEmMassaVisivel, setModalEdicaoEmMassaVisivel] =
+    useState(false);
+  // 'manter' = "Não alterar" — o campo não é tocado no UPDATE.
+  const [tipoEdicaoMassa, setTipoEdicaoMassa] = useState<'manter' | string>(
+    'manter',
+  );
+  const [rotaEdicaoMassa, setRotaEdicaoMassa] = useState<
+    'manter' | string | null
+  >('manter');
+  const [prioridadeEdicaoMassa, setPrioridadeEdicaoMassa] = useState<
+    'manter' | Prioridade
+  >('manter');
+  const [aplicandoEdicaoMassa, setAplicandoEdicaoMassa] = useState(false);
+  const [erroEdicaoMassa, setErroEdicaoMassa] = useState<string | null>(null);
+
+  const [modalReprovarVisivel, setModalReprovarVisivel] = useState(false);
+  const [ordemReprovarId, setOrdemReprovarId] = useState<string | null>(null);
+  const [motivoReprovacao, setMotivoReprovacao] = useState('');
+  const [reprovando, setReprovando] = useState(false);
+  const [erroReprovar, setErroReprovar] = useState<string | null>(null);
+
   const carregarPlanos = useCallback(async () => {
     const { data, error } = await supabase
       .from('planos_manutencao')
@@ -802,6 +828,179 @@ export default function AdminPreservacao() {
     carregarTudo();
   }
 
+  function alternarModoSelecaoPlanos() {
+    setModoSelecaoPlanos((atual) => {
+      const novo = !atual;
+      if (!novo) {
+        setPlanosSelecionados(new Set());
+      }
+      return novo;
+    });
+  }
+
+  function alternarSelecaoPlano(id: string) {
+    setPlanosSelecionados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) {
+        novo.delete(id);
+      } else {
+        novo.add(id);
+      }
+      return novo;
+    });
+  }
+
+  function cancelarSelecaoPlanos() {
+    setModoSelecaoPlanos(false);
+    setPlanosSelecionados(new Set());
+  }
+
+  function abrirModalEdicaoEmMassa() {
+    setTipoEdicaoMassa('manter');
+    setRotaEdicaoMassa('manter');
+    setPrioridadeEdicaoMassa('manter');
+    setErroEdicaoMassa(null);
+    setModalEdicaoEmMassaVisivel(true);
+  }
+
+  function fecharModalEdicaoEmMassa() {
+    setModalEdicaoEmMassaVisivel(false);
+  }
+
+  // Cada campo que não está em "manter" (Não alterar) é atualizado numa
+  // única operação .in('id', ids) para todos os selecionados — exceto
+  // rota_id, que precisa de ordem_na_rota individual e por isso é
+  // aplicado plano a plano, sequencialmente.
+  async function handleAplicarEdicaoEmMassa() {
+    if (aplicandoEdicaoMassa) {
+      return;
+    }
+
+    const ids = Array.from(planosSelecionados);
+    if (ids.length === 0) {
+      return;
+    }
+
+    setAplicandoEdicaoMassa(true);
+    setErroEdicaoMassa(null);
+
+    try {
+      if (tipoEdicaoMassa !== 'manter') {
+        const { error } = await supabase
+          .from('planos_manutencao')
+          .update({ tipo_id: tipoEdicaoMassa })
+          .in('id', ids);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      if (prioridadeEdicaoMassa !== 'manter') {
+        const { error } = await supabase
+          .from('planos_manutencao')
+          .update({ prioridade: prioridadeEdicaoMassa })
+          .in('id', ids);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      if (rotaEdicaoMassa !== 'manter') {
+        if (rotaEdicaoMassa === null) {
+          const { error } = await supabase
+            .from('planos_manutencao')
+            .update({ rota_id: null, ordem_na_rota: null })
+            .in('id', ids);
+
+          if (error) {
+            throw error;
+          }
+        } else {
+          const rotaAlvo = rotaEdicaoMassa;
+          let quantidadeNaRota = planos.filter(
+            (p) => p.rota_id === rotaAlvo,
+          ).length;
+
+          for (const id of ids) {
+            quantidadeNaRota += 1;
+            const { error } = await supabase
+              .from('planos_manutencao')
+              .update({ rota_id: rotaAlvo, ordem_na_rota: quantidadeNaRota })
+              .eq('id', id);
+
+            if (error) {
+              throw error;
+            }
+          }
+        }
+      }
+
+      setModalEdicaoEmMassaVisivel(false);
+      setModoSelecaoPlanos(false);
+      setPlanosSelecionados(new Set());
+      carregarTudo();
+    } catch (err) {
+      setErroEdicaoMassa(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível aplicar as alterações.',
+      );
+    } finally {
+      setAplicandoEdicaoMassa(false);
+    }
+  }
+
+  function abrirModalReprovar(ordemId: string) {
+    fecharMenuAtividade();
+    setOrdemReprovarId(ordemId);
+    setMotivoReprovacao('');
+    setErroReprovar(null);
+    setModalReprovarVisivel(true);
+  }
+
+  function fecharModalReprovar() {
+    setModalReprovarVisivel(false);
+    setOrdemReprovarId(null);
+  }
+
+  // Reprovar devolve a ordem para 'pendente' (limpando os campos de
+  // conclusão) e marca reprovacao_pendente=true, para que a tela de
+  // execução intercepte em tela cheia na próxima vez que for aberta.
+  async function handleConfirmarReprovar() {
+    if (reprovando || !ordemReprovarId) {
+      return;
+    }
+
+    setReprovando(true);
+    setErroReprovar(null);
+
+    const { error } = await supabase
+      .from('ordens_servico')
+      .update({
+        status: 'pendente',
+        concluida_em: null,
+        concluida_por: null,
+        iniciado_em: null,
+        motivo_reprovacao: motivoReprovacao.trim() || null,
+        reprovacao_pendente: true,
+        reprovada_em: new Date().toISOString(),
+      })
+      .eq('id', ordemReprovarId);
+
+    setReprovando(false);
+
+    if (error) {
+      setErroReprovar(error.message);
+      return;
+    }
+
+    setModalReprovarVisivel(false);
+    setOrdemReprovarId(null);
+    carregarTudo();
+  }
+
   async function handleSalvar() {
     if (isSubmitting) {
       return;
@@ -1027,6 +1226,18 @@ export default function AdminPreservacao() {
                   Excluir
                 </Text>
               </Pressable>
+              {ordem.status === 'concluida' ? (
+                <Pressable
+                  style={styles.menuItem}
+                  onPress={() => abrirModalReprovar(ordem.id)}
+                >
+                  <Text
+                    style={[styles.menuItemTexto, styles.menuItemExcluirTexto]}
+                  >
+                    Reprovar
+                  </Text>
+                </Pressable>
+              ) : null}
             </>
           ) : (
             <View style={styles.menuConfirmacao}>
@@ -1431,19 +1642,26 @@ export default function AdminPreservacao() {
         )}
 
         <View style={styles.painelCard}>
-          <Pressable
-            style={styles.calendarioCabecalho}
-            onPress={() => setPlanosAbertos((v) => !v)}
-          >
-            <Text style={styles.calendarioTitulo}>
-              Todos os planos cadastrados
-            </Text>
-            <Ionicons
-              name={planosAbertos ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={light.textSecondary}
-            />
-          </Pressable>
+          <View style={styles.calendarioCabecalho}>
+            <Pressable
+              style={styles.calendarioCabecalhoToggle}
+              onPress={() => setPlanosAbertos((v) => !v)}
+            >
+              <Text style={styles.calendarioTitulo}>
+                Todos os planos cadastrados
+              </Text>
+              <Ionicons
+                name={planosAbertos ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={light.textSecondary}
+              />
+            </Pressable>
+            <Pressable onPress={alternarModoSelecaoPlanos}>
+              <Text style={styles.selecionarLink}>
+                {modoSelecaoPlanos ? 'Concluir' : 'Selecionar'}
+              </Text>
+            </Pressable>
+          </View>
 
           {planosAbertos ? (
             <View style={styles.lista}>
@@ -1454,31 +1672,63 @@ export default function AdminPreservacao() {
               {planosFiltrados.map((plano) => {
                 const menuAberto = menuAbertoId === plano.id;
                 const proximaOrdem = encontrarProximaOrdemPendente(plano.id);
+                const selecionado = planosSelecionados.has(plano.id);
 
                 return (
                   <Fragment key={plano.id}>
-                    <View style={styles.planoCard}>
+                    <Pressable
+                      style={styles.planoCard}
+                      onPress={
+                        modoSelecaoPlanos
+                          ? () => alternarSelecaoPlano(plano.id)
+                          : undefined
+                      }
+                    >
                       <View style={styles.planoCabecalho}>
+                        {modoSelecaoPlanos ? (
+                          <View
+                            style={[
+                              styles.linhaRotaIndicador,
+                              selecionado &&
+                                styles.linhaRotaIndicadorSelecionado,
+                            ]}
+                          >
+                            {selecionado ? (
+                              <Ionicons
+                                name="checkmark"
+                                size={14}
+                                color="#FFFFFF"
+                              />
+                            ) : null}
+                          </View>
+                        ) : null}
                         <Text style={styles.planoTitulo}>{plano.titulo}</Text>
-                        <Pressable
-                          ref={(el) => {
-                            if (el) {
-                              menuIconRefs.current.set(plano.id, el);
-                            }
-                          }}
-                          onPress={() => handleAbrirMenu(plano.id)}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          style={({ pressed }) => [
-                            styles.planoMenuButton,
-                            pressed && styles.planoMenuButtonPressionado,
-                          ]}
-                        >
-                          <Ionicons
-                            name="ellipsis-horizontal"
-                            size={18}
-                            color={light.textSecondary}
-                          />
-                        </Pressable>
+                        {modoSelecaoPlanos ? null : (
+                          <Pressable
+                            ref={(el) => {
+                              if (el) {
+                                menuIconRefs.current.set(plano.id, el);
+                              }
+                            }}
+                            onPress={() => handleAbrirMenu(plano.id)}
+                            hitSlop={{
+                              top: 10,
+                              bottom: 10,
+                              left: 10,
+                              right: 10,
+                            }}
+                            style={({ pressed }) => [
+                              styles.planoMenuButton,
+                              pressed && styles.planoMenuButtonPressionado,
+                            ]}
+                          >
+                            <Ionicons
+                              name="ellipsis-horizontal"
+                              size={18}
+                              color={light.textSecondary}
+                            />
+                          </Pressable>
+                        )}
                       </View>
 
                       {plano.rota_id && plano.rotas ? (
@@ -1507,7 +1757,7 @@ export default function AdminPreservacao() {
                           color={getCorPrioridade(plano.prioridade)}
                         />
                       </View>
-                    </View>
+                    </Pressable>
 
                     <CardMenu
                       visible={menuAberto}
@@ -1643,6 +1893,37 @@ export default function AdminPreservacao() {
           ) : null}
         </View>
       </ScrollView>
+
+      {planosSelecionados.size > 0 ? (
+        <View
+          style={[
+            styles.barraSelecao,
+            { paddingBottom: insets.bottom + spacing.sm },
+          ]}
+        >
+          <Text style={styles.barraSelecaoTexto}>
+            {planosSelecionados.size} selecionados
+          </Text>
+          <View style={styles.barraSelecaoBotoes}>
+            <Pressable
+              style={styles.barraSelecaoBotaoCancelar}
+              onPress={cancelarSelecaoPlanos}
+            >
+              <Text style={styles.barraSelecaoBotaoCancelarTexto}>
+                Cancelar
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.barraSelecaoBotaoEditar}
+              onPress={abrirModalEdicaoEmMassa}
+            >
+              <Text style={styles.barraSelecaoBotaoEditarTexto}>
+                Editar selecionados
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       <Modal
         visible={modalVisivel}
@@ -1947,6 +2228,227 @@ export default function AdminPreservacao() {
           {novaRotaOverlay}
         </View>
       </Modal>
+
+      <Modal
+        visible={modalEdicaoEmMassaVisivel}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={fecharModalEdicaoEmMassa}
+      >
+        <View style={styles.telaAtribuir}>
+          <View
+            style={[
+              styles.cabecalhoAtribuir,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={styles.cabecalhoAtribuirBotao}
+              onPress={fecharModalEdicaoEmMassa}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
+            <Text style={styles.tituloAtribuir}>
+              Editar {planosSelecionados.size} planos
+            </Text>
+            <View style={styles.cabecalhoAtribuirBotao} />
+          </View>
+
+          <ScrollView contentContainerStyle={styles.corpoAtribuir}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Tipo</Text>
+              <View style={styles.chipWrap}>
+                <Chip
+                  label="Não alterar"
+                  selected={tipoEdicaoMassa === 'manter'}
+                  onPress={() => setTipoEdicaoMassa('manter')}
+                />
+                {tiposAtivos.map((tipo) => (
+                  <Chip
+                    key={tipo.id}
+                    label={tipo.nome}
+                    selected={tipoEdicaoMassa === tipo.id}
+                    onPress={() => setTipoEdicaoMassa(tipo.id)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Prioridade</Text>
+              <View style={styles.chipWrap}>
+                <Chip
+                  label="Não alterar"
+                  selected={prioridadeEdicaoMassa === 'manter'}
+                  onPress={() => setPrioridadeEdicaoMassa('manter')}
+                />
+                {PRIORIDADES.map((item) => (
+                  <Chip
+                    key={item}
+                    label={item}
+                    selected={prioridadeEdicaoMassa === item}
+                    color={getCorPrioridade(item)}
+                    onPress={() => setPrioridadeEdicaoMassa(item)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Rota</Text>
+
+              <Pressable
+                style={styles.linhaRota}
+                onPress={() => setRotaEdicaoMassa('manter')}
+              >
+                <Text style={styles.linhaRotaTexto}>Não alterar</Text>
+                <View
+                  style={[
+                    styles.linhaRotaIndicador,
+                    rotaEdicaoMassa === 'manter' &&
+                      styles.linhaRotaIndicadorSelecionado,
+                  ]}
+                >
+                  {rotaEdicaoMassa === 'manter' ? (
+                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                  ) : null}
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={styles.linhaRota}
+                onPress={() => setRotaEdicaoMassa(null)}
+              >
+                <Text style={styles.linhaRotaTexto}>Nenhuma</Text>
+                <View
+                  style={[
+                    styles.linhaRotaIndicador,
+                    rotaEdicaoMassa === null &&
+                      styles.linhaRotaIndicadorSelecionado,
+                  ]}
+                >
+                  {rotaEdicaoMassa === null ? (
+                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                  ) : null}
+                </View>
+              </Pressable>
+
+              {rotas
+                .filter((rota) => rota.ativo)
+                .map((rota) => (
+                  <Pressable
+                    key={rota.id}
+                    style={styles.linhaRota}
+                    onPress={() => setRotaEdicaoMassa(rota.id)}
+                  >
+                    <Text style={styles.linhaRotaTexto}>{rota.nome}</Text>
+                    <View
+                      style={[
+                        styles.linhaRotaIndicador,
+                        rotaEdicaoMassa === rota.id &&
+                          styles.linhaRotaIndicadorSelecionado,
+                      ]}
+                    >
+                      {rotaEdicaoMassa === rota.id ? (
+                        <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                      ) : null}
+                    </View>
+                  </Pressable>
+                ))}
+            </View>
+
+            {erroEdicaoMassa ? (
+              <Text style={styles.erro}>{erroEdicaoMassa}</Text>
+            ) : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.rodapeAtribuir,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={styles.botaoCancelarAtribuir}
+              onPress={fecharModalEdicaoEmMassa}
+            >
+              <Text style={styles.botaoCancelarAtribuirTexto}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.botaoConfirmarAtribuir,
+                aplicandoEdicaoMassa &&
+                  styles.botaoConfirmarAtribuirDesabilitado,
+              ]}
+              onPress={handleAplicarEdicaoEmMassa}
+              disabled={aplicandoEdicaoMassa}
+            >
+              <Text style={styles.botaoConfirmarAtribuirTexto}>
+                {aplicandoEdicaoMassa
+                  ? 'Aplicando…'
+                  : `Aplicar a ${planosSelecionados.size} planos`}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalReprovarVisivel}
+        transparent
+        animationType="fade"
+        onRequestClose={fecharModalReprovar}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modalRotaCard}>
+            <Text style={styles.modalTitulo}>Reprovar atividade</Text>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Motivo da reprovação (opcional)</Text>
+              <TextInput
+                value={motivoReprovacao}
+                onChangeText={setMotivoReprovacao}
+                placeholder="Descreva o motivo, se houver"
+                placeholderTextColor={light.textSecondary}
+                multiline
+                numberOfLines={3}
+                style={[styles.input, styles.inputMultiline]}
+              />
+            </View>
+
+            {erroReprovar ? (
+              <Text style={styles.erro}>{erroReprovar}</Text>
+            ) : null}
+
+            <View style={styles.modalBotoes}>
+              <Pressable
+                style={[styles.modalBotao, styles.modalBotaoCancelar]}
+                onPress={fecharModalReprovar}
+              >
+                <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalBotao,
+                  styles.modalBotaoPerigo,
+                  (pressed || reprovando) && styles.modalBotaoPerigoPressionado,
+                ]}
+                onPress={handleConfirmarReprovar}
+                disabled={reprovando}
+              >
+                <Text style={styles.modalBotaoPerigoTexto}>
+                  {reprovando ? 'Reprovando…' : 'Confirmar reprovação'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2022,6 +2524,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  calendarioCabecalhoToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  selecionarLink: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.brand,
+    marginLeft: spacing.md,
   },
   calendarioTitulo: {
     fontFamily: fonts.medium,
@@ -2297,6 +2812,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#FFFFFF',
   },
+  barraSelecao: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: light.card,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 8,
+  },
+  barraSelecaoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  barraSelecaoBotoes: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  barraSelecaoBotaoCancelar: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 4,
+    borderRadius: radius.md,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  barraSelecaoBotaoCancelarTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textSecondary,
+  },
+  barraSelecaoBotaoEditar: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 4,
+    borderRadius: radius.md,
+    backgroundColor: light.brand,
+  },
+  barraSelecaoBotaoEditarTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
   planoCabecalho: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2445,6 +3012,17 @@ const styles = StyleSheet.create({
     backgroundColor: light.brandPressed,
   },
   modalBotaoSalvarTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  modalBotaoPerigo: {
+    backgroundColor: semantic.overdue,
+  },
+  modalBotaoPerigoPressionado: {
+    opacity: 0.7,
+  },
+  modalBotaoPerigoTexto: {
     fontFamily: fonts.semiBold,
     fontSize: 14,
     color: '#FFFFFF',
