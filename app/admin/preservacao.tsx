@@ -112,6 +112,8 @@ export default function AdminPreservacao() {
     useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [erroModal, setErroModal] = useState<string | null>(null);
+  const [calendarioDataInicioVisivel, setCalendarioDataInicioVisivel] =
+    useState(false);
 
   const [modalRotaVisivel, setModalRotaVisivel] = useState(false);
   const [nomeNovaRota, setNomeNovaRota] = useState('');
@@ -640,18 +642,21 @@ export default function AdminPreservacao() {
     limparFormulario();
     setEditingId(null);
     setErroModal(null);
+    setCalendarioDataInicioVisivel(false);
     setModalVisivel(true);
   }
 
   function fecharModal() {
     setModalVisivel(false);
     setEditingId(null);
+    setCalendarioDataInicioVisivel(false);
   }
 
   function handleEditar(plano: PlanoManutencao) {
     preencherFormulario(plano);
     setEditingId(plano.id);
     setErroModal(null);
+    setCalendarioDataInicioVisivel(false);
     setModalVisivel(true);
   }
 
@@ -660,6 +665,7 @@ export default function AdminPreservacao() {
     setTitulo(`${plano.titulo} (cópia)`);
     setEditingId(null);
     setErroModal(null);
+    setCalendarioDataInicioVisivel(false);
     setModalVisivel(true);
   }
 
@@ -1342,6 +1348,37 @@ export default function AdminPreservacao() {
     </View>
   ) : null;
 
+  // Overlay de "Data de início" — mesmo motivo do de cima: INLINE dentro
+  // do modal de plano, nunca um <Modal> próprio empilhado. Datas passadas
+  // só ficam bloqueadas para planos NOVOS; editar um plano existente com
+  // data original passada continua permitido (não trava dado histórico).
+  const calendarioDataInicioOverlay = calendarioDataInicioVisivel ? (
+    <View style={styles.novaRotaOverlay}>
+      <View style={styles.modalRotaCard}>
+        <Text style={styles.modalTitulo}>Data de início</Text>
+
+        <MiniCalendar
+          markedDates={{}}
+          selectedDate={dataInicio}
+          onSelectDay={(data) => {
+            setDataInicio(data);
+            setCalendarioDataInicioVisivel(false);
+          }}
+          desabilitarAntesDe={editingId ? undefined : hoje()}
+        />
+
+        <View style={styles.modalBotoes}>
+          <Pressable
+            style={[styles.modalBotao, styles.modalBotaoCancelar]}
+            onPress={() => setCalendarioDataInicioVisivel(false)}
+          >
+            <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  ) : null;
+
   return (
     <View style={styles.container}>
       <ScreenBackground />
@@ -1950,180 +1987,198 @@ export default function AdminPreservacao() {
 
       <Modal
         visible={modalVisivel}
-        transparent
-        animationType="fade"
+        transparent={false}
+        animationType="slide"
         onRequestClose={fecharModal}
       >
-        <View style={styles.overlay}>
-          <View style={styles.modalCard}>
-            <ScrollView
-              contentContainerStyle={styles.modalScroll}
-              keyboardShouldPersistTaps="handled"
+        <View style={styles.telaAtribuir}>
+          <View
+            style={[
+              styles.cabecalhoAtribuir,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <View style={styles.cabecalhoAtribuirBotao} />
+            <Text style={styles.tituloAtribuir}>
+              {editingId ? 'Editar atividade' : 'Nova atividade'}
+            </Text>
+            <Pressable
+              style={styles.cabecalhoAtribuirBotao}
+              onPress={fecharModal}
+              hitSlop={8}
             >
-              <Text style={styles.modalTitulo}>
-                {editingId ? 'Editar plano' : 'Nova atividade'}
-              </Text>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Título</Text>
-                <TextInput
-                  value={titulo}
-                  onChangeText={setTitulo}
-                  placeholder="Título"
-                  placeholderTextColor={light.textSecondary}
-                  style={styles.input}
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Tipo</Text>
-                <View style={styles.chipWrap}>
-                  {tiposAtivos.map((tipo) => (
-                    <Chip
-                      key={tipo.id}
-                      label={tipo.nome}
-                      selected={tipoId === tipo.id}
-                      onPress={() => setTipoId(tipo.id)}
-                    />
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Descrição</Text>
-                <TextInput
-                  value={descricao}
-                  onChangeText={setDescricao}
-                  placeholder="Descrição"
-                  placeholderTextColor={light.textSecondary}
-                  multiline
-                  numberOfLines={3}
-                  style={[styles.input, styles.inputMultiline]}
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Local</Text>
-                <TextInput
-                  value={local}
-                  onChangeText={setLocal}
-                  placeholder="Local"
-                  placeholderTextColor={light.textSecondary}
-                  style={styles.input}
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Periodicidade</Text>
-                <View style={styles.chipWrap}>
-                  {PERIODICIDADES.map((item) => (
-                    <Chip
-                      key={item}
-                      label={item}
-                      selected={periodicidade === item}
-                      onPress={() => setPeriodicidade(item)}
-                    />
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Prioridade</Text>
-                <View style={styles.chipWrap}>
-                  {PRIORIDADES.map((item) => (
-                    <Chip
-                      key={item}
-                      label={item}
-                      selected={prioridade === item}
-                      color={getCorPrioridade(item)}
-                      onPress={() => setPrioridade(item)}
-                    />
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Rota</Text>
-                <View style={styles.chipWrap}>
-                  {rotas
-                    .filter((rota) => rota.ativo)
-                    .map((rota) => (
-                      <Chip
-                        key={rota.id}
-                        label={rota.nome}
-                        selected={rotaId === rota.id}
-                        onPress={() => handleSelecionarRota(rota.id)}
-                      />
-                    ))}
-                  <Chip label="+ Nova rota" onPress={abrirModalRota} />
-                </View>
-              </View>
-
-              {rotaId ? (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Ordem na rota</Text>
-                  <TextInput
-                    value={ordemNaRota}
-                    onChangeText={handleAlterarOrdemNaRotaManual}
-                    placeholder="1"
-                    placeholderTextColor={light.textSecondary}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-              ) : null}
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Data de início (AAAA-MM-DD)</Text>
-                <TextInput
-                  value={dataInicio}
-                  onChangeText={setDataInicio}
-                  placeholder="AAAA-MM-DD"
-                  placeholderTextColor={light.textSecondary}
-                  style={styles.input}
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Observações</Text>
-                <TextInput
-                  value={observacoes}
-                  onChangeText={setObservacoes}
-                  placeholder="Observações"
-                  placeholderTextColor={light.textSecondary}
-                  multiline
-                  numberOfLines={3}
-                  style={[styles.input, styles.inputMultiline]}
-                />
-              </View>
-
-              {erroModal ? <Text style={styles.erro}>{erroModal}</Text> : null}
-
-              <View style={styles.modalBotoes}>
-                <Pressable
-                  style={[styles.modalBotao, styles.modalBotaoCancelar]}
-                  onPress={fecharModal}
-                >
-                  <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.modalBotao,
-                    styles.modalBotaoSalvar,
-                    (pressed || isSubmitting || !rotaId) &&
-                      styles.modalBotaoPressionado,
-                  ]}
-                  onPress={handleSalvar}
-                  disabled={isSubmitting || !rotaId}
-                >
-                  <Text style={styles.modalBotaoSalvarTexto}>
-                    {isSubmitting ? 'Salvando…' : 'Salvar'}
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
           </View>
+
+          <ScrollView
+            contentContainerStyle={styles.corpoPlano}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.field}>
+              <Text style={styles.label}>Título</Text>
+              <TextInput
+                value={titulo}
+                onChangeText={setTitulo}
+                placeholder="Título"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Tipo</Text>
+              <View style={styles.chipWrap}>
+                {tiposAtivos.map((tipo) => (
+                  <Chip
+                    key={tipo.id}
+                    label={tipo.nome}
+                    selected={tipoId === tipo.id}
+                    onPress={() => setTipoId(tipo.id)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Descrição</Text>
+              <TextInput
+                value={descricao}
+                onChangeText={setDescricao}
+                placeholder="Descrição"
+                placeholderTextColor={light.textSecondary}
+                multiline
+                numberOfLines={3}
+                style={[styles.input, styles.inputMultiline]}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Local</Text>
+              <TextInput
+                value={local}
+                onChangeText={setLocal}
+                placeholder="Local"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Periodicidade</Text>
+              <View style={styles.chipWrap}>
+                {PERIODICIDADES.map((item) => (
+                  <Chip
+                    key={item}
+                    label={item}
+                    selected={periodicidade === item}
+                    onPress={() => setPeriodicidade(item)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Prioridade</Text>
+              <View style={styles.chipWrap}>
+                {PRIORIDADES.map((item) => (
+                  <Chip
+                    key={item}
+                    label={item}
+                    selected={prioridade === item}
+                    color={getCorPrioridade(item)}
+                    onPress={() => setPrioridade(item)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Rota</Text>
+              <View style={styles.chipWrap}>
+                {rotas
+                  .filter((rota) => rota.ativo)
+                  .map((rota) => (
+                    <Chip
+                      key={rota.id}
+                      label={rota.nome}
+                      selected={rotaId === rota.id}
+                      onPress={() => handleSelecionarRota(rota.id)}
+                    />
+                  ))}
+                <Chip label="+ Nova rota" onPress={abrirModalRota} />
+              </View>
+            </View>
+
+            {rotaId ? (
+              <View style={styles.field}>
+                <Text style={styles.label}>Ordem na rota</Text>
+                <TextInput
+                  value={ordemNaRota}
+                  onChangeText={handleAlterarOrdemNaRotaManual}
+                  placeholder="1"
+                  placeholderTextColor={light.textSecondary}
+                  keyboardType="numeric"
+                  style={styles.input}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Data de início</Text>
+              <Pressable
+                style={styles.campoData}
+                onPress={() => setCalendarioDataInicioVisivel(true)}
+              >
+                <Text style={styles.campoDataTexto}>
+                  {formatarDataBR(dataInicio)}
+                </Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Observações</Text>
+              <TextInput
+                value={observacoes}
+                onChangeText={setObservacoes}
+                placeholder="Observações"
+                placeholderTextColor={light.textSecondary}
+                multiline
+                numberOfLines={3}
+                style={[styles.input, styles.inputMultiline]}
+              />
+            </View>
+
+            {erroModal ? <Text style={styles.erro}>{erroModal}</Text> : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.rodapeAtribuir,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={[
+                styles.botaoConfirmarAtribuir,
+                (isSubmitting || !rotaId) &&
+                  styles.botaoConfirmarAtribuirDesabilitado,
+              ]}
+              onPress={handleSalvar}
+              disabled={isSubmitting || !rotaId}
+            >
+              <Text style={styles.botaoConfirmarAtribuirTexto}>
+                {isSubmitting ? 'Salvando…' : 'Salvar'}
+              </Text>
+            </Pressable>
+          </View>
+
           {novaRotaOverlay}
+          {calendarioDataInicioOverlay}
         </View>
       </Modal>
 
@@ -2920,18 +2975,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.lg,
   },
-  modalCard: {
-    backgroundColor: light.card,
-    borderRadius: radius.lg,
-    maxHeight: '85%',
-  },
   modalRotaCard: {
     backgroundColor: light.card,
     borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  modalScroll: {
     padding: spacing.lg,
     gap: spacing.md,
   },
@@ -3053,6 +3099,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     gap: spacing.xs,
+  },
+  corpoPlano: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    gap: spacing.lg,
+  },
+  campoData: {
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+  },
+  campoDataTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: light.textPrimary,
   },
   linhaRota: {
     flexDirection: 'row',
