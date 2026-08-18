@@ -16,9 +16,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { dark, fonts, radius, spacing } from '../src/theme';
 
-type Perfil = 'Administrador' | 'Preservação' | 'Morador';
+type Perfil = 'Administrador' | 'Zeladoria' | 'Morador';
 
-const perfis: Perfil[] = ['Administrador', 'Preservação', 'Morador'];
+const perfis: Perfil[] = ['Administrador', 'Zeladoria', 'Morador'];
 
 export default function Login() {
   const insets = useSafeAreaInsets();
@@ -34,7 +34,7 @@ export default function Login() {
       return;
     }
 
-    if (perfil === 'Preservação') {
+    if (perfil === 'Zeladoria') {
       router.replace('/preservacao');
       return;
     }

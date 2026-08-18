@@ -23,7 +23,7 @@ type CardConfig = {
 const cards: CardConfig[] = [
   {
     key: 'preservacao',
-    label: 'Preservação e Manutenção',
+    label: 'Zeladoria e Manutenção',
     icon: 'construct-outline',
     ativo: true,
     href: '/admin/preservacao',

@@ -414,7 +414,7 @@ export default function Preservacao() {
       <ScreenBackground />
 
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Text style={styles.title}>Preservação</Text>
+        <Text style={styles.title}>Zeladoria</Text>
         <View style={styles.headerAcoes}>
           <Pressable
             style={styles.sinoBotao}

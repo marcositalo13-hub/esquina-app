@@ -1391,7 +1391,7 @@ export default function AdminPreservacao() {
           <Ionicons name="chevron-back" size={22} color={light.textPrimary} />
         </Pressable>
 
-        <Text style={styles.title}>Preservação e Manutenção</Text>
+        <Text style={styles.title}>Zeladoria e Manutenção</Text>
 
         <Pressable
           onPress={abrirModalNovo}
