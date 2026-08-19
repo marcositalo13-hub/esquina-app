@@ -7,6 +7,7 @@ import {
   BottomTabBar,
   type BottomTabItem,
 } from '../src/components/BottomTabBar';
+import { PainelSindico } from '../src/components/PainelSindico';
 import { RelatorioZeladoria } from '../src/components/RelatorioZeladoria';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { hojeLocal } from '../src/data/manutencao';
@@ -113,6 +114,7 @@ export default function Admin() {
           style={styles.body}
           contentContainerStyle={styles.bodyConteudo}
         >
+          <PainelSindico />
           <RelatorioZeladoria />
         </ScrollView>
       )}
@@ -191,5 +193,6 @@ const styles = StyleSheet.create({
   bodyConteudo: {
     paddingHorizontal: spacing.lg,
     paddingBottom: 90,
+    gap: spacing.md,
   },
 });
