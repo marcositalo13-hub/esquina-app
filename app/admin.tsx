@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BottomTabBar,
   type BottomTabItem,
 } from '../src/components/BottomTabBar';
+import { RelatorioZeladoria } from '../src/components/RelatorioZeladoria';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { hojeLocal } from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
@@ -108,11 +109,12 @@ export default function Admin() {
           ))}
         </View>
       ) : (
-        <View style={styles.body}>
-          <View style={styles.placeholderCard}>
-            <Text style={styles.placeholderText}>Conteúdo em construção</Text>
-          </View>
-        </View>
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={styles.bodyConteudo}
+        >
+          <RelatorioZeladoria />
+        </ScrollView>
       )}
 
       <BottomTabBar
@@ -185,22 +187,9 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+  },
+  bodyConteudo: {
     paddingHorizontal: spacing.lg,
     paddingBottom: 90,
-  },
-  placeholderCard: {
-    flex: 1,
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderText: {
-    fontFamily: fonts.regular,
-    fontSize: 14,
-    color: light.textSecondary,
   },
 });
