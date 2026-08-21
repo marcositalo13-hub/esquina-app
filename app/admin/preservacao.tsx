@@ -1183,6 +1183,15 @@ export default function AdminPreservacao() {
               />
             ) : null}
           </View>
+
+          {ordem.status === 'concluida' && !ordem.validada ? (
+            <Pressable
+              style={styles.botaoValidar}
+              onPress={() => abrirModalValidacao(ordem.id)}
+            >
+              <Text style={styles.botaoValidarTexto}>Validar</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <CardMenu
@@ -1240,14 +1249,6 @@ export default function AdminPreservacao() {
                   Excluir
                 </Text>
               </Pressable>
-              {ordem.status === 'concluida' && !ordem.validada ? (
-                <Pressable
-                  style={styles.menuItem}
-                  onPress={() => abrirModalValidacao(ordem.id)}
-                >
-                  <Text style={styles.menuItemTexto}>Validar</Text>
-                </Pressable>
-              ) : null}
             </>
           ) : (
             <View style={styles.menuConfirmacao}>
@@ -2925,6 +2926,18 @@ const styles = StyleSheet.create({
   qualidadeTexto: {
     fontFamily: fonts.medium,
     fontSize: 12,
+  },
+  botaoValidar: {
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    backgroundColor: light.brand,
+  },
+  botaoValidarTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   overlay: {
     flex: 1,
