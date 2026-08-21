@@ -27,12 +27,14 @@ import {
 } from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { StatusBadge } from '../../src/components/StatusBadge';
+import { ValidacaoGuiada } from '../../src/components/ValidacaoGuiada';
 import {
   adicionarDiasChave,
   formatarDataBR,
   formatarDuracao,
   gerarDatasOcorrencia,
   getCorPrioridade,
+  getQualidadeInfo,
   hojeLocal,
   JANELA_DIAS,
   type OrdemServico,
@@ -159,11 +161,10 @@ export default function AdminPreservacao() {
   const [aplicandoEdicaoMassa, setAplicandoEdicaoMassa] = useState(false);
   const [erroEdicaoMassa, setErroEdicaoMassa] = useState<string | null>(null);
 
-  const [modalReprovarVisivel, setModalReprovarVisivel] = useState(false);
-  const [ordemReprovarId, setOrdemReprovarId] = useState<string | null>(null);
-  const [motivoReprovacao, setMotivoReprovacao] = useState('');
-  const [reprovando, setReprovando] = useState(false);
-  const [erroReprovar, setErroReprovar] = useState<string | null>(null);
+  const [modalValidacaoVisivel, setModalValidacaoVisivel] = useState(false);
+  const [ordemValidacaoInicialId, setOrdemValidacaoInicialId] = useState<
+    string | null
+  >(null);
 
   const carregarPlanos = useCallback(async () => {
     const { data, error } = await supabase
@@ -975,52 +976,15 @@ export default function AdminPreservacao() {
     }
   }
 
-  function abrirModalReprovar(ordemId: string) {
+  function abrirModalValidacao(ordemId: string) {
     fecharMenuAtividade();
-    setOrdemReprovarId(ordemId);
-    setMotivoReprovacao('');
-    setErroReprovar(null);
-    setModalReprovarVisivel(true);
+    setOrdemValidacaoInicialId(ordemId);
+    setModalValidacaoVisivel(true);
   }
 
-  function fecharModalReprovar() {
-    setModalReprovarVisivel(false);
-    setOrdemReprovarId(null);
-  }
-
-  // Reprovar devolve a ordem para 'pendente' (limpando os campos de
-  // conclusão) e marca reprovacao_pendente=true, para que a tela de
-  // execução intercepte em tela cheia na próxima vez que for aberta.
-  async function handleConfirmarReprovar() {
-    if (reprovando || !ordemReprovarId) {
-      return;
-    }
-
-    setReprovando(true);
-    setErroReprovar(null);
-
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({
-        status: 'pendente',
-        concluida_em: null,
-        concluida_por: null,
-        iniciado_em: null,
-        motivo_reprovacao: motivoReprovacao.trim() || null,
-        reprovacao_pendente: true,
-        reprovada_em: new Date().toISOString(),
-      })
-      .eq('id', ordemReprovarId);
-
-    setReprovando(false);
-
-    if (error) {
-      setErroReprovar(error.message);
-      return;
-    }
-
-    setModalReprovarVisivel(false);
-    setOrdemReprovarId(null);
+  function handleFinalizarValidacao() {
+    setModalValidacaoVisivel(false);
+    setOrdemValidacaoInicialId(null);
     carregarTudo();
   }
 
@@ -1184,9 +1148,32 @@ export default function AdminPreservacao() {
             <View style={styles.planoRodapeEsquerda}>
               <StatusBadge ordem={ordem} />
               {tempoExecucaoTexto ? (
-                <Text style={styles.tempoExecucao}>
-                  Tempo: {tempoExecucaoTexto}
-                </Text>
+                <View style={styles.tempoQualidadeRow}>
+                  <Text style={styles.tempoExecucao}>
+                    Tempo: {tempoExecucaoTexto}
+                  </Text>
+                  {ordem.validada && ordem.qualidade ? (
+                    <View style={styles.qualidadeIndicador}>
+                      <View
+                        style={[
+                          styles.qualidadeBolinha,
+                          {
+                            backgroundColor: getQualidadeInfo(ordem.qualidade)
+                              .color,
+                          },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.qualidadeTexto,
+                          { color: getQualidadeInfo(ordem.qualidade).color },
+                        ]}
+                      >
+                        {getQualidadeInfo(ordem.qualidade).label}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               ) : null}
             </View>
             {plano ? (
@@ -1253,16 +1240,12 @@ export default function AdminPreservacao() {
                   Excluir
                 </Text>
               </Pressable>
-              {ordem.status === 'concluida' ? (
+              {ordem.status === 'concluida' && !ordem.validada ? (
                 <Pressable
                   style={styles.menuItem}
-                  onPress={() => abrirModalReprovar(ordem.id)}
+                  onPress={() => abrirModalValidacao(ordem.id)}
                 >
-                  <Text
-                    style={[styles.menuItemTexto, styles.menuItemExcluirTexto]}
-                  >
-                    Reprovar
-                  </Text>
+                  <Text style={styles.menuItemTexto}>Validar</Text>
                 </Pressable>
               ) : null}
             </>
@@ -2446,57 +2429,12 @@ export default function AdminPreservacao() {
         </View>
       </Modal>
 
-      <Modal
-        visible={modalReprovarVisivel}
-        transparent
-        animationType="fade"
-        onRequestClose={fecharModalReprovar}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.modalRotaCard}>
-            <Text style={styles.modalTitulo}>Reprovar atividade</Text>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Motivo da reprovação (opcional)</Text>
-              <TextInput
-                value={motivoReprovacao}
-                onChangeText={setMotivoReprovacao}
-                placeholder="Descreva o motivo, se houver"
-                placeholderTextColor={light.textSecondary}
-                multiline
-                numberOfLines={3}
-                style={[styles.input, styles.inputMultiline]}
-              />
-            </View>
-
-            {erroReprovar ? (
-              <Text style={styles.erro}>{erroReprovar}</Text>
-            ) : null}
-
-            <View style={styles.modalBotoes}>
-              <Pressable
-                style={[styles.modalBotao, styles.modalBotaoCancelar]}
-                onPress={fecharModalReprovar}
-              >
-                <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.modalBotao,
-                  styles.modalBotaoPerigo,
-                  (pressed || reprovando) && styles.modalBotaoPerigoPressionado,
-                ]}
-                onPress={handleConfirmarReprovar}
-                disabled={reprovando}
-              >
-                <Text style={styles.modalBotaoPerigoTexto}>
-                  {reprovando ? 'Reprovando…' : 'Confirmar reprovação'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {modalValidacaoVisivel && ordemValidacaoInicialId ? (
+        <ValidacaoGuiada
+          ordemInicialId={ordemValidacaoInicialId}
+          onFinish={handleFinalizarValidacao}
+        />
+      ) : null}
     </View>
   );
 }
@@ -2969,6 +2907,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: light.textSecondary,
   },
+  tempoQualidadeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  qualidadeIndicador: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  qualidadeBolinha: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  qualidadeTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
@@ -3046,17 +3003,6 @@ const styles = StyleSheet.create({
     backgroundColor: light.brandPressed,
   },
   modalBotaoSalvarTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 14,
-    color: '#FFFFFF',
-  },
-  modalBotaoPerigo: {
-    backgroundColor: semantic.overdue,
-  },
-  modalBotaoPerigoPressionado: {
-    opacity: 0.7,
-  },
-  modalBotaoPerigoTexto: {
     fontFamily: fonts.semiBold,
     fontSize: 14,
     color: '#FFFFFF',

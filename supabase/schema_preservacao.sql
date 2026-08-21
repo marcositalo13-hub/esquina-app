@@ -84,6 +84,10 @@ create table if not exists ordens_servico (
   reprovada_em timestamptz,
   pausado_em timestamptz,
   tempo_pausado_segundos integer not null default 0,
+  validada boolean not null default false,
+  qualidade text check (qualidade in ('bom', 'medio', 'ruim')),
+  validada_em timestamptz,
+  validada_por text,
   created_at timestamptz not null default now()
 );
 
@@ -106,6 +110,15 @@ create table if not exists ordens_servico (
 -- pelo cálculo de "Tempo: Xmin" em app/admin/preservacao.tsx:
 -- alter table ordens_servico add column if not exists pausado_em timestamptz;
 -- alter table ordens_servico add column if not exists tempo_pausado_segundos integer not null default 0;
+
+-- Se ordens_servico já existia sem as colunas de validação (script
+-- anterior), rode isto para adicioná-las em vez de recriar a tabela —
+-- usadas pelo fluxo guiado de validação (src/components/ValidacaoGuiada.tsx)
+-- acionado via "Validar" em app/admin/preservacao.tsx:
+-- alter table ordens_servico add column if not exists validada boolean not null default false;
+-- alter table ordens_servico add column if not exists qualidade text check (qualidade in ('bom', 'medio', 'ruim'));
+-- alter table ordens_servico add column if not exists validada_em timestamptz;
+-- alter table ordens_servico add column if not exists validada_por text;
 
 -- Se ordens_servico já existia sem "on delete cascade" (script anterior),
 -- rode isto para corrigir a constraint em vez de recriar a tabela:

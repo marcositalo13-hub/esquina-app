@@ -43,6 +43,40 @@ export function getCorPrioridade(prioridade: Prioridade): string {
   }
 }
 
+export type Qualidade = 'bom' | 'medio' | 'ruim';
+
+export type QualidadeInfo = {
+  label: string;
+  color: string;
+  descricao: string;
+};
+
+// Rótulo, cor e descrição curta de cada nível de qualidade — usado tanto
+// no fluxo de validação (ValidacaoGuiada) quanto no indicador exibido nos
+// cards de atividade já validada (app/admin/preservacao.tsx).
+export function getQualidadeInfo(qualidade: Qualidade): QualidadeInfo {
+  switch (qualidade) {
+    case 'bom':
+      return {
+        label: 'Bom',
+        color: semantic.ok,
+        descricao: 'Dentro do padrão esperado, sem pontos de atenção.',
+      };
+    case 'medio':
+      return {
+        label: 'Médio',
+        color: semantic.pending,
+        descricao: 'Concluída, mas com detalhes que podem melhorar.',
+      };
+    case 'ruim':
+      return {
+        label: 'Ruim',
+        color: semantic.overdue,
+        descricao: 'Abaixo do esperado, requer acompanhamento.',
+      };
+  }
+}
+
 export type TipoAtividade = {
   id: string;
   nome: string;
@@ -89,6 +123,10 @@ export type OrdemServico = {
   reprovada_em: string | null;
   pausado_em: string | null;
   tempo_pausado_segundos: number;
+  validada: boolean;
+  qualidade: Qualidade | null;
+  validada_em: string | null;
+  validada_por: string | null;
   created_at: string;
   planos_manutencao?: PlanoManutencao | null;
 };
