@@ -58,7 +58,12 @@ export default function AdminPreservacao() {
   const insets = useSafeAreaInsets();
 
   const [planos, setPlanos] = useState<PlanoManutencao[]>([]);
+  // Consulta ampla (calendário, chips de filtro, atrasadas de qualquer
+  // data, "todas as datas" da barra de progresso) — ver carregarOrdens.
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
+  // Consulta enxuta, filtrada por data_prevista=hoje direto no banco —
+  // única fonte de "Atividades do dia" (ver carregarOrdensHoje).
+  const [ordensHoje, setOrdensHoje] = useState<OrdemServico[]>([]);
   const [tiposAtivos, setTiposAtivos] = useState<TipoAtividade[]>([]);
   const [rotas, setRotas] = useState<Rota[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -181,15 +186,46 @@ export default function AdminPreservacao() {
     setPlanos((data ?? []) as PlanoManutencao[]);
   }, []);
 
+  // Consulta ampla: cobre tudo que legitimamente precisa de intervalo maior
+  // que "hoje" — marcações do calendário, chips de filtro (tipo/prioridade/
+  // periodicidade/atrasadas), planoIdsAtrasados/planoIdsNaDataSelecionada,
+  // "todas as datas" da barra de progresso e encontrarProximaOrdemPendente.
+  // .limit(5000) explícito: sem isso, o corte de segurança padrão do
+  // Supabase (1000 linhas) trunca silenciosamente conforme a tabela
+  // cresce. 5000 está bem acima do uso real atual; se o volume real
+  // ultrapassar isso, é preciso paginação de verdade — dívida técnica
+  // documentada aqui, não bug.
   const carregarOrdens = useCallback(async () => {
     const { data, error } = await supabase
       .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))');
+      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .order('data_prevista', { ascending: false })
+      .limit(5000);
 
     if (!error) {
       setOrdens((data ?? []) as OrdemServico[]);
     }
   }, []);
+
+  // Consulta enxuta: filtra data_prevista=hoje direto no banco (não busca
+  // tudo para depois filtrar em JS) — alimenta exclusivamente "Atividades
+  // do dia". Nunca chega perto de 1000 linhas, então não precisa de limit.
+  const carregarOrdensHoje = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('ordens_servico')
+      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .eq('data_prevista', hoje());
+
+    if (!error) {
+      setOrdensHoje((data ?? []) as OrdemServico[]);
+    }
+  }, []);
+
+  // Refetch conjunto das duas consultas — usado por toda mutação que pode
+  // afetar tanto o conjunto amplo quanto o de hoje.
+  const recarregarOrdens = useCallback(async () => {
+    await Promise.all([carregarOrdens(), carregarOrdensHoje()]);
+  }, [carregarOrdens, carregarOrdensHoje]);
 
   const carregarTipos = useCallback(async () => {
     const { data, error } = await supabase
@@ -218,25 +254,25 @@ export default function AdminPreservacao() {
   }, []);
 
   const carregarTudo = useCallback(async () => {
-    await Promise.all([carregarPlanos(), carregarOrdens()]);
-  }, [carregarPlanos, carregarOrdens]);
+    await Promise.all([carregarPlanos(), recarregarOrdens()]);
+  }, [carregarPlanos, recarregarOrdens]);
 
   useEffect(() => {
     setCarregando(true);
     Promise.all([
       carregarPlanos(),
       carregarTipos(),
-      carregarOrdens(),
+      recarregarOrdens(),
       carregarRotas(),
     ]).finally(() => {
       setCarregando(false);
       // Top-up silencioso: roda depois do primeiro carregamento, sem
       // bloquear a tela; só recarrega as ordens ao terminar.
       preencherOcorrenciasFaltantes().then(() => {
-        carregarOrdens();
+        recarregarOrdens();
       });
     });
-  }, [carregarPlanos, carregarTipos, carregarOrdens, carregarRotas]);
+  }, [carregarPlanos, carregarTipos, recarregarOrdens, carregarRotas]);
 
   // Realtime: qualquer INSERT/UPDATE/DELETE em ordens_servico (feito por
   // este admin, pela execução, ou por outra sessão) refaz o mesmo refetch
@@ -249,7 +285,7 @@ export default function AdminPreservacao() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ordens_servico' },
         () => {
-          carregarOrdens();
+          recarregarOrdens();
         },
       )
       .subscribe();
@@ -257,7 +293,7 @@ export default function AdminPreservacao() {
     return () => {
       supabase.removeChannel(canal);
     };
-  }, [carregarOrdens]);
+  }, [recarregarOrdens]);
 
   // Calendário: marca TODAS as ordens, sem aplicar nenhum filtro ativo.
   const markedDates = useMemo(() => {
@@ -278,12 +314,10 @@ export default function AdminPreservacao() {
     return mapa;
   }, [ordens]);
 
-  // Ordens de hoje, para a seção "Atividades do dia" — sem aplicar os
-  // filtros de tipo/prioridade/periodicidade/atrasadas.
-  const atividadesDoDia = useMemo(() => {
-    const hojeStr = hoje();
-    return ordens.filter((o) => o.data_prevista === hojeStr);
-  }, [ordens]);
+  // Ordens de hoje, para a seção "Atividades do dia" — já vêm filtradas
+  // por data_prevista=hoje direto no banco (carregarOrdensHoje), sem
+  // aplicar os filtros de tipo/prioridade/periodicidade/atrasadas.
+  const atividadesDoDia = ordensHoje;
 
   // Agrupa as atividades de hoje por rota (ordenadas por ordem_na_rota).
   // Atividades sem rota ficam soltas em semRota.
@@ -571,7 +605,7 @@ export default function AdminPreservacao() {
       return;
     }
 
-    carregarOrdens();
+    recarregarOrdens();
   }
 
   async function handleAdiarOrdem(ordemId: string, novaData: string) {
@@ -585,7 +619,7 @@ export default function AdminPreservacao() {
       return;
     }
 
-    carregarOrdens();
+    recarregarOrdens();
   }
 
   function limparFormulario() {

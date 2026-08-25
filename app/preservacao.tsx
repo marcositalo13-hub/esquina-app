@@ -85,7 +85,16 @@ function fraseResumoRota(total: number): string {
 export default function Preservacao() {
   const insets = useSafeAreaInsets();
 
+  // Pendentes/em_andamento de hoje — já filtrado por data_prevista=hoje
+  // direto no banco. Junto com concluidasHoje, alimenta "Resumo do dia".
   const [pendentes, setPendentes] = useState<OrdemServico[]>([]);
+  // Concluídas de hoje — também filtrado por data_prevista=hoje direto no
+  // banco (consulta separada da concluidas ampla abaixo), só para não
+  // precisar varrer o histórico inteiro toda vez que "Resumo do dia"
+  // precisa saber o que já foi concluído hoje.
+  const [concluidasHoje, setConcluidasHoje] = useState<OrdemServico[]>([]);
+  // Histórico amplo de concluídas (qualquer data) — só para a seção
+  // "Concluídas". Ver comentário sobre .limit(5000) em carregar().
   const [concluidas, setConcluidas] = useState<OrdemServico[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [execucao, setExecucao] = useState<ExecucaoAtiva | null>(null);
@@ -109,25 +118,48 @@ export default function Preservacao() {
   }, []);
 
   const carregar = useCallback(async () => {
-    const [respostaPendentes, respostaConcluidas] = await Promise.all([
-      supabase
-        .from('ordens_servico')
-        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
-        .neq('status', 'concluida')
-        // A equipe de execução nunca vê atrasadas: só "pendentes" de hoje
-        // (nunca data_prevista < hoje). Atrasadas seguem visíveis só para
-        // o Administrador em app/admin/preservacao.tsx.
-        .eq('data_prevista', hoje())
-        .order('data_prevista', { ascending: true }),
-      supabase
-        .from('ordens_servico')
-        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
-        .eq('status', 'concluida')
-        .order('concluida_em', { ascending: false }),
-    ]);
+    const hojeStr = hoje();
+
+    const [respostaPendentes, respostaConcluidasHoje, respostaConcluidas] =
+      await Promise.all([
+        supabase
+          .from('ordens_servico')
+          .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+          .neq('status', 'concluida')
+          // A equipe de execução nunca vê atrasadas: só "pendentes" de hoje
+          // (nunca data_prevista < hoje). Atrasadas seguem visíveis só para
+          // o Administrador em app/admin/preservacao.tsx.
+          .eq('data_prevista', hojeStr)
+          .order('data_prevista', { ascending: true }),
+        // Concluídas de hoje, filtradas por data_prevista=hoje direto no
+        // banco — junto com "pendentes" acima, alimenta exclusivamente
+        // "Resumo do dia" (nunca precisa varrer o histórico amplo abaixo
+        // só para achar o que foi concluído hoje).
+        supabase
+          .from('ordens_servico')
+          .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+          .eq('status', 'concluida')
+          .eq('data_prevista', hojeStr),
+        // Histórico amplo de concluídas (qualquer data), só para a seção
+        // "Concluídas". .limit(5000) explícito: sem isso, o corte de
+        // segurança padrão do Supabase (1000 linhas) trunca silenciosamente
+        // conforme o histórico cresce. Se o volume real ultrapassar isso,
+        // é preciso paginação de verdade — dívida técnica documentada
+        // aqui, não bug.
+        supabase
+          .from('ordens_servico')
+          .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+          .eq('status', 'concluida')
+          .order('concluida_em', { ascending: false })
+          .limit(5000),
+      ]);
 
     if (respostaPendentes.error) {
       setErro(respostaPendentes.error.message);
+      return;
+    }
+    if (respostaConcluidasHoje.error) {
+      setErro(respostaConcluidasHoje.error.message);
       return;
     }
     if (respostaConcluidas.error) {
@@ -137,6 +169,7 @@ export default function Preservacao() {
 
     setErro(null);
     setPendentes((respostaPendentes.data ?? []) as OrdemServico[]);
+    setConcluidasHoje((respostaConcluidasHoje.data ?? []) as OrdemServico[]);
     setConcluidas((respostaConcluidas.data ?? []) as OrdemServico[]);
   }, []);
 
@@ -237,16 +270,13 @@ export default function Preservacao() {
     setModalReprovacaoVisivel(true);
   }
 
-  // Resumo do dia: agrupa por rota apenas as ordens de HOJE que têm rota.
+  // Resumo do dia: agrupa por rota as ordens de HOJE que têm rota.
+  // pendentes e concluidasHoje já vêm filtradas por data_prevista=hoje
+  // direto no banco — nenhum filtro de data em JS é necessário aqui.
   const resumoRotas = useMemo(() => {
-    const hojeStr = hoje();
     const grupos = new Map<string, GrupoRota>();
 
-    for (const ordem of [...pendentes, ...concluidas]) {
-      if (ordem.data_prevista !== hojeStr) {
-        continue;
-      }
-
+    for (const ordem of [...pendentes, ...concluidasHoje]) {
       const plano = ordem.planos_manutencao;
       const rota = plano?.rotas;
 
@@ -269,7 +299,7 @@ export default function Preservacao() {
     }
 
     return Array.from(grupos.values());
-  }, [pendentes, concluidas]);
+  }, [pendentes, concluidasHoje]);
 
   // Atividades de hoje COM rota já aparecem no Resumo do dia — somem da
   // seção Concluídas para não duplicar. Sem rota (hoje ou não) e qualquer
