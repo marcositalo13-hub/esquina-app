@@ -31,6 +31,13 @@ const cards: CardConfig[] = [
     href: '/admin/preservacao',
   },
   {
+    key: 'normativos',
+    label: 'Normativos',
+    icon: 'document-text-outline',
+    ativo: true,
+    href: '/admin/normativos',
+  },
+  {
     key: 'morador',
     label: 'Morador',
     icon: 'people-outline',
