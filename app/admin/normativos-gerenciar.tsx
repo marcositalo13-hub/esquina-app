@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -10,14 +10,25 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import type { Normativo } from '../../src/data/normativos';
 import { supabase } from '../../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
+// Formata um timestamp ISO ('atualizado_em') para 'Atualizado em DD/MM/AAAA'.
+function formatarAtualizadoEm(iso: string): string {
+  const data = new Date(iso);
+  const dia = String(data.getDate()).padStart(2, '0');
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const ano = data.getFullYear();
+  return `Atualizado em ${dia}/${mes}/${ano}`;
+}
+
 export default function AdminNormativosGerenciar() {
   const insets = useSafeAreaInsets();
+  const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const [normativos, setNormativos] = useState<Normativo[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -75,6 +86,14 @@ export default function AdminNormativosGerenciar() {
     setErroModal(null);
     setConfirmandoExclusao(false);
     setModalVisivel(true);
+  }
+
+  // Aciona a exclusão via swipe: abre o mesmo modal de edição já direto na
+  // confirmação inline (sem recriar a UI de confirmação em outro lugar).
+  function abrirConfirmacaoExclusaoViaSwipe(normativo: Normativo) {
+    swipeableRefs.current.get(normativo.id)?.close();
+    abrirModalEditar(normativo);
+    setConfirmandoExclusao(true);
   }
 
   function fecharModal() {
@@ -183,18 +202,40 @@ export default function AdminNormativosGerenciar() {
         ) : (
           <View style={styles.lista}>
             {normativos.map((normativo) => (
-              <Pressable
+              <Swipeable
                 key={normativo.id}
-                style={styles.card}
-                onPress={() => abrirModalEditar(normativo)}
+                ref={(ref) => {
+                  if (ref) {
+                    swipeableRefs.current.set(normativo.id, ref);
+                  } else {
+                    swipeableRefs.current.delete(normativo.id);
+                  }
+                }}
+                overshootRight={false}
+                renderRightActions={() => (
+                  <Pressable
+                    style={styles.acaoExcluirSwipe}
+                    onPress={() => abrirConfirmacaoExclusaoViaSwipe(normativo)}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+                  </Pressable>
+                )}
               >
-                <Text style={styles.cardTitulo}>{normativo.titulo}</Text>
-                {normativo.categoria ? (
-                  <Text style={styles.cardCategoria}>
-                    {normativo.categoria}
+                <Pressable
+                  style={styles.card}
+                  onPress={() => abrirModalEditar(normativo)}
+                >
+                  <Text style={styles.cardTitulo}>{normativo.titulo}</Text>
+                  {normativo.categoria ? (
+                    <Text style={styles.cardCategoria}>
+                      {normativo.categoria}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.cardAtualizado}>
+                    {formatarAtualizadoEm(normativo.atualizado_em)}
                   </Text>
-                ) : null}
-              </Pressable>
+                </Pressable>
+              </Swipeable>
             ))}
           </View>
         )}
@@ -407,6 +448,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     color: light.textSecondary,
+  },
+  cardAtualizado: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
+  },
+  acaoExcluirSwipe: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: semantic.overdue,
+    borderRadius: radius.md,
+    marginLeft: spacing.sm,
   },
   tela: {
     flex: 1,
