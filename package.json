@@ -27,6 +27,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.8",
     "@types/react": "~19.2.2",
+    "@vercel/node": "^8.1.0",
     "typescript": "~6.0.3"
   },
   "scripts": {

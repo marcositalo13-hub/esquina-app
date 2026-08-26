@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabase } from '../src/lib/supabase';
 
 type HistoricoMensagem = {
@@ -23,29 +24,20 @@ const ANTHROPIC_MODEL = 'claude-sonnet-5';
 const ANTHROPIC_MAX_TOKENS = 1500;
 const ANTHROPIC_VERSION = '2023-06-01';
 
-// Padrão de API route da Vercel (Web-standard Request/Response) — roda como
-// Vercel Function em Node.js, sem depender do pacote @vercel/node.
-export default async function handler(request: Request): Promise<Response> {
-  console.log('1. handler iniciado, method:', request.method);
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  console.log('1. handler iniciado, method:', req.method);
 
-  if (request.method !== 'POST') {
-    return jsonResponse({ erro: 'Método não permitido.' }, 405);
+  if (req.method !== 'POST') {
+    res.status(405).json({ erro: 'Método não permitido.' });
+    return;
   }
 
-  let corpo: CorpoRequisicao;
-  try {
-    corpo = (await request.json()) as CorpoRequisicao;
-  } catch (error) {
-    console.error('normativos-chat: corpo da requisição inválido', error);
-    return jsonResponse(
-      { erro: 'Não foi possível processar a pergunta no momento.' },
-      500,
-    );
-  }
+  const corpo = (req.body ?? {}) as CorpoRequisicao;
 
   const pergunta = corpo.pergunta?.trim();
   if (!pergunta) {
-    return jsonResponse({ erro: 'Campo "pergunta" é obrigatório.' }, 400);
+    res.status(400).json({ erro: 'Campo "pergunta" é obrigatório.' });
+    return;
   }
 
   const historico = Array.isArray(corpo.historico) ? corpo.historico : [];
@@ -132,19 +124,11 @@ export default async function handler(request: Request): Promise<Response> {
 
     console.log('6. enviando resposta');
 
-    return jsonResponse({ resposta }, 200);
+    res.status(200).json({ resposta });
   } catch (error) {
     console.error('normativos-chat: erro ao processar pergunta', error);
-    return jsonResponse(
-      { erro: 'Não foi possível processar a pergunta no momento.' },
-      500,
-    );
+    res
+      .status(500)
+      .json({ erro: 'Não foi possível processar a pergunta no momento.' });
   }
-}
-
-function jsonResponse(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
 }
