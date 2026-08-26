@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
-  Modal,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,143 +12,83 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { type AnchorPosition, CardMenu } from '../../src/components/CardMenu';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
-import type { Normativo } from '../../src/data/normativos';
-import { supabase } from '../../src/lib/supabase';
-import { fonts, light, radius, semantic, spacing } from '../../src/theme';
+import { fonts, light, radius, spacing } from '../../src/theme';
 
-export default function AdminNormativos() {
+type Mensagem = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+const MENSAGEM_INICIAL: Mensagem = {
+  role: 'assistant',
+  content:
+    'Olá! Sou o assistente de normativos. Pode me perguntar sobre qualquer regra do condomínio.',
+};
+
+const MENSAGEM_ERRO =
+  'Não consegui processar sua pergunta agora, tente novamente.';
+
+export default function AdminNormativosChat() {
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const menuIconRef = useRef<View>(null);
 
-  const [normativos, setNormativos] = useState<Normativo[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erroLista, setErroLista] = useState<string | null>(null);
+  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+  const [pergunta, setPergunta] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [menuVisivel, setMenuVisivel] = useState(false);
+  const [menuAncora, setMenuAncora] = useState<AnchorPosition>({ x: 0, y: 0 });
 
-  const [modalVisivel, setModalVisivel] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [titulo, setTitulo] = useState('');
-  const [categoria, setCategoria] = useState('');
-  const [conteudo, setConteudo] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [erroModal, setErroModal] = useState<string | null>(null);
-  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
-  const [excluindo, setExcluindo] = useState(false);
-
-  const carregarNormativos = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('normativos')
-      .select('*')
-      .order('titulo', { ascending: true });
-
-    if (error) {
-      setErroLista(error.message);
-      return;
-    }
-
-    setErroLista(null);
-    setNormativos((data ?? []) as Normativo[]);
-  }, []);
-
-  useEffect(() => {
-    setCarregando(true);
-    carregarNormativos().finally(() => setCarregando(false));
-  }, [carregarNormativos]);
-
-  function limparFormulario() {
-    setTitulo('');
-    setCategoria('');
-    setConteudo('');
+  function abrirMenu() {
+    menuIconRef.current?.measureInWindow((x, y, width, height) => {
+      setMenuAncora({ x: x + width - 180, y: y + height });
+      setMenuVisivel(true);
+    });
   }
 
-  function abrirModalNovo() {
-    limparFormulario();
-    setEditingId(null);
-    setErroModal(null);
-    setConfirmandoExclusao(false);
-    setModalVisivel(true);
+  function irParaGerenciar() {
+    setMenuVisivel(false);
+    router.push('/admin/normativos-gerenciar');
   }
 
-  function abrirModalEditar(normativo: Normativo) {
-    setTitulo(normativo.titulo);
-    setCategoria(normativo.categoria ?? '');
-    setConteudo(normativo.conteudo_markdown);
-    setEditingId(normativo.id);
-    setErroModal(null);
-    setConfirmandoExclusao(false);
-    setModalVisivel(true);
-  }
-
-  function fecharModal() {
-    setModalVisivel(false);
-    setEditingId(null);
-    setConfirmandoExclusao(false);
-  }
-
-  async function handleSalvar() {
-    if (isSubmitting) {
+  async function handleEnviar() {
+    const texto = pergunta.trim();
+    if (!texto || enviando) {
       return;
     }
 
-    if (!titulo.trim() || !conteudo.trim()) {
-      setErroModal('Preencha título e conteúdo.');
-      return;
+    const historico = mensagens;
+    setMensagens((atual) => [...atual, { role: 'user', content: texto }]);
+    setPergunta('');
+    setEnviando(true);
+
+    try {
+      const resposta = await fetch('/api/normativos-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pergunta: texto, historico }),
+      });
+
+      if (!resposta.ok) {
+        throw new Error(`normativos-chat respondeu ${resposta.status}`);
+      }
+
+      const dados = (await resposta.json()) as { resposta: string };
+      setMensagens((atual) => [
+        ...atual,
+        { role: 'assistant', content: dados.resposta },
+      ]);
+    } catch (error) {
+      console.error('normativos-chat: falha ao enviar pergunta', error);
+      setMensagens((atual) => [
+        ...atual,
+        { role: 'assistant', content: MENSAGEM_ERRO },
+      ]);
+    } finally {
+      setEnviando(false);
     }
-
-    setIsSubmitting(true);
-    setErroModal(null);
-
-    const payload: {
-      id?: string;
-      titulo: string;
-      categoria: string | null;
-      conteudo_markdown: string;
-      atualizado_em?: string;
-    } = {
-      titulo: titulo.trim(),
-      categoria: categoria.trim() || null,
-      conteudo_markdown: conteudo,
-    };
-
-    if (editingId) {
-      payload.id = editingId;
-      payload.atualizado_em = new Date().toISOString();
-    }
-
-    const { error } = await supabase.from('normativos').upsert(payload);
-
-    setIsSubmitting(false);
-
-    if (error) {
-      setErroModal(error.message);
-      return;
-    }
-
-    fecharModal();
-    carregarNormativos();
-  }
-
-  async function handleExcluir() {
-    if (!editingId || excluindo) {
-      return;
-    }
-
-    setExcluindo(true);
-    setErroModal(null);
-
-    const { error } = await supabase
-      .from('normativos')
-      .delete()
-      .eq('id', editingId);
-
-    setExcluindo(false);
-
-    if (error) {
-      setErroModal(error.message);
-      return;
-    }
-
-    fecharModal();
-    carregarNormativos();
   }
 
   return (
@@ -165,173 +106,101 @@ export default function AdminNormativos() {
         <Text style={styles.title}>Normativos</Text>
 
         <Pressable
-          onPress={abrirModalNovo}
-          style={({ pressed }) => [
-            styles.addButton,
-            pressed && styles.addButtonPressed,
-          ]}
+          ref={menuIconRef}
+          onPress={abrirMenu}
+          style={styles.headerButton}
+          hitSlop={8}
         >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
+          <Ionicons
+            name="ellipsis-vertical"
+            size={20}
+            color={light.textPrimary}
+          />
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body}>
-        {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
-
-        {!carregando && normativos.length === 0 ? (
-          <Text style={styles.vazio}>Nenhum normativo cadastrado.</Text>
-        ) : (
-          <View style={styles.lista}>
-            {normativos.map((normativo) => (
-              <Pressable
-                key={normativo.id}
-                style={styles.card}
-                onPress={() => abrirModalEditar(normativo)}
-              >
-                <Text style={styles.cardTitulo}>{normativo.titulo}</Text>
-                {normativo.categoria ? (
-                  <Text style={styles.cardCategoria}>
-                    {normativo.categoria}
-                  </Text>
-                ) : null}
-              </Pressable>
-            ))}
-          </View>
-        )}
-      </ScrollView>
-
-      <Modal
-        visible={modalVisivel}
-        transparent={false}
-        animationType="slide"
-        onRequestClose={fecharModal}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top}
       >
-        <View style={styles.tela}>
-          <View
-            style={[
-              styles.cabecalhoModal,
-              { paddingTop: insets.top + spacing.md },
-            ]}
-          >
-            <View style={styles.cabecalhoModalBotao} />
-            <Text style={styles.tituloModal}>
-              {editingId ? 'Editar normativo' : 'Novo normativo'}
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.corpo}
+          onContentSizeChange={() =>
+            scrollRef.current?.scrollToEnd({ animated: true })
+          }
+        >
+          <View style={[styles.bolha, styles.bolhaAssistente]}>
+            <Text style={styles.textoBolhaAssistente}>
+              {MENSAGEM_INICIAL.content}
             </Text>
-            <Pressable
-              style={styles.cabecalhoModalBotao}
-              onPress={fecharModal}
-              hitSlop={8}
-            >
-              <Ionicons
-                name="close-outline"
-                size={26}
-                color={light.textPrimary}
-              />
-            </Pressable>
           </View>
 
-          <ScrollView
-            contentContainerStyle={styles.corpo}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.field}>
-              <Text style={styles.label}>Título</Text>
-              <TextInput
-                value={titulo}
-                onChangeText={setTitulo}
-                placeholder="Título"
-                placeholderTextColor={light.textSecondary}
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Categoria</Text>
-              <TextInput
-                value={categoria}
-                onChangeText={setCategoria}
-                placeholder="Categoria (opcional)"
-                placeholderTextColor={light.textSecondary}
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Conteúdo (markdown)</Text>
-              <TextInput
-                value={conteudo}
-                onChangeText={setConteudo}
-                placeholder="Conteúdo em markdown"
-                placeholderTextColor={light.textSecondary}
-                multiline
-                numberOfLines={16}
-                style={[styles.input, styles.inputConteudo]}
-              />
-            </View>
-
-            {erroModal ? <Text style={styles.erro}>{erroModal}</Text> : null}
-
-            {editingId && !confirmandoExclusao ? (
-              <Pressable
-                style={styles.botaoExcluir}
-                onPress={() => setConfirmandoExclusao(true)}
+          {mensagens.map((mensagem, indice) => (
+            <View
+              // biome-ignore lint/suspicious/noArrayIndexKey: lista imutável só cresce no fim, sem reordenação
+              key={indice}
+              style={[
+                styles.bolha,
+                mensagem.role === 'user'
+                  ? styles.bolhaUsuario
+                  : styles.bolhaAssistente,
+              ]}
+            >
+              <Text
+                style={
+                  mensagem.role === 'user'
+                    ? styles.textoBolhaUsuario
+                    : styles.textoBolhaAssistente
+                }
               >
-                <Text style={styles.botaoExcluirTexto}>Excluir</Text>
-              </Pressable>
-            ) : null}
+                {mensagem.content}
+              </Text>
+            </View>
+          ))}
 
-            {confirmandoExclusao ? (
-              <View style={styles.confirmacaoExclusao}>
-                <Text style={styles.confirmacaoExclusaoTexto}>
-                  Confirmar exclusão? Essa ação não pode ser desfeita.
-                </Text>
-                <View style={styles.confirmacaoExclusaoBotoes}>
-                  <Pressable
-                    style={styles.botaoCancelarPequeno}
-                    onPress={() => setConfirmandoExclusao(false)}
-                  >
-                    <Text style={styles.botaoCancelarPequenoTexto}>
-                      Cancelar
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.botaoExcluirConfirmar,
-                      excluindo && styles.botaoDesabilitado,
-                    ]}
-                    onPress={handleExcluir}
-                    disabled={excluindo}
-                  >
-                    <Text style={styles.botaoExcluirConfirmarTexto}>
-                      {excluindo ? 'Excluindo…' : 'Excluir'}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-          </ScrollView>
+          {enviando ? (
+            <View style={[styles.bolha, styles.bolhaAssistente]}>
+              <Text style={styles.textoBolhaAssistente}>Digitando…</Text>
+            </View>
+          ) : null}
+        </ScrollView>
 
-          <View
-            style={[
-              styles.rodape,
-              { paddingBottom: insets.bottom + spacing.md },
+        <View
+          style={[styles.rodape, { paddingBottom: insets.bottom + spacing.md }]}
+        >
+          <TextInput
+            value={pergunta}
+            onChangeText={setPergunta}
+            placeholder="Pergunte sobre um normativo…"
+            placeholderTextColor={light.textSecondary}
+            style={styles.input}
+            multiline
+          />
+          <Pressable
+            onPress={handleEnviar}
+            disabled={enviando || !pergunta.trim()}
+            style={({ pressed }) => [
+              styles.botaoEnviar,
+              (enviando || !pergunta.trim()) && styles.botaoEnviarDesabilitado,
+              pressed && styles.botaoEnviarPressionado,
             ]}
           >
-            <Pressable
-              style={[
-                styles.botaoSalvar,
-                isSubmitting && styles.botaoDesabilitado,
-              ]}
-              onPress={handleSalvar}
-              disabled={isSubmitting}
-            >
-              <Text style={styles.botaoSalvarTexto}>
-                {isSubmitting ? 'Salvando…' : 'Salvar'}
-              </Text>
-            </Pressable>
-          </View>
+            <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
+          </Pressable>
         </View>
-      </Modal>
+      </KeyboardAvoidingView>
+
+      <CardMenu
+        visible={menuVisivel}
+        onClose={() => setMenuVisivel(false)}
+        anchorPosition={menuAncora}
+      >
+        <Pressable style={styles.menuItem} onPress={irParaGerenciar}>
+          <Text style={styles.menuItemTexto}>Gerenciar normativos</Text>
+        </Pressable>
+      </CardMenu>
     </View>
   );
 }
@@ -340,6 +209,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: light.bg,
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -352,78 +224,7 @@ const styles = StyleSheet.create({
     width: 32,
     alignItems: 'center',
   },
-  addButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: light.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addButtonPressed: {
-    backgroundColor: light.brandPressed,
-  },
   title: {
-    flex: 1,
-    fontFamily: fonts.semiBold,
-    fontSize: 17,
-    color: light.textPrimary,
-    textAlign: 'center',
-  },
-  body: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
-  },
-  erro: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    color: semantic.overdue,
-  },
-  vazio: {
-    fontFamily: fonts.regular,
-    fontSize: 14,
-    color: light.textSecondary,
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
-  },
-  lista: {
-    gap: spacing.sm,
-  },
-  card: {
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.xs / 2,
-  },
-  cardTitulo: {
-    fontFamily: fonts.medium,
-    fontSize: 15,
-    color: light.textPrimary,
-  },
-  cardCategoria: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    color: light.textSecondary,
-  },
-  tela: {
-    flex: 1,
-    backgroundColor: light.bg,
-  },
-  cabecalhoModal: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  cabecalhoModalBotao: {
-    width: 32,
-    alignItems: 'center',
-  },
-  tituloModal: {
     flex: 1,
     fontFamily: fonts.semiBold,
     fontSize: 17,
@@ -433,105 +234,78 @@ const styles = StyleSheet.create({
   corpo: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: spacing.sm,
   },
-  field: {
-    gap: spacing.xs,
+  bolha: {
+    maxWidth: '80%',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  label: {
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    color: light.textSecondary,
+  bolhaAssistente: {
+    alignSelf: 'flex-start',
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  bolhaUsuario: {
+    alignSelf: 'flex-end',
+    backgroundColor: light.brand,
+  },
+  textoBolhaAssistente: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  textoBolhaUsuario: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  rodape: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
   },
   input: {
+    flex: 1,
+    maxHeight: 120,
     backgroundColor: light.sunken,
     borderWidth: 1,
     borderColor: light.border,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
+    paddingVertical: spacing.sm,
     fontFamily: fonts.regular,
     fontSize: 15,
     color: light.textPrimary,
   },
-  inputConteudo: {
-    minHeight: 280,
-    textAlignVertical: 'top',
-  },
-  botaoExcluir: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 4,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: semantic.overdue,
-  },
-  botaoExcluirTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 14,
-    color: semantic.overdue,
-  },
-  confirmacaoExclusao: {
-    backgroundColor: `${semantic.overdue}0D`,
-    borderWidth: 1,
-    borderColor: semantic.overdue,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  confirmacaoExclusaoTexto: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    color: light.textPrimary,
-  },
-  confirmacaoExclusaoBotoes: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  botaoCancelarPequeno: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: light.sunken,
-    borderWidth: 1,
-    borderColor: light.border,
-  },
-  botaoCancelarPequenoTexto: {
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    color: light.textSecondary,
-  },
-  botaoExcluirConfirmar: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: semantic.overdue,
-  },
-  botaoExcluirConfirmarTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 13,
-    color: '#FFFFFF',
-  },
-  rodape: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: light.border,
-  },
-  botaoSalvar: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 4,
-    borderRadius: radius.md,
+  botaoEnviar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: light.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  botaoDesabilitado: {
+  botaoEnviarPressionado: {
+    backgroundColor: light.brandPressed,
+  },
+  botaoEnviarDesabilitado: {
     opacity: 0.4,
   },
-  botaoSalvarTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 15,
-    color: '#FFFFFF',
+  menuItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  menuItemTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
   },
 });
