@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -29,6 +31,100 @@ const MENSAGEM_INICIAL: Mensagem = {
 
 const MENSAGEM_ERRO =
   'Não consegui processar sua pergunta agora, tente novamente.';
+
+// Três pontos que saltam em sequência, indicando resposta pendente.
+function IndicadorDigitando() {
+  const valores = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+
+  useEffect(() => {
+    const animacoes = valores.map((valor, indice) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(indice * 150),
+          Animated.timing(valor, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(valor, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.delay((valores.length - 1 - indice) * 150),
+        ]),
+      ),
+    );
+
+    for (const animacao of animacoes) {
+      animacao.start();
+    }
+    return () => {
+      for (const animacao of animacoes) {
+        animacao.stop();
+      }
+    };
+  }, [valores]);
+
+  return (
+    <View style={styles.pontosDigitando}>
+      {valores.map((valor, indice) => (
+        <Animated.View
+          // biome-ignore lint/suspicious/noArrayIndexKey: três pontos fixos, sem reordenação
+          key={indice}
+          style={[
+            styles.pontoDigitando,
+            {
+              transform: [
+                {
+                  translateY: valor.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -4],
+                  }),
+                },
+              ],
+              opacity: valor.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.4, 1],
+              }),
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// Bolha de mensagem do assistente já finalizada, com ícone de copiar.
+function BolhaAssistente({ texto }: { texto: string }) {
+  const [copiado, setCopiado] = useState(false);
+
+  async function handleCopiar() {
+    await Clipboard.setStringAsync(texto);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 1500);
+  }
+
+  return (
+    <View style={[styles.bolha, styles.bolhaAssistente]}>
+      <Text style={styles.textoBolhaAssistente}>{texto}</Text>
+      <Pressable onPress={handleCopiar} hitSlop={8} style={styles.botaoCopiar}>
+        <Ionicons
+          name={copiado ? 'checkmark' : 'copy-outline'}
+          size={14}
+          color={light.textSecondary}
+        />
+        <Text style={styles.botaoCopiarTexto}>
+          {copiado ? 'Copiado' : 'Copiar'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export default function AdminNormativosChat() {
   const insets = useSafeAreaInsets();
@@ -137,32 +233,27 @@ export default function AdminNormativosChat() {
             </Text>
           </View>
 
-          {mensagens.map((mensagem, indice) => (
-            <View
-              // biome-ignore lint/suspicious/noArrayIndexKey: lista imutável só cresce no fim, sem reordenação
-              key={indice}
-              style={[
-                styles.bolha,
-                mensagem.role === 'user'
-                  ? styles.bolhaUsuario
-                  : styles.bolhaAssistente,
-              ]}
-            >
-              <Text
-                style={
-                  mensagem.role === 'user'
-                    ? styles.textoBolhaUsuario
-                    : styles.textoBolhaAssistente
-                }
+          {mensagens.map((mensagem, indice) =>
+            mensagem.role === 'user' ? (
+              <View
+                // biome-ignore lint/suspicious/noArrayIndexKey: lista imutável só cresce no fim, sem reordenação
+                key={indice}
+                style={[styles.bolha, styles.bolhaUsuario]}
               >
-                {mensagem.content}
-              </Text>
-            </View>
-          ))}
+                <Text style={styles.textoBolhaUsuario}>{mensagem.content}</Text>
+              </View>
+            ) : (
+              <BolhaAssistente
+                // biome-ignore lint/suspicious/noArrayIndexKey: lista imutável só cresce no fim, sem reordenação
+                key={indice}
+                texto={mensagem.content}
+              />
+            ),
+          )}
 
           {enviando ? (
             <View style={[styles.bolha, styles.bolhaAssistente]}>
-              <Text style={styles.textoBolhaAssistente}>Digitando…</Text>
+              <IndicadorDigitando />
             </View>
           ) : null}
         </ScrollView>
@@ -262,6 +353,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     color: '#FFFFFF',
+  },
+  pontosDigitando: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+  },
+  pontoDigitando: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: light.textSecondary,
+  },
+  botaoCopiar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: spacing.xs,
+  },
+  botaoCopiarTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: light.textSecondary,
   },
   rodape: {
     flexDirection: 'row',
