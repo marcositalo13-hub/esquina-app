@@ -26,6 +26,8 @@ const ANTHROPIC_VERSION = '2023-06-01';
 // Padrão de API route da Vercel (Web-standard Request/Response) — roda como
 // Vercel Function em Node.js, sem depender do pacote @vercel/node.
 export default async function handler(request: Request): Promise<Response> {
+  console.log('1. handler iniciado, method:', request.method);
+
   if (request.method !== 'POST') {
     return jsonResponse({ erro: 'Método não permitido.' }, 405);
   }
@@ -49,9 +51,16 @@ export default async function handler(request: Request): Promise<Response> {
   const historico = Array.isArray(corpo.historico) ? corpo.historico : [];
 
   try {
+    console.log('2. antes da consulta supabase');
+
     const { data: normativos, error: erroSupabase } = await supabase
       .from('normativos')
       .select('titulo, categoria, conteudo_markdown');
+
+    console.log('3. supabase retornou', {
+      erro: erroSupabase,
+      quantidadeRegistros: normativos?.length,
+    });
 
     if (erroSupabase) {
       throw erroSupabase;
@@ -84,6 +93,8 @@ export default async function handler(request: Request): Promise<Response> {
       { role: 'user' as const, content: pergunta },
     ];
 
+    console.log('4. antes da chamada anthropic');
+
     const anthropicResponse = await fetch(
       'https://api.anthropic.com/v1/messages',
       {
@@ -102,6 +113,8 @@ export default async function handler(request: Request): Promise<Response> {
       },
     );
 
+    console.log('5. anthropic retornou, status:', anthropicResponse.status);
+
     if (!anthropicResponse.ok) {
       const corpoErro = await anthropicResponse.text();
       throw new Error(
@@ -116,6 +129,8 @@ export default async function handler(request: Request): Promise<Response> {
       )
       .map((bloco) => bloco.text as string)
       .join('\n');
+
+    console.log('6. enviando resposta');
 
     return jsonResponse({ resposta }, 200);
   } catch (error) {
