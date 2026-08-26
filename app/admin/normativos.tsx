@@ -70,7 +70,7 @@ export default function AdminNormativos() {
   function abrirModalEditar(normativo: Normativo) {
     setTitulo(normativo.titulo);
     setCategoria(normativo.categoria ?? '');
-    setConteudo(normativo.conteudo);
+    setConteudo(normativo.conteudo_markdown);
     setEditingId(normativo.id);
     setErroModal(null);
     setConfirmandoExclusao(false);
@@ -100,12 +100,12 @@ export default function AdminNormativos() {
       id?: string;
       titulo: string;
       categoria: string | null;
-      conteudo: string;
+      conteudo_markdown: string;
       atualizado_em?: string;
     } = {
       titulo: titulo.trim(),
       categoria: categoria.trim() || null,
-      conteudo,
+      conteudo_markdown: conteudo,
     };
 
     if (editingId) {

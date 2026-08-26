@@ -4,7 +4,7 @@ export type Normativo = {
   categoria: string | null;
   // Texto livre em markdown — nunca processado/renderizado como markdown
   // nesta etapa, só editado e exibido como texto puro.
-  conteudo: string;
+  conteudo_markdown: string;
   criado_em: string;
   atualizado_em: string;
 };

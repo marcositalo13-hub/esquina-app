@@ -11,7 +11,7 @@ create table if not exists normativos (
   categoria text,
   -- Texto livre em markdown, sem qualquer processamento — só editado e
   -- exibido como texto puro por enquanto.
-  conteudo text not null,
+  conteudo_markdown text not null,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
