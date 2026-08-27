@@ -1,8 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,6 +37,14 @@ import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 type CampoData = 'data_inicio' | 'data_fim' | 'data_base_reajuste';
 
+type MensagemAssistente = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+const MENSAGEM_ERRO_ASSISTENTE =
+  'Não consegui processar sua pergunta agora, tente novamente.';
+
 // Formata um timestamp ISO ('updated_at') para 'Atualizado em DD/MM/AAAA'.
 function formatarAtualizadoEm(iso: string): string {
   const data = new Date(iso);
@@ -40,6 +52,106 @@ function formatarAtualizadoEm(iso: string): string {
   const mes = String(data.getMonth() + 1).padStart(2, '0');
   const ano = data.getFullYear();
   return `Atualizado em ${dia}/${mes}/${ano}`;
+}
+
+// Três pontos que saltam em sequência, indicando resposta pendente — mesma
+// estrutura visual do chat de Normativos (app/admin/normativos.tsx).
+function IndicadorDigitandoAssistente() {
+  const valores = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+
+  useEffect(() => {
+    const animacoes = valores.map((valor, indice) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(indice * 150),
+          Animated.timing(valor, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(valor, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.delay((valores.length - 1 - indice) * 150),
+        ]),
+      ),
+    );
+
+    for (const animacao of animacoes) {
+      animacao.start();
+    }
+    return () => {
+      for (const animacao of animacoes) {
+        animacao.stop();
+      }
+    };
+  }, [valores]);
+
+  return (
+    <View style={styles.chatPontosDigitando}>
+      {valores.map((valor, indice) => (
+        <Animated.View
+          // biome-ignore lint/suspicious/noArrayIndexKey: três pontos fixos, sem reordenação
+          key={indice}
+          style={[
+            styles.chatPontoDigitando,
+            {
+              transform: [
+                {
+                  translateY: valor.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -4],
+                  }),
+                },
+              ],
+              opacity: valor.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.4, 1],
+              }),
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// Bolha de mensagem do assistente já finalizada, com ícone de copiar —
+// mesma estrutura visual do chat de Normativos.
+function BolhaAssistenteConsulta({ texto }: { texto: string }) {
+  const [copiado, setCopiado] = useState(false);
+
+  async function handleCopiar() {
+    await Clipboard.setStringAsync(texto);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 1500);
+  }
+
+  return (
+    <View style={[styles.chatBolha, styles.chatBolhaAssistente]}>
+      <Text style={styles.chatTextoBolhaAssistente}>{texto}</Text>
+      <Pressable
+        onPress={handleCopiar}
+        hitSlop={8}
+        style={styles.chatBotaoCopiar}
+      >
+        <Ionicons
+          name={copiado ? 'checkmark' : 'copy-outline'}
+          size={14}
+          color={light.textSecondary}
+        />
+        <Text style={styles.chatBotaoCopiarTexto}>
+          {copiado ? 'Copiado' : 'Copiar'}
+        </Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export default function AdminContratos() {
@@ -83,6 +195,19 @@ export default function AdminContratos() {
   const [calendarioAberto, setCalendarioAberto] = useState<CampoData | null>(
     null,
   );
+
+  // Chat do assistente: sempre reinicia vazio a cada abertura (contrato de
+  // origem + histórico só existem em estado local, nada é persistido).
+  const [assistenteVisivel, setAssistenteVisivel] = useState(false);
+  const [assistenteContrato, setAssistenteContrato] = useState<Contrato | null>(
+    null,
+  );
+  const [assistenteMensagens, setAssistenteMensagens] = useState<
+    MensagemAssistente[]
+  >([]);
+  const [assistentePergunta, setAssistentePergunta] = useState('');
+  const [assistenteEnviando, setAssistenteEnviando] = useState(false);
+  const assistenteScrollRef = useRef<ScrollView>(null);
 
   const carregarContratos = useCallback(async () => {
     const { data, error } = await supabase
@@ -323,6 +448,65 @@ export default function AdminContratos() {
     carregarContratos();
   }
 
+  function abrirAssistente(contrato: Contrato) {
+    setAssistenteContrato(contrato);
+    setAssistenteMensagens([]);
+    setAssistentePergunta('');
+    setAssistenteVisivel(true);
+  }
+
+  function fecharAssistente() {
+    setAssistenteVisivel(false);
+    setAssistenteContrato(null);
+    setAssistenteMensagens([]);
+    setAssistentePergunta('');
+  }
+
+  async function handleEnviarAssistente() {
+    const texto = assistentePergunta.trim();
+    if (!texto || assistenteEnviando || !assistenteContrato) {
+      return;
+    }
+
+    const novoHistorico: MensagemAssistente[] = [
+      ...assistenteMensagens,
+      { role: 'user', content: texto },
+    ];
+    setAssistenteMensagens(novoHistorico);
+    setAssistentePergunta('');
+    setAssistenteEnviando(true);
+
+    try {
+      const resposta = await fetch('/api/contratos-assistente', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo: assistenteContrato.titulo,
+          conteudoMarkdown: assistenteContrato.conteudo_markdown,
+          mensagens: novoHistorico,
+        }),
+      });
+
+      if (!resposta.ok) {
+        throw new Error(`contratos-assistente respondeu ${resposta.status}`);
+      }
+
+      const dados = (await resposta.json()) as { resposta: string };
+      setAssistenteMensagens((atual) => [
+        ...atual,
+        { role: 'assistant', content: dados.resposta },
+      ]);
+    } catch (error) {
+      console.error('contratos-assistente: falha ao enviar pergunta', error);
+      setAssistenteMensagens((atual) => [
+        ...atual,
+        { role: 'assistant', content: MENSAGEM_ERRO_ASSISTENTE },
+      ]);
+    } finally {
+      setAssistenteEnviando(false);
+    }
+  }
+
   const valorCalendario =
     calendarioAberto === 'data_inicio'
       ? dataInicio
@@ -444,6 +628,20 @@ export default function AdminContratos() {
                   <Text style={styles.cardAtualizado}>
                     {formatarAtualizadoEm(contrato.updated_at)}
                   </Text>
+
+                  <Pressable
+                    style={styles.botaoConsultarAssistente}
+                    onPress={() => abrirAssistente(contrato)}
+                  >
+                    <Ionicons
+                      name="chatbubble-ellipses-outline"
+                      size={14}
+                      color={light.brand}
+                    />
+                    <Text style={styles.botaoConsultarAssistenteTexto}>
+                      Consultar assistente
+                    </Text>
+                  </Pressable>
                 </Pressable>
               );
             })}
@@ -782,6 +980,113 @@ export default function AdminContratos() {
           {calendarioOverlay}
         </View>
       </Modal>
+
+      <Modal
+        visible={assistenteVisivel}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={fecharAssistente}
+      >
+        <View style={styles.tela}>
+          <View
+            style={[
+              styles.cabecalhoModal,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <View style={styles.cabecalhoModalBotao} />
+            <Text style={styles.tituloModal} numberOfLines={1}>
+              {assistenteContrato?.titulo ?? 'Assistente'}
+            </Text>
+            <Pressable
+              style={styles.cabecalhoModalBotao}
+              onPress={fecharAssistente}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.chatAviso}>
+            <Text style={styles.chatAvisoTexto}>
+              Respostas geradas por IA com base no contrato selecionado. Confira
+              sempre a cláusula indicada antes de agir com base na informação.
+            </Text>
+          </View>
+
+          <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={insets.top}
+          >
+            <ScrollView
+              ref={assistenteScrollRef}
+              contentContainerStyle={styles.chatCorpo}
+              onContentSizeChange={() =>
+                assistenteScrollRef.current?.scrollToEnd({ animated: true })
+              }
+            >
+              {assistenteMensagens.map((mensagem, indice) =>
+                mensagem.role === 'user' ? (
+                  <View
+                    // biome-ignore lint/suspicious/noArrayIndexKey: lista imutável só cresce no fim, sem reordenação
+                    key={indice}
+                    style={[styles.chatBolha, styles.chatBolhaUsuario]}
+                  >
+                    <Text style={styles.chatTextoBolhaUsuario}>
+                      {mensagem.content}
+                    </Text>
+                  </View>
+                ) : (
+                  <BolhaAssistenteConsulta
+                    // biome-ignore lint/suspicious/noArrayIndexKey: lista imutável só cresce no fim, sem reordenação
+                    key={indice}
+                    texto={mensagem.content}
+                  />
+                ),
+              )}
+
+              {assistenteEnviando ? (
+                <View style={[styles.chatBolha, styles.chatBolhaAssistente]}>
+                  <IndicadorDigitandoAssistente />
+                </View>
+              ) : null}
+            </ScrollView>
+
+            <View
+              style={[
+                styles.chatRodape,
+                { paddingBottom: insets.bottom + spacing.md },
+              ]}
+            >
+              <TextInput
+                value={assistentePergunta}
+                onChangeText={setAssistentePergunta}
+                placeholder="Pergunte sobre este contrato…"
+                placeholderTextColor={light.textSecondary}
+                style={styles.chatInput}
+                multiline
+              />
+              <Pressable
+                onPress={handleEnviarAssistente}
+                disabled={assistenteEnviando || !assistentePergunta.trim()}
+                style={({ pressed }) => [
+                  styles.chatBotaoEnviar,
+                  (assistenteEnviando || !assistentePergunta.trim()) &&
+                    styles.chatBotaoEnviarDesabilitado,
+                  pressed && styles.chatBotaoEnviarPressionado,
+                ]}
+              >
+                <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1090,5 +1395,128 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 14,
     color: light.textSecondary,
+  },
+  flex: {
+    flex: 1,
+  },
+  botaoConsultarAssistente: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  botaoConsultarAssistenteTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.brand,
+  },
+  chatAviso: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: light.sunken,
+  },
+  chatAvisoTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: light.textSecondary,
+  },
+  chatCorpo: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  chatBolha: {
+    maxWidth: '80%',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chatBolhaAssistente: {
+    alignSelf: 'flex-start',
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  chatBolhaUsuario: {
+    alignSelf: 'flex-end',
+    backgroundColor: light.brand,
+  },
+  chatTextoBolhaAssistente: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  chatTextoBolhaUsuario: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  chatPontosDigitando: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+  },
+  chatPontoDigitando: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: light.textSecondary,
+  },
+  chatBotaoCopiar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: spacing.xs,
+  },
+  chatBotaoCopiarTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: light.textSecondary,
+  },
+  chatRodape: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
+  },
+  chatInput: {
+    flex: 1,
+    maxHeight: 120,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: light.textPrimary,
+  },
+  chatBotaoEnviar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: light.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatBotaoEnviarPressionado: {
+    backgroundColor: light.brandPressed,
+  },
+  chatBotaoEnviarDesabilitado: {
+    opacity: 0.4,
   },
 });
