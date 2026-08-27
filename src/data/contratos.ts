@@ -27,7 +27,8 @@ export type Contrato = {
   indice_reajuste: string | null;
   data_base_reajuste: string | null;
   data_inicio: string;
-  data_fim: string;
+  data_fim: string | null;
+  vigencia_indeterminada: boolean;
   renovacao_automatica: boolean;
   prazo_aviso_previo_dias: number | null;
   responsavel_interno: string | null;

@@ -69,6 +69,7 @@ export default function AdminContratos() {
   const [dataBaseReajuste, setDataBaseReajuste] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
+  const [vigenciaIndeterminada, setVigenciaIndeterminada] = useState(false);
   const [renovacaoAutomatica, setRenovacaoAutomatica] = useState(false);
   const [prazoAvisoPrevioTexto, setPrazoAvisoPrevioTexto] = useState('');
   const [responsavelInterno, setResponsavelInterno] = useState('');
@@ -129,6 +130,7 @@ export default function AdminContratos() {
     setDataBaseReajuste('');
     setDataInicio('');
     setDataFim('');
+    setVigenciaIndeterminada(false);
     setRenovacaoAutomatica(false);
     setPrazoAvisoPrevioTexto('');
     setResponsavelInterno('');
@@ -155,7 +157,8 @@ export default function AdminContratos() {
     setIndiceReajuste(contrato.indice_reajuste ?? '');
     setDataBaseReajuste(contrato.data_base_reajuste ?? '');
     setDataInicio(contrato.data_inicio);
-    setDataFim(contrato.data_fim);
+    setDataFim(contrato.data_fim ?? '');
+    setVigenciaIndeterminada(contrato.vigencia_indeterminada);
     setRenovacaoAutomatica(contrato.renovacao_automatica);
     setPrazoAvisoPrevioTexto(
       contrato.prazo_aviso_previo_dias != null
@@ -177,6 +180,17 @@ export default function AdminContratos() {
     setCalendarioAberto(null);
   }
 
+  // Ao marcar, limpa data_fim e renovacao_automatica na hora — nunca deixa
+  // um valor antigo escondido esperando o usuário desmarcar de novo.
+  function alternarVigenciaIndeterminada(valor: boolean) {
+    setVigenciaIndeterminada(valor);
+    if (valor) {
+      setDataFim('');
+      setRenovacaoAutomatica(false);
+      setCalendarioAberto(null);
+    }
+  }
+
   async function handleSalvar() {
     if (isSubmitting) {
       return;
@@ -194,14 +208,21 @@ export default function AdminContratos() {
       return;
     }
 
-    if (!dataInicio || !dataFim) {
-      setErroModal('Selecione a data de início e a data de fim.');
+    if (!dataInicio) {
+      setErroModal('Selecione a data de início.');
       return;
     }
 
-    if (dataFim <= dataInicio) {
-      setErroModal('A data de fim deve ser posterior à data de início.');
-      return;
+    if (!vigenciaIndeterminada) {
+      if (!dataFim) {
+        setErroModal('Selecione a data de fim.');
+        return;
+      }
+
+      if (dataFim <= dataInicio) {
+        setErroModal('A data de fim deve ser posterior à data de início.');
+        return;
+      }
     }
 
     const valor = digitosParaValorNumerico(valorDigitos);
@@ -233,7 +254,8 @@ export default function AdminContratos() {
       indice_reajuste: string | null;
       data_base_reajuste: string | null;
       data_inicio: string;
-      data_fim: string;
+      data_fim: string | null;
+      vigencia_indeterminada: boolean;
       renovacao_automatica: boolean;
       prazo_aviso_previo_dias: number | null;
       responsavel_interno: string | null;
@@ -251,8 +273,9 @@ export default function AdminContratos() {
       indice_reajuste: indiceReajuste.trim() || null,
       data_base_reajuste: dataBaseReajuste || null,
       data_inicio: dataInicio,
-      data_fim: dataFim,
-      renovacao_automatica: renovacaoAutomatica,
+      data_fim: vigenciaIndeterminada ? null : dataFim,
+      vigencia_indeterminada: vigenciaIndeterminada,
+      renovacao_automatica: vigenciaIndeterminada ? false : renovacaoAutomatica,
       prazo_aviso_previo_dias: prazoAvisoPrevioDias,
       responsavel_interno: responsavelInterno.trim() || null,
       anexo_url: anexoUrl.trim() || null,
@@ -381,12 +404,18 @@ export default function AdminContratos() {
         ) : (
           <View style={styles.lista}>
             {contratos.map((contrato) => {
-              const percentual = percentualDecorrido(
-                contrato.data_inicio,
-                contrato.data_fim,
-                hoje,
-              );
-              const cor = corVencimento(contrato.data_fim, hoje);
+              // Vigência indeterminada não tem data_fim — sem risco de
+              // vencimento, barra fica vazia e na cor "ok".
+              const percentual = contrato.data_fim
+                ? percentualDecorrido(
+                    contrato.data_inicio,
+                    contrato.data_fim,
+                    hoje,
+                  )
+                : 0;
+              const cor = contrato.data_fim
+                ? corVencimento(contrato.data_fim, hoje)
+                : semantic.ok;
 
               return (
                 <Pressable
@@ -607,28 +636,53 @@ export default function AdminContratos() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Data de fim</Text>
               <Pressable
-                style={styles.campoData}
-                onPress={() => setCalendarioAberto('data_fim')}
+                style={styles.linhaCheckbox}
+                onPress={() =>
+                  alternarVigenciaIndeterminada(!vigenciaIndeterminada)
+                }
               >
-                <Text style={styles.campoDataTexto}>
-                  {dataFim ? formatarDataBR(dataFim) : 'Selecionar'}
-                </Text>
+                <Ionicons
+                  name={vigenciaIndeterminada ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={
+                    vigenciaIndeterminada ? light.brand : light.textSecondary
+                  }
+                />
+                <Text style={styles.label}>Vigência indeterminada</Text>
               </Pressable>
             </View>
 
-            <View style={styles.field}>
-              <View style={styles.linhaSwitch}>
-                <Text style={styles.label}>Renovação automática</Text>
-                <Switch
-                  value={renovacaoAutomatica}
-                  onValueChange={setRenovacaoAutomatica}
-                  trackColor={{ false: light.border, true: light.brandWash }}
-                  thumbColor={renovacaoAutomatica ? light.brand : '#FFFFFF'}
-                />
+            {!vigenciaIndeterminada ? (
+              <View style={styles.field}>
+                <Text style={styles.label}>Data de fim</Text>
+                <Pressable
+                  style={styles.campoData}
+                  onPress={() => setCalendarioAberto('data_fim')}
+                >
+                  <Text style={styles.campoDataTexto}>
+                    {dataFim ? formatarDataBR(dataFim) : 'Selecionar'}
+                  </Text>
+                </Pressable>
               </View>
-            </View>
+            ) : null}
+
+            {!vigenciaIndeterminada ? (
+              <View style={styles.field}>
+                <View style={styles.linhaSwitch}>
+                  <Text style={styles.label}>Renovação automática</Text>
+                  <Switch
+                    value={renovacaoAutomatica}
+                    onValueChange={setRenovacaoAutomatica}
+                    trackColor={{
+                      false: light.border,
+                      true: light.brandWash,
+                    }}
+                    thumbColor={renovacaoAutomatica ? light.brand : '#FFFFFF'}
+                  />
+                </View>
+              </View>
+            ) : null}
 
             <View style={styles.field}>
               <Text style={styles.label}>Prazo de aviso prévio (dias)</Text>
@@ -900,6 +954,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  linhaCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   botaoExcluir: {
     alignItems: 'center',
