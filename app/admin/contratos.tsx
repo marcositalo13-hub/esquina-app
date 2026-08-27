@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   KeyboardAvoidingView,
@@ -16,12 +16,17 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  BottomTabBar,
+  type BottomTabItem,
+} from '../../src/components/BottomTabBar';
 import { Chip } from '../../src/components/Chip';
 import { MiniCalendar } from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import {
   type Contrato,
   corVencimento,
+  diasRestantes,
   digitosParaValorNumerico,
   extrairDigitosValor,
   formatarValorBRL,
@@ -194,6 +199,12 @@ export default function AdminContratos() {
 
   const [calendarioAberto, setCalendarioAberto] = useState<CampoData | null>(
     null,
+  );
+
+  // Mesmo padrão de alternância já usado no Admin (Gestão ↔ Relatório Geral,
+  // via BottomTabBar) — reaproveitado aqui para Listagem ↔ Relatórios.
+  const [abaAtiva, setAbaAtiva] = useState<'listagem' | 'relatorios'>(
+    'listagem',
   );
 
   // Chat do assistente: sempre reinicia vazio a cada abertura (contrato de
@@ -555,6 +566,99 @@ export default function AdminContratos() {
     </View>
   ) : null;
 
+  // Todos os números abaixo são "hoje" (situação atual) — sem filtro de
+  // período, diferente do escopo mês/todo-o-período do card de insights de
+  // Zeladoria (outro caso de uso).
+  const relatorio = useMemo(() => {
+    const nomePorTipoId = new Map(
+      tiposContrato.map((tipo) => [tipo.id, tipo.nome]),
+    );
+
+    let valorMensalTotal = 0;
+    const contagemPorTipo = new Map<string, number>();
+    let vencendo30 = 0;
+    let vencendo60 = 0;
+    let vencendo90 = 0;
+    let vencidos = 0;
+    const contagemPorIndice = new Map<string, number>();
+    let vigenciaIndeterminadaTotal = 0;
+
+    for (const contrato of contratos) {
+      if (contrato.periodicidade_pagamento === 'Mensal') {
+        valorMensalTotal += contrato.valor ?? 0;
+      }
+
+      const nomeTipo = contrato.tipo_contrato_id
+        ? (nomePorTipoId.get(contrato.tipo_contrato_id) ?? 'Sem tipo')
+        : 'Sem tipo';
+      contagemPorTipo.set(nomeTipo, (contagemPorTipo.get(nomeTipo) ?? 0) + 1);
+
+      const chaveIndice = contrato.indice_reajuste?.trim()
+        ? contrato.indice_reajuste.trim()
+        : 'Sem índice definido';
+      contagemPorIndice.set(
+        chaveIndice,
+        (contagemPorIndice.get(chaveIndice) ?? 0) + 1,
+      );
+
+      if (contrato.vigencia_indeterminada) {
+        vigenciaIndeterminadaTotal += 1;
+        continue;
+      }
+
+      if (!contrato.data_fim) {
+        continue;
+      }
+
+      const restantes = diasRestantes(contrato.data_fim, hoje);
+
+      if (restantes < 0) {
+        vencidos += 1;
+        continue;
+      }
+
+      if (restantes <= 30) {
+        vencendo30 += 1;
+      }
+      if (restantes <= 60) {
+        vencendo60 += 1;
+      }
+      if (restantes <= 90) {
+        vencendo90 += 1;
+      }
+    }
+
+    return {
+      valorMensalTotal,
+      distribuicaoPorTipo: Array.from(contagemPorTipo.entries())
+        .map(([nome, contagem]) => ({ nome, contagem }))
+        .sort((a, b) => b.contagem - a.contagem),
+      vencendo30,
+      vencendo60,
+      vencendo90,
+      vencidos,
+      distribuicaoPorIndice: Array.from(contagemPorIndice.entries())
+        .map(([nome, contagem]) => ({ nome, contagem }))
+        .sort((a, b) => b.contagem - a.contagem),
+      vigenciaIndeterminadaTotal,
+    };
+  }, [contratos, tiposContrato, hoje]);
+
+  const tabs: BottomTabItem[] = [
+    {
+      key: 'listagem',
+      label: 'Listagem',
+      icon: 'list-outline',
+      iconActive: 'list',
+    },
+    {
+      key: 'relatorios',
+      label: 'Relatórios',
+      icon: 'stats-chart-outline',
+      iconActive: 'stats-chart',
+    },
+  ];
+
   return (
     <View style={styles.container}>
       <ScreenBackground />
@@ -569,85 +673,184 @@ export default function AdminContratos() {
 
         <Text style={styles.title}>Contratos</Text>
 
-        <Pressable
-          onPress={abrirModalNovo}
-          style={({ pressed }) => [
-            styles.addButton,
-            pressed && styles.addButtonPressed,
-          ]}
-        >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-        </Pressable>
+        {abaAtiva === 'listagem' ? (
+          <Pressable
+            onPress={abrirModalNovo}
+            style={({ pressed }) => [
+              styles.addButton,
+              pressed && styles.addButtonPressed,
+            ]}
+          >
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+          </Pressable>
+        ) : (
+          <View style={styles.headerButton} />
+        )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.body}>
-        {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
+      {abaAtiva === 'listagem' ? (
+        <ScrollView contentContainerStyle={styles.body}>
+          {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
 
-        {!carregando && contratos.length === 0 ? (
-          <Text style={styles.vazio}>Nenhum contrato cadastrado.</Text>
-        ) : (
-          <View style={styles.lista}>
-            {contratos.map((contrato) => {
-              return (
-                <Pressable
-                  key={contrato.id}
-                  style={styles.card}
-                  onPress={() => abrirModalEditar(contrato)}
-                >
-                  <Text style={styles.cardTitulo}>{contrato.titulo}</Text>
-                  <Text style={styles.cardContraparte}>
-                    {contrato.contraparte_nome}
-                  </Text>
-                  <Text style={styles.cardResumo} numberOfLines={2}>
-                    {contrato.resumo_objeto}
-                  </Text>
-
-                  {contrato.vigencia_indeterminada || !contrato.data_fim ? (
-                    <View style={styles.seloVigenciaIndeterminada}>
-                      <Text style={styles.seloVigenciaIndeterminadaTexto}>
-                        Vigência indeterminada
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.barraFundo}>
-                      <View
-                        style={[
-                          styles.barraPreenchida,
-                          {
-                            width: `${percentualDecorrido(contrato.data_inicio, contrato.data_fim, hoje) * 100}%`,
-                            backgroundColor: corVencimento(
-                              contrato.data_fim,
-                              hoje,
-                            ),
-                          },
-                        ]}
-                      />
-                    </View>
-                  )}
-
-                  <Text style={styles.cardAtualizado}>
-                    {formatarAtualizadoEm(contrato.updated_at)}
-                  </Text>
-
+          {!carregando && contratos.length === 0 ? (
+            <Text style={styles.vazio}>Nenhum contrato cadastrado.</Text>
+          ) : (
+            <View style={styles.lista}>
+              {contratos.map((contrato) => {
+                return (
                   <Pressable
-                    style={styles.botaoConsultarAssistente}
-                    onPress={() => abrirAssistente(contrato)}
+                    key={contrato.id}
+                    style={styles.card}
+                    onPress={() => abrirModalEditar(contrato)}
                   >
-                    <Ionicons
-                      name="chatbubble-ellipses-outline"
-                      size={14}
-                      color={light.brand}
-                    />
-                    <Text style={styles.botaoConsultarAssistenteTexto}>
-                      Consultar assistente
+                    <Text style={styles.cardTitulo}>{contrato.titulo}</Text>
+                    <Text style={styles.cardContraparte}>
+                      {contrato.contraparte_nome}
                     </Text>
+                    <Text style={styles.cardResumo} numberOfLines={2}>
+                      {contrato.resumo_objeto}
+                    </Text>
+
+                    {contrato.vigencia_indeterminada || !contrato.data_fim ? (
+                      <View style={styles.seloVigenciaIndeterminada}>
+                        <Text style={styles.seloVigenciaIndeterminadaTexto}>
+                          Vigência indeterminada
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.barraFundo}>
+                        <View
+                          style={[
+                            styles.barraPreenchida,
+                            {
+                              width: `${percentualDecorrido(contrato.data_inicio, contrato.data_fim, hoje) * 100}%`,
+                              backgroundColor: corVencimento(
+                                contrato.data_fim,
+                                hoje,
+                              ),
+                            },
+                          ]}
+                        />
+                      </View>
+                    )}
+
+                    <Text style={styles.cardAtualizado}>
+                      {formatarAtualizadoEm(contrato.updated_at)}
+                    </Text>
+
+                    <Pressable
+                      style={styles.botaoConsultarAssistente}
+                      onPress={() => abrirAssistente(contrato)}
+                    >
+                      <Ionicons
+                        name="chatbubble-ellipses-outline"
+                        size={14}
+                        color={light.brand}
+                      />
+                      <Text style={styles.botaoConsultarAssistenteTexto}>
+                        Consultar assistente
+                      </Text>
+                    </Pressable>
                   </Pressable>
-                </Pressable>
-              );
-            })}
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      ) : (
+        <ScrollView contentContainerStyle={styles.body}>
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>
+              Valor mensal total comprometido
+            </Text>
+            <Text style={styles.relatorioNumeroGrande}>
+              {formatarValorBRL(Math.round(relatorio.valorMensalTotal * 100))}
+            </Text>
           </View>
-        )}
-      </ScrollView>
+
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>Vencimentos próximos</Text>
+            <View style={styles.relatorioLinhaTiles}>
+              <View style={styles.relatorioTile}>
+                <Text style={styles.relatorioTileNumero}>
+                  {relatorio.vencendo30}
+                </Text>
+                <Text style={styles.relatorioTileLabel}>Em 30 dias</Text>
+              </View>
+              <View style={styles.relatorioTile}>
+                <Text style={styles.relatorioTileNumero}>
+                  {relatorio.vencendo60}
+                </Text>
+                <Text style={styles.relatorioTileLabel}>Em 60 dias</Text>
+              </View>
+              <View style={styles.relatorioTile}>
+                <Text style={styles.relatorioTileNumero}>
+                  {relatorio.vencendo90}
+                </Text>
+                <Text style={styles.relatorioTileLabel}>Em 90 dias</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>Contratos vencidos</Text>
+            <Text style={styles.relatorioNumeroGrande}>
+              {relatorio.vencidos}
+            </Text>
+          </View>
+
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>Vigência indeterminada</Text>
+            <Text style={styles.relatorioNumeroGrande}>
+              {relatorio.vigenciaIndeterminadaTotal}
+            </Text>
+          </View>
+
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>Contratos por tipo</Text>
+            {relatorio.distribuicaoPorTipo.length === 0 ? (
+              <Text style={styles.vazio}>Nenhum contrato cadastrado.</Text>
+            ) : (
+              <View style={styles.relatorioLista}>
+                {relatorio.distribuicaoPorTipo.map((item) => (
+                  <View key={item.nome} style={styles.relatorioLinha}>
+                    <Text style={styles.relatorioLinhaTexto}>{item.nome}</Text>
+                    <Text style={styles.relatorioLinhaValor}>
+                      {item.contagem}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>
+              Distribuição por índice de reajuste
+            </Text>
+            {relatorio.distribuicaoPorIndice.length === 0 ? (
+              <Text style={styles.vazio}>Nenhum contrato cadastrado.</Text>
+            ) : (
+              <View style={styles.relatorioLista}>
+                {relatorio.distribuicaoPorIndice.map((item) => (
+                  <View key={item.nome} style={styles.relatorioLinha}>
+                    <Text style={styles.relatorioLinhaTexto}>{item.nome}</Text>
+                    <Text style={styles.relatorioLinhaValor}>
+                      {item.contagem}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      )}
+
+      <BottomTabBar
+        items={tabs}
+        activeKey={abaAtiva}
+        onSelect={(key) => setAbaAtiva(key as 'listagem' | 'relatorios')}
+      />
 
       <Modal
         visible={modalVisivel}
@@ -1127,7 +1330,7 @@ const styles = StyleSheet.create({
   },
   body: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: 90,
     gap: spacing.md,
   },
   erro: {
@@ -1518,5 +1721,65 @@ const styles = StyleSheet.create({
   },
   chatBotaoEnviarDesabilitado: {
     opacity: 0.4,
+  },
+  relatorioSecao: {
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  relatorioTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  relatorioNumeroGrande: {
+    fontFamily: fonts.semiBold,
+    fontSize: 24,
+    color: light.textPrimary,
+  },
+  relatorioLinhaTiles: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  relatorioTile: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: light.sunken,
+  },
+  relatorioTileNumero: {
+    fontFamily: fonts.semiBold,
+    fontSize: 20,
+    color: light.textPrimary,
+  },
+  relatorioTileLabel: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
+  },
+  relatorioLista: {
+    gap: spacing.xs,
+  },
+  relatorioLinha: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  relatorioLinhaTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textPrimary,
+    flexShrink: 1,
+    paddingRight: spacing.sm,
+  },
+  relatorioLinhaValor: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textSecondary,
   },
 });
