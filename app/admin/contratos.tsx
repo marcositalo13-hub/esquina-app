@@ -59,6 +59,23 @@ function formatarAtualizadoEm(iso: string): string {
   return `Atualizado em ${dia}/${mes}/${ano}`;
 }
 
+// Mesma condição usada na lista "Janela de renovação" do relatório: contrato
+// com vigência definida, prazo de aviso prévio configurado e dias_restantes
+// entre 0 e o prazo, inclusive. Vencidos (restantes < 0) ficam de fora — a
+// barra já vermelha do card comunica isso, o selo seria redundante.
+function estaEmJanelaDeAviso(contrato: Contrato, hoje: string): boolean {
+  if (
+    contrato.vigencia_indeterminada ||
+    !contrato.data_fim ||
+    contrato.prazo_aviso_previo_dias == null
+  ) {
+    return false;
+  }
+
+  const restantes = diasRestantes(contrato.data_fim, hoje);
+  return restantes >= 0 && restantes <= contrato.prazo_aviso_previo_dias;
+}
+
 // Três pontos que saltam em sequência, indicando resposta pendente — mesma
 // estrutura visual do chat de Normativos (app/admin/normativos.tsx).
 function IndicadorDigitandoAssistente() {
@@ -582,6 +599,10 @@ export default function AdminContratos() {
     let vencidos = 0;
     const contagemPorIndice = new Map<string, number>();
     let vigenciaIndeterminadaTotal = 0;
+    const contratosEmJanelaAviso: Array<{
+      contrato: Contrato;
+      diasRestantes: number;
+    }> = [];
 
     for (const contrato of contratos) {
       if (contrato.periodicidade_pagamento === 'Mensal') {
@@ -612,6 +633,14 @@ export default function AdminContratos() {
 
       const restantes = diasRestantes(contrato.data_fim, hoje);
 
+      if (
+        contrato.prazo_aviso_previo_dias != null &&
+        restantes >= 0 &&
+        restantes <= contrato.prazo_aviso_previo_dias
+      ) {
+        contratosEmJanelaAviso.push({ contrato, diasRestantes: restantes });
+      }
+
       if (restantes < 0) {
         vencidos += 1;
         continue;
@@ -641,6 +670,9 @@ export default function AdminContratos() {
         .map(([nome, contagem]) => ({ nome, contagem }))
         .sort((a, b) => b.contagem - a.contagem),
       vigenciaIndeterminadaTotal,
+      contratosEmJanelaAviso: contratosEmJanelaAviso.sort(
+        (a, b) => a.diasRestantes - b.diasRestantes,
+      ),
     };
   }, [contratos, tiposContrato, hoje]);
 
@@ -697,6 +729,8 @@ export default function AdminContratos() {
           ) : (
             <View style={styles.lista}>
               {contratos.map((contrato) => {
+                const renovacaoEmBreve = estaEmJanelaDeAviso(contrato, hoje);
+
                 return (
                   <Pressable
                     key={contrato.id}
@@ -710,6 +744,14 @@ export default function AdminContratos() {
                     <Text style={styles.cardResumo} numberOfLines={2}>
                       {contrato.resumo_objeto}
                     </Text>
+
+                    {renovacaoEmBreve ? (
+                      <View style={styles.seloRenovacaoEmBreve}>
+                        <Text style={styles.seloRenovacaoEmBreveTexto}>
+                          Renovação em breve
+                        </Text>
+                      </View>
+                    ) : null}
 
                     {contrato.vigencia_indeterminada || !contrato.data_fim ? (
                       <View style={styles.seloVigenciaIndeterminada}>
@@ -804,6 +846,33 @@ export default function AdminContratos() {
             <Text style={styles.relatorioNumeroGrande}>
               {relatorio.vigenciaIndeterminadaTotal}
             </Text>
+          </View>
+
+          <View style={styles.relatorioSecao}>
+            <Text style={styles.relatorioTitulo}>Janela de renovação</Text>
+            {relatorio.contratosEmJanelaAviso.length === 0 ? (
+              <Text style={styles.vazio}>
+                Nenhum contrato em janela de renovação
+              </Text>
+            ) : (
+              <View style={styles.relatorioLista}>
+                {relatorio.contratosEmJanelaAviso.map((item) => (
+                  <Pressable
+                    key={item.contrato.id}
+                    style={styles.relatorioLinha}
+                    onPress={() => abrirModalEditar(item.contrato)}
+                  >
+                    <Text style={styles.relatorioLinhaTexto}>
+                      {item.contrato.titulo}
+                    </Text>
+                    <Text style={styles.relatorioLinhaValor}>
+                      {item.diasRestantes} dia
+                      {item.diasRestantes === 1 ? '' : 's'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
 
           <View style={styles.relatorioSecao}>
@@ -1394,6 +1463,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 11,
     color: light.textMuted,
+  },
+  seloRenovacaoEmBreve: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs / 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: `${semantic.pending}1A`,
+  },
+  seloRenovacaoEmBreveTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: semantic.pending,
   },
   cardAtualizado: {
     fontFamily: fonts.regular,
