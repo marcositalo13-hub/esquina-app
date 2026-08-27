@@ -404,19 +404,6 @@ export default function AdminContratos() {
         ) : (
           <View style={styles.lista}>
             {contratos.map((contrato) => {
-              // Vigência indeterminada não tem data_fim — sem risco de
-              // vencimento, barra fica vazia e na cor "ok".
-              const percentual = contrato.data_fim
-                ? percentualDecorrido(
-                    contrato.data_inicio,
-                    contrato.data_fim,
-                    hoje,
-                  )
-                : 0;
-              const cor = contrato.data_fim
-                ? corVencimento(contrato.data_fim, hoje)
-                : semantic.ok;
-
               return (
                 <Pressable
                   key={contrato.id}
@@ -431,17 +418,28 @@ export default function AdminContratos() {
                     {contrato.resumo_objeto}
                   </Text>
 
-                  <View style={styles.barraFundo}>
-                    <View
-                      style={[
-                        styles.barraPreenchida,
-                        {
-                          width: `${percentual * 100}%`,
-                          backgroundColor: cor,
-                        },
-                      ]}
-                    />
-                  </View>
+                  {contrato.vigencia_indeterminada || !contrato.data_fim ? (
+                    <View style={styles.seloVigenciaIndeterminada}>
+                      <Text style={styles.seloVigenciaIndeterminadaTexto}>
+                        Vigência indeterminada
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.barraFundo}>
+                      <View
+                        style={[
+                          styles.barraPreenchida,
+                          {
+                            width: `${percentualDecorrido(contrato.data_inicio, contrato.data_fim, hoje) * 100}%`,
+                            backgroundColor: corVencimento(
+                              contrato.data_fim,
+                              hoje,
+                            ),
+                          },
+                        ]}
+                      />
+                    </View>
+                  )}
 
                   <Text style={styles.cardAtualizado}>
                     {formatarAtualizadoEm(contrato.updated_at)}
@@ -875,6 +873,19 @@ const styles = StyleSheet.create({
   barraPreenchida: {
     height: '100%',
     borderRadius: 3,
+  },
+  seloVigenciaIndeterminada: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs / 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: `${light.textMuted}1A`,
+  },
+  seloVigenciaIndeterminadaTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: light.textMuted,
   },
   cardAtualizado: {
     fontFamily: fonts.regular,
