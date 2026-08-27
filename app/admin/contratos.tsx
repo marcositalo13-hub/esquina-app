@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -11,7 +11,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../../src/components/Chip';
 import { MiniCalendar } from '../../src/components/MiniCalendar';
@@ -46,7 +45,6 @@ function formatarAtualizadoEm(iso: string): string {
 export default function AdminContratos() {
   const insets = useSafeAreaInsets();
   const hoje = hojeLocal();
-  const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [tiposContrato, setTiposContrato] = useState<TipoContrato[]>([]);
@@ -145,10 +143,7 @@ export default function AdminContratos() {
     setModalVisivel(true);
   }
 
-  function abrirModalEditar(
-    contrato: Contrato,
-    opcoes?: { iniciarComConfirmacaoExclusao?: boolean },
-  ) {
+  function abrirModalEditar(contrato: Contrato) {
     setTitulo(contrato.titulo);
     setContraparteNome(contrato.contraparte_nome);
     setContraparteDocumento(contrato.contraparte_documento ?? '');
@@ -171,17 +166,8 @@ export default function AdminContratos() {
     setAnexoUrl(contrato.anexo_url ?? '');
     setEditingId(contrato.id);
     setErroModal(null);
-    setConfirmandoExclusao(opcoes?.iniciarComConfirmacaoExclusao ?? false);
+    setConfirmandoExclusao(false);
     setModalVisivel(true);
-  }
-
-  // Aciona a exclusão via swipe: abre o mesmo modal de edição já direto na
-  // confirmação inline (sem recriar a UI de confirmação em outro lugar) —
-  // a flag é aplicada dentro do próprio abrirModalEditar, num único set de
-  // confirmandoExclusao, para não depender de ordem entre duas chamadas.
-  function abrirConfirmacaoExclusaoViaSwipe(contrato: Contrato) {
-    swipeableRefs.current.get(contrato.id)?.close();
-    abrirModalEditar(contrato, { iniciarComConfirmacaoExclusao: true });
   }
 
   function fecharModal() {
@@ -403,58 +389,35 @@ export default function AdminContratos() {
               const cor = corVencimento(contrato.data_fim, hoje);
 
               return (
-                <Swipeable
+                <Pressable
                   key={contrato.id}
-                  ref={(ref) => {
-                    if (ref) {
-                      swipeableRefs.current.set(contrato.id, ref);
-                    } else {
-                      swipeableRefs.current.delete(contrato.id);
-                    }
-                  }}
-                  overshootRight={false}
-                  renderRightActions={() => (
-                    <Pressable
-                      style={styles.acaoExcluirSwipe}
-                      onPress={() => abrirConfirmacaoExclusaoViaSwipe(contrato)}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    </Pressable>
-                  )}
+                  style={styles.card}
+                  onPress={() => abrirModalEditar(contrato)}
                 >
-                  <Pressable
-                    style={styles.card}
-                    onPress={() => abrirModalEditar(contrato)}
-                  >
-                    <Text style={styles.cardTitulo}>{contrato.titulo}</Text>
-                    <Text style={styles.cardContraparte}>
-                      {contrato.contraparte_nome}
-                    </Text>
-                    <Text style={styles.cardResumo} numberOfLines={2}>
-                      {contrato.resumo_objeto}
-                    </Text>
+                  <Text style={styles.cardTitulo}>{contrato.titulo}</Text>
+                  <Text style={styles.cardContraparte}>
+                    {contrato.contraparte_nome}
+                  </Text>
+                  <Text style={styles.cardResumo} numberOfLines={2}>
+                    {contrato.resumo_objeto}
+                  </Text>
 
-                    <View style={styles.barraFundo}>
-                      <View
-                        style={[
-                          styles.barraPreenchida,
-                          {
-                            width: `${percentual * 100}%`,
-                            backgroundColor: cor,
-                          },
-                        ]}
-                      />
-                    </View>
+                  <View style={styles.barraFundo}>
+                    <View
+                      style={[
+                        styles.barraPreenchida,
+                        {
+                          width: `${percentual * 100}%`,
+                          backgroundColor: cor,
+                        },
+                      ]}
+                    />
+                  </View>
 
-                    <Text style={styles.cardAtualizado}>
-                      {formatarAtualizadoEm(contrato.updated_at)}
-                    </Text>
-                  </Pressable>
-                </Swipeable>
+                  <Text style={styles.cardAtualizado}>
+                    {formatarAtualizadoEm(contrato.updated_at)}
+                  </Text>
+                </Pressable>
               );
             })}
           </View>
@@ -863,14 +826,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 12,
     color: light.textSecondary,
-  },
-  acaoExcluirSwipe: {
-    width: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: semantic.overdue,
-    borderRadius: radius.md,
-    marginLeft: spacing.sm,
   },
   tela: {
     flex: 1,

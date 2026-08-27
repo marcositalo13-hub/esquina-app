@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { fonts, light, radius, semantic, spacing } from '../theme';
+import { fonts, light, semantic, spacing } from '../theme';
+import { type AnchorPosition, CardMenu } from './CardMenu';
 
 export type DiaMarcado = 'normal' | 'atrasado';
 
@@ -110,6 +111,12 @@ export function MiniCalendar({
     return new Date(agora.getFullYear(), agora.getMonth(), 1);
   });
   const [seletorAberto, setSeletorAberto] = useState<SeletorRapido>(null);
+  const [ancoraSeletor, setAncoraSeletor] = useState<AnchorPosition>({
+    x: 0,
+    y: 0,
+  });
+  const mesBotaoRef = useRef<View>(null);
+  const anoBotaoRef = useRef<View>(null);
 
   const hojeChave = formatarChave(new Date());
   const celulas = construirGrade(mesVisivel);
@@ -128,8 +135,20 @@ export function MiniCalendar({
     );
   }
 
-  function alternarSeletor(seletor: SeletorRapido) {
-    setSeletorAberto((atual) => (atual === seletor ? null : seletor));
+  // Mesmo padrão dos menus de contexto de 3 pontos do app (CardMenu): um
+  // Modal com fundo opaco, ancorado no botão tocado — nunca uma View
+  // posicionada por z-index, que deixa o conteúdo por trás transparecendo.
+  function alternarSeletor(seletor: 'mes' | 'ano') {
+    if (seletorAberto === seletor) {
+      setSeletorAberto(null);
+      return;
+    }
+
+    const ref = seletor === 'mes' ? mesBotaoRef.current : anoBotaoRef.current;
+    ref?.measureInWindow((x, y, _width, height) => {
+      setAncoraSeletor({ x, y: y + height });
+      setSeletorAberto(seletor);
+    });
   }
 
   function selecionarMes(indiceMes: number) {
@@ -151,6 +170,7 @@ export function MiniCalendar({
 
         <View style={styles.seletoresMesAno}>
           <Pressable
+            ref={mesBotaoRef}
             style={styles.seletorBotao}
             onPress={() => alternarSeletor('mes')}
             hitSlop={4}
@@ -164,6 +184,7 @@ export function MiniCalendar({
           </Pressable>
 
           <Pressable
+            ref={anoBotaoRef}
             style={styles.seletorBotao}
             onPress={() => alternarSeletor('ano')}
             hitSlop={4}
@@ -184,15 +205,19 @@ export function MiniCalendar({
             color={light.textPrimary}
           />
         </Pressable>
+      </View>
 
-        {seletorAberto === 'mes' ? (
-          <View style={styles.dropdown}>
-            <ScrollView
-              style={styles.dropdownScroll}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator={false}
-            >
-              {MESES.map((nomeMes, indiceMes) => {
+      <CardMenu
+        visible={seletorAberto !== null}
+        onClose={() => setSeletorAberto(null)}
+        anchorPosition={ancoraSeletor}
+      >
+        <ScrollView
+          style={styles.dropdownScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {seletorAberto === 'mes'
+            ? MESES.map((nomeMes, indiceMes) => {
                 const selecionado = indiceMes === mesVisivel.getMonth();
                 return (
                   <Pressable
@@ -210,19 +235,8 @@ export function MiniCalendar({
                     </Text>
                   </Pressable>
                 );
-              })}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {seletorAberto === 'ano' ? (
-          <View style={styles.dropdown}>
-            <ScrollView
-              style={styles.dropdownScroll}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator={false}
-            >
-              {ANOS_SELECIONAVEIS.map((ano) => {
+              })
+            : ANOS_SELECIONAVEIS.map((ano) => {
                 const selecionado = ano === mesVisivel.getFullYear();
                 return (
                   <Pressable
@@ -241,10 +255,8 @@ export function MiniCalendar({
                   </Pressable>
                 );
               })}
-            </ScrollView>
-          </View>
-        ) : null}
-      </View>
+        </ScrollView>
+      </CardMenu>
 
       <View style={styles.semanaRow}>
         {DIAS_SEMANA.map((dia) => (
@@ -322,7 +334,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    position: 'relative',
   },
   seletoresMesAno: {
     flexDirection: 'row',
@@ -338,24 +349,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 14,
     color: light.textPrimary,
-  },
-  dropdown: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: spacing.xs,
-    maxHeight: 180,
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.sm,
-    zIndex: 30,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
   },
   dropdownScroll: {
     maxHeight: 180,
