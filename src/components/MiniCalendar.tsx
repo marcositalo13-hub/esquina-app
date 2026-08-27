@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { fonts, light, semantic, spacing } from '../theme';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { fonts, light, radius, semantic, spacing } from '../theme';
 
 export type DiaMarcado = 'normal' | 'atrasado';
 
@@ -38,6 +38,14 @@ const MESES = [
   'Novembro',
   'Dezembro',
 ];
+
+// Intervalo de anos oferecido no seletor rápido de ano: alguns anos no
+// passado até pelo menos 10 anos no futuro, a partir do ano atual real.
+const ANO_ATUAL_REAL = new Date().getFullYear();
+const ANOS_SELECIONAVEIS = Array.from(
+  { length: 16 },
+  (_, i) => ANO_ATUAL_REAL - 5 + i,
+);
 
 const CELL_SIZE = 34;
 
@@ -87,6 +95,8 @@ function construirGrade(mesVisivel: Date): Celula[] {
   return celulas;
 }
 
+type SeletorRapido = 'mes' | 'ano' | null;
+
 // Calendário mensal sem dependência externa: navegação de mês é estado
 // próprio, independente do dia selecionado.
 export function MiniCalendar({
@@ -99,20 +109,37 @@ export function MiniCalendar({
     const agora = new Date();
     return new Date(agora.getFullYear(), agora.getMonth(), 1);
   });
+  const [seletorAberto, setSeletorAberto] = useState<SeletorRapido>(null);
 
   const hojeChave = formatarChave(new Date());
   const celulas = construirGrade(mesVisivel);
 
   function irParaMesAnterior() {
+    setSeletorAberto(null);
     setMesVisivel(
       (atual) => new Date(atual.getFullYear(), atual.getMonth() - 1, 1),
     );
   }
 
   function irParaProximoMes() {
+    setSeletorAberto(null);
     setMesVisivel(
       (atual) => new Date(atual.getFullYear(), atual.getMonth() + 1, 1),
     );
+  }
+
+  function alternarSeletor(seletor: SeletorRapido) {
+    setSeletorAberto((atual) => (atual === seletor ? null : seletor));
+  }
+
+  function selecionarMes(indiceMes: number) {
+    setMesVisivel((atual) => new Date(atual.getFullYear(), indiceMes, 1));
+    setSeletorAberto(null);
+  }
+
+  function selecionarAno(ano: number) {
+    setMesVisivel((atual) => new Date(ano, atual.getMonth(), 1));
+    setSeletorAberto(null);
   }
 
   return (
@@ -121,9 +148,35 @@ export function MiniCalendar({
         <Pressable onPress={irParaMesAnterior} hitSlop={8}>
           <Ionicons name="chevron-back" size={18} color={light.textPrimary} />
         </Pressable>
-        <Text style={styles.mesAno}>
-          {MESES[mesVisivel.getMonth()]} {mesVisivel.getFullYear()}
-        </Text>
+
+        <View style={styles.seletoresMesAno}>
+          <Pressable
+            style={styles.seletorBotao}
+            onPress={() => alternarSeletor('mes')}
+            hitSlop={4}
+          >
+            <Text style={styles.mesAno}>{MESES[mesVisivel.getMonth()]}</Text>
+            <Ionicons
+              name={seletorAberto === 'mes' ? 'chevron-up' : 'chevron-down'}
+              size={14}
+              color={light.textSecondary}
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.seletorBotao}
+            onPress={() => alternarSeletor('ano')}
+            hitSlop={4}
+          >
+            <Text style={styles.mesAno}>{mesVisivel.getFullYear()}</Text>
+            <Ionicons
+              name={seletorAberto === 'ano' ? 'chevron-up' : 'chevron-down'}
+              size={14}
+              color={light.textSecondary}
+            />
+          </Pressable>
+        </View>
+
         <Pressable onPress={irParaProximoMes} hitSlop={8}>
           <Ionicons
             name="chevron-forward"
@@ -131,6 +184,66 @@ export function MiniCalendar({
             color={light.textPrimary}
           />
         </Pressable>
+
+        {seletorAberto === 'mes' ? (
+          <View style={styles.dropdown}>
+            <ScrollView
+              style={styles.dropdownScroll}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+            >
+              {MESES.map((nomeMes, indiceMes) => {
+                const selecionado = indiceMes === mesVisivel.getMonth();
+                return (
+                  <Pressable
+                    key={nomeMes}
+                    style={styles.dropdownItem}
+                    onPress={() => selecionarMes(indiceMes)}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownItemTexto,
+                        selecionado && styles.dropdownItemTextoSelecionado,
+                      ]}
+                    >
+                      {nomeMes}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {seletorAberto === 'ano' ? (
+          <View style={styles.dropdown}>
+            <ScrollView
+              style={styles.dropdownScroll}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+            >
+              {ANOS_SELECIONAVEIS.map((ano) => {
+                const selecionado = ano === mesVisivel.getFullYear();
+                return (
+                  <Pressable
+                    key={ano}
+                    style={styles.dropdownItem}
+                    onPress={() => selecionarAno(ano)}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownItemTexto,
+                        selecionado && styles.dropdownItemTextoSelecionado,
+                      ]}
+                    >
+                      {ano}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.semanaRow}>
@@ -209,11 +322,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    position: 'relative',
+  },
+  seletoresMesAno: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  seletorBotao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   mesAno: {
     fontFamily: fonts.medium,
     fontSize: 14,
     color: light.textPrimary,
+  },
+  dropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: spacing.xs,
+    maxHeight: 180,
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.sm,
+    zIndex: 30,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  dropdownScroll: {
+    maxHeight: 180,
+  },
+  dropdownItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  dropdownItemTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
+    textAlign: 'center',
+  },
+  dropdownItemTextoSelecionado: {
+    fontFamily: fonts.semiBold,
+    color: light.brand,
   },
   semanaRow: {
     flexDirection: 'row',

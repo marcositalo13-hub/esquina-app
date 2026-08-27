@@ -19,10 +19,14 @@ import { ScreenBackground } from '../../src/components/ScreenBackground';
 import {
   type Contrato,
   corVencimento,
+  digitosParaValorNumerico,
+  extrairDigitosValor,
+  formatarValorBRL,
   PERIODICIDADES_PAGAMENTO,
   type PeriodicidadePagamento,
   percentualDecorrido,
   type TipoContrato,
+  valorNumericoParaDigitos,
 } from '../../src/data/contratos';
 import { formatarDataBR, hojeLocal } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
@@ -58,7 +62,9 @@ export default function AdminContratos() {
   const [tipoContratoId, setTipoContratoId] = useState<string | null>(null);
   const [resumoObjeto, setResumoObjeto] = useState('');
   const [conteudoMarkdown, setConteudoMarkdown] = useState('');
-  const [valorTexto, setValorTexto] = useState('');
+  // Guarda só os dígitos digitados (centavos) — a máscara "R$ 1.250,00" é
+  // derivada disso na hora de exibir, nunca armazenada como texto solto.
+  const [valorDigitos, setValorDigitos] = useState('');
   const [periodicidadePagamento, setPeriodicidadePagamento] =
     useState<PeriodicidadePagamento | null>(null);
   const [indiceReajuste, setIndiceReajuste] = useState('');
@@ -119,7 +125,7 @@ export default function AdminContratos() {
     setTipoContratoId(null);
     setResumoObjeto('');
     setConteudoMarkdown('');
-    setValorTexto('');
+    setValorDigitos('');
     setPeriodicidadePagamento(null);
     setIndiceReajuste('');
     setDataBaseReajuste('');
@@ -139,14 +145,17 @@ export default function AdminContratos() {
     setModalVisivel(true);
   }
 
-  function abrirModalEditar(contrato: Contrato) {
+  function abrirModalEditar(
+    contrato: Contrato,
+    opcoes?: { iniciarComConfirmacaoExclusao?: boolean },
+  ) {
     setTitulo(contrato.titulo);
     setContraparteNome(contrato.contraparte_nome);
     setContraparteDocumento(contrato.contraparte_documento ?? '');
     setTipoContratoId(contrato.tipo_contrato_id);
     setResumoObjeto(contrato.resumo_objeto);
     setConteudoMarkdown(contrato.conteudo_markdown);
-    setValorTexto(contrato.valor != null ? String(contrato.valor) : '');
+    setValorDigitos(valorNumericoParaDigitos(contrato.valor));
     setPeriodicidadePagamento(contrato.periodicidade_pagamento);
     setIndiceReajuste(contrato.indice_reajuste ?? '');
     setDataBaseReajuste(contrato.data_base_reajuste ?? '');
@@ -162,16 +171,17 @@ export default function AdminContratos() {
     setAnexoUrl(contrato.anexo_url ?? '');
     setEditingId(contrato.id);
     setErroModal(null);
-    setConfirmandoExclusao(false);
+    setConfirmandoExclusao(opcoes?.iniciarComConfirmacaoExclusao ?? false);
     setModalVisivel(true);
   }
 
   // Aciona a exclusão via swipe: abre o mesmo modal de edição já direto na
-  // confirmação inline (sem recriar a UI de confirmação em outro lugar).
+  // confirmação inline (sem recriar a UI de confirmação em outro lugar) —
+  // a flag é aplicada dentro do próprio abrirModalEditar, num único set de
+  // confirmandoExclusao, para não depender de ordem entre duas chamadas.
   function abrirConfirmacaoExclusaoViaSwipe(contrato: Contrato) {
     swipeableRefs.current.get(contrato.id)?.close();
-    abrirModalEditar(contrato);
-    setConfirmandoExclusao(true);
+    abrirModalEditar(contrato, { iniciarComConfirmacaoExclusao: true });
   }
 
   function fecharModal() {
@@ -208,14 +218,7 @@ export default function AdminContratos() {
       return;
     }
 
-    let valor: number | null = null;
-    if (valorTexto.trim()) {
-      valor = Number(valorTexto.replace(',', '.'));
-      if (Number.isNaN(valor)) {
-        setErroModal('Valor inválido.');
-        return;
-      }
-    }
+    const valor = digitosParaValorNumerico(valorDigitos);
 
     let prazoAvisoPrevioDias: number | null = null;
     if (prazoAvisoPrevioTexto.trim()) {
@@ -571,11 +574,15 @@ export default function AdminContratos() {
             <View style={styles.field}>
               <Text style={styles.label}>Valor</Text>
               <TextInput
-                value={valorTexto}
-                onChangeText={setValorTexto}
-                placeholder="Valor (opcional)"
+                value={
+                  valorDigitos ? formatarValorBRL(Number(valorDigitos)) : ''
+                }
+                onChangeText={(texto) =>
+                  setValorDigitos(extrairDigitosValor(texto))
+                }
+                placeholder="R$ 0,00 (opcional)"
                 placeholderTextColor={light.textSecondary}
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 style={styles.input}
               />
             </View>
