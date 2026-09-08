@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-27T00:00:00Z",
+  "title": "Design System: Aegis Condomínios",
+  "platformNote": "React Native / Expo (adaptive: iOS + Android). No DOM/CSS and no `impeccable live` web panel is configured for this project, so this sidecar omits `components[]` (HTML/CSS shadow-DOM snippets) and per-color `tonalRamp` arrays — both exist only to feed that renderer. Component character is documented in DESIGN.md's `## Components` section instead, in React Native terms.",
+  "extensions": {
+    "colorMeta": {
+      "cobalt-ink": { "role": "primary", "displayName": "Cobalt Ink", "canonical": "#1F4FE0" },
+      "cobalt-ink-pressed": { "role": "primary-pressed", "displayName": "Cobalt Ink, Pressed", "canonical": "#16358F" },
+      "cobalt-wash": { "role": "primary-wash", "displayName": "Cobalt Wash", "canonical": "#E7ECFC" },
+      "warm-paper": { "role": "neutral-bg", "displayName": "Warm Paper", "canonical": "#FAF9F6" },
+      "card-white": { "role": "neutral-surface", "displayName": "Card White", "canonical": "#FFFFFF" },
+      "sunken-linen": { "role": "neutral-recessed", "displayName": "Sunken Linen", "canonical": "#F1EFE9" },
+      "hairline-border": { "role": "neutral-border", "displayName": "Hairline Border", "canonical": "#E3E0D8" },
+      "border-strong": { "role": "neutral-border-strong", "displayName": "Border, Strong", "canonical": "#CFCBC1" },
+      "ink-primary": { "role": "neutral-text", "displayName": "Ink, Primary", "canonical": "#22221F" },
+      "ink-secondary": { "role": "neutral-text-secondary", "displayName": "Ink, Secondary", "canonical": "#6B6862" },
+      "ink-muted": { "role": "neutral-text-muted", "displayName": "Ink, Muted", "canonical": "#9A968D" },
+      "status-ok": { "role": "status-ok", "displayName": "Status OK", "canonical": "#2F7D53" },
+      "status-pending": { "role": "status-pending", "displayName": "Status Pending", "canonical": "#A9740B" },
+      "status-overdue": { "role": "status-overdue", "displayName": "Status Overdue", "canonical": "#B23A2E" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "One hero figure per section — a report total, a large percentage. Never body content." },
+      "headline": { "displayName": "Headline", "purpose": "Screen and full-screen-modal titles, centered in the header." },
+      "title": { "displayName": "Title", "purpose": "Card titles, primary list-item text, standalone destructive-button labels." },
+      "body": { "displayName": "Body", "purpose": "Chat bubbles, form input text, descriptive card copy." },
+      "label": { "displayName": "Label", "purpose": "Field labels, meta text, badge/chip/tab text. Never uppercase-transformed." }
+    },
+    "shadows": [
+      {
+        "name": "floating-overlay",
+        "value": "shadowColor: #000, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: {0,4}, elevation: 8",
+        "purpose": "Context menus (CardMenu) and inline date-picker overlays only — never a resting card, button, or input."
+      }
+    ],
+    "reservedUnused": {
+      "dark": {
+        "note": "A dark neutral palette exists in src/theme/index.ts (bg #121211, surface #1A1A19, elevated #232322, border #2E2E2C, textPrimary #EDEBE7, textSecondary #A3A099) but no screen currently imports it. Reserved, not confirmed as an active direction.",
+        "tokens": {
+          "bg": "#121211",
+          "surface": "#1A1A19",
+          "elevated": "#232322",
+          "border": "#2E2E2C",
+          "textPrimary": "#EDEBE7",
+          "textSecondary": "#A3A099"
+        }
+      }
+    }
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "The Quiet Ledger",
+    "overview": "Aegis is a ledger, not a billboard. Hierarchy and restraint communicate trust more than any visual effect could — the brand's one cobalt ink appears rarely and only with function (a primary action, a selected state, an active indicator), never as decoration. Surfaces stay warm and neutral, never cold or clinical: paper-toned backgrounds, hairline borders, no shine.\n\nThe system deliberately answers to two audiences with opposite densities inside one visual language. Administrador screens carry more on-screen structure — filters, menus, calendars, reports — because that work is desk-paced. Zeladoria screens strip to direct buttons and full-screen guided flow with no hidden menu, because that work happens on a phone, often outdoors in direct sun, where every extra tap costs something real. Both read as the same product; neither is a simplified version of the other.\n\nColor is reserved almost entirely for status: a plan or order is ok (muted forest green), pending (ochre), or overdue (brick red) — never decorative. This system explicitly rejects two recognizable extremes: the generic SaaS kit (purple-blue gradients, cute 3D illustration, identical cards sharing one radius and one shadow with no hierarchy) and the warm-cream-plus-terracotta pairing near #D97757 that reads today as an AI-generated-design tell — Aegis used exactly that accent early on and deliberately replaced it with the current cobalt once the resemblance was identified. Glass/blur is never decorative either: it appears only where real content actually scrolls behind it (the bottom tab bar), and was removed everywhere it showed up as an effect without a function.",
+    "keyCharacteristics": [
+      "One functional accent (cobalt ink), used rarely, never for decoration.",
+      "Warm neutral paper tones throughout — no cold grays, no clinical whites.",
+      "Status color (ok / pending / overdue) is the only place saturated color appears.",
+      "Flat by default; shadow is reserved for temporary floating overlays only.",
+      "Two densities, one language: Administrador is structured, Zeladoria is stripped down — both are \"the real app,\" not a simplified companion."
+    ],
+    "rules": [
+      { "name": "The Rare Ink Rule", "body": "Cobalt Ink appears on primary actions, selection, and active indicators only — never as a background wash, never as decoration, never just because a screen \"needs some color.\" If removing it wouldn't break comprehension of what's actionable or selected, it doesn't belong there.", "section": "colors" },
+      { "name": "The Status-Only Saturation Rule", "body": "OK/Pending/Overdue are the only saturated colors permitted anywhere in the system. A designer reaching for a \"nice accent color\" for anything else is reaching for the wrong tool — use Cobalt Ink (function) or a neutral (structure) instead.", "section": "colors" },
+      { "name": "The No-Terracotta Rule", "body": "Never pair Warm Paper with an orange/terracotta accent near #D97757. That combination is a known, deliberately rejected AI-generated-design signal for this product — it was tried and replaced.", "section": "colors" },
+      { "name": "The One-Family Rule", "body": "Inter, three weights (400/500/600), no exceptions. Weight and size carry hierarchy; a second typeface would be decoration, not structure.", "section": "typography" },
+      { "name": "The Flat-at-Rest Rule", "body": "If a surface isn't floating above other content right now, it has a hairline border and no shadow. Shadow means \"temporary and above the page,\" full stop.", "section": "elevation" },
+      { "name": "The Function-Only Blur Rule", "body": "Blur is a material for real content passing behind an element, not an aesthetic finish. No blur over a static, non-scrolling background.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Cobalt Ink only for primary actions, selected state, and active indicators — everywhere else, reach for a neutral.",
+      "Do keep every resting surface flat with a 1px Hairline Border; reserve shadow for floating overlays that sit temporarily above the page.",
+      "Do use the tinted-background-plus-full-opacity-text pattern (status color at ~10% opacity as fill, full opacity as text/border) for every status badge, chip, and tag.",
+      "Do route every date entry through the shared calendar-picker component; a date field is a trigger, never a free-text input.",
+      "Do keep destructive confirmation inline inside the same modal (replace the area, don't stack a second modal or use a native alert).",
+      "Do treat Zeladoria/execution screens as full-screen, single-primary-action flows — strip, don't shrink, the Administrador density down to them."
+    ],
+    "donts": [
+      "Don't introduce a purple-blue gradient, 3D illustration, or any other generic-SaaS-kit visual — this system is explicitly built against that look.",
+      "Don't pair Warm Paper with an orange/terracotta accent near #D97757 — this exact combination was tried, recognized as an AI-generated-design signal, and deliberately replaced.",
+      "Don't add a drop shadow to a card, button, or input at rest. If it isn't a temporary floating overlay, it doesn't get one.",
+      "Don't apply blur/glass over a static, non-scrolling background — blur is reserved for the one surface with real content passing behind it.",
+      "Don't use a native Alert.alert, confirm(), or a stacked second modal for destructive confirmation — always the inline in-modal pattern.",
+      "Don't use uppercase text transforms, a second typeface, or any weight of Inter outside 400/500/600."
+    ]
+  }
+}

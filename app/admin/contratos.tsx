@@ -760,20 +760,25 @@ export default function AdminContratos() {
                         </Text>
                       </View>
                     ) : (
-                      <View style={styles.barraFundo}>
-                        <View
-                          style={[
-                            styles.barraPreenchida,
-                            {
-                              width: `${percentualDecorrido(contrato.data_inicio, contrato.data_fim, hoje) * 100}%`,
-                              backgroundColor: corVencimento(
-                                contrato.data_fim,
-                                hoje,
-                              ),
-                            },
-                          ]}
-                        />
-                      </View>
+                      <>
+                        <View style={styles.barraFundo}>
+                          <View
+                            style={[
+                              styles.barraPreenchida,
+                              {
+                                width: `${percentualDecorrido(contrato.data_inicio, contrato.data_fim, hoje) * 100}%`,
+                                backgroundColor: corVencimento(
+                                  contrato.data_fim,
+                                  hoje,
+                                ),
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.cardVencimento}>
+                          Vence em {formatarDataBR(contrato.data_fim)}
+                        </Text>
+                      </>
                     )}
 
                     <Text style={styles.cardAtualizado}>
@@ -1450,6 +1455,12 @@ const styles = StyleSheet.create({
   barraPreenchida: {
     height: '100%',
     borderRadius: 3,
+  },
+  cardVencimento: {
+    marginTop: spacing.xs / 2,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
   },
   seloVigenciaIndeterminada: {
     alignSelf: 'flex-start',
