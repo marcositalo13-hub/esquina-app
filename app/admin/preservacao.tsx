@@ -2981,7 +2981,7 @@ const styles = StyleSheet.create({
   },
   modalRotaCard: {
     backgroundColor: light.card,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     padding: spacing.lg,
     gap: spacing.md,
   },

@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   },
   card: {
     overflow: 'hidden',
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: 'rgba(46, 46, 44, 0.3)',
   },
