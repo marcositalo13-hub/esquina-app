@@ -153,14 +153,14 @@ A `dark` neutral palette (`bg #121211`, `surface #1A1A19`, `elevated #232322`, `
 **Character:** Inter at these weights reads as neutral, legible, and unshowy — exactly the "ledger" register: it disappears into the content instead of performing personality.
 
 ### Hierarchy
-- **Display** (Inter SemiBold 600, 24px): the rare big number — a stat total on a report tile, a large percentage. Used only for a single hero figure per section, never for body content.
-- **Headline** (Inter SemiBold 600, 17px, centered): screen titles and full-screen modal titles. Admin's own home title runs slightly larger (20px) as the one exception at the root of the navigation stack; every pushed screen and modal uses 17px.
+- **Display** (Source Serif 4 Regular 400, 24px): the rare big number — a stat total on a report tile, a large percentage. Used only for a single hero figure per section, never for body content.
+- **Headline** (Source Serif 4 SemiBold 600, 17px, centered): screen titles and full-screen modal titles. Admin's own home title runs slightly larger (20px) as the one exception at the root of the navigation stack; every pushed screen and modal uses 17px.
 - **Title** (Inter Medium 500, 15px): card titles, primary list-item text, standalone destructive-button labels.
 - **Body** (Inter Regular 400, 14–15px): chat bubble text, form input text, descriptive card text (contraparte, resumo, chip labels' regular sibling). 15px inside form inputs, 14px inside chat bubbles and denser card metadata.
 - **Label** (Inter Medium 500, 11–13px): field labels, secondary meta text ("Atualizado em…", "Vence em…"), badge/selo text, chip text, bottom-tab labels. No uppercase transform anywhere in the system — case stays as written.
 
 ### Named Rules
-**The Two-Family Rule.** Source Serif 4 in Display and Headline; Inter in Title, Body, and Label — exactly two families, each with a fixed job. Serif carries the big, rare moments (a hero number, a screen title); Inter carries everything read at length or in quantity. No third family, ever.
+**The Two-Family Rule.** Source Serif 4 in Display and Headline; Inter in Title, Body, and Label — exactly two families, each with a fixed job. Serif carries the big, rare moments (a hero number, a screen title); Inter carries everything read at length or in quantity. No third family, ever. Two hard limits keep the serif rare instead of precious: it never sets below 17px, and it never appears on a Zeladoria execution screen at all — field work happens on a phone, often in direct sun, and those screens run Inter end to end, no exception.
 
 **The Tabular Figures Rule.** Every numeral that appears in a comparable position — a monetary value, a date, a counter, days remaining — sets `fontVariant: ['tabular-nums']`, and right-aligns when it sits in a column with other numbers. Numbers in a ledger line up; a column of figures that doesn't align at the same digit isn't a ledger, it's just text that happens to be numeric.
 
@@ -193,9 +193,13 @@ The gradient still exists in code today — `src/components/ScreenBackground.tsx
 
 **The Function-Only Blur Rule.** Blur is a material for real content passing behind an element, not an aesthetic finish. No blur over a static, non-scrolling background.
 
+**The Ruled-Row Rule.** A record in a list is a ruled row, not a box. Background fill and corner radius are reserved for surfaces that are genuinely floating above the page — `CardMenu`, the inline calendar overlay — never for an item sitting in a plain list. If it isn't floating, it doesn't get a card treatment; it gets a rule.
+
 ## Shapes
 
-Three radius steps only — `sm` (8px, small badges and secondary buttons), `md` (12px, the default: cards, inputs, primary buttons, modal panels), `lg` (16px, pills: chips, status badges, the largest modal-panel corners). No sharp (0px) corners and no fully circular corners outside genuinely circular controls (the header "+" add button, the bottom-tab icon indicator dot). Borders are always 1px and hairline-colored at rest; a colored 1px border (status color) marks an outline/destructive button or a status badge, never a decorative accent.
+Three radius steps, and none of them soft: `sm` (square corners — the default for a ruled row and most surfaces), `md` (a small allowance for a tap target that needs a whisper of softening: buttons, inputs, chip rectangles), `lg` (a full pill, reserved strictly for genuinely circular controls: the bottom-tab active-indicator dot, the header "+" add button). Nothing in the system rounds "a little" by default anymore. Borders are always 1px and hairline-colored at rest; a colored 1px border (status color) marks an outline/destructive button or a status badge, never a decorative accent.
+
+**The retired scale — three step values in the eight, twelve, and sixteen-pixel range — was never a deliberate choice on Aegis's part; it was Tailwind's and shadcn's default radius scale, carried over unexamined.** Squaring the corners off is part of the same redirect that retired Cobalt Ink: a rounded-corner system that close to the ecosystem default is one more way the prior direction accidentally matched the market instead of departing from it. Exact values live in the frontmatter (`rounded.sm`/`md`/`lg`), not repeated here, so this section can't drift out of sync with them again.
 
 ## Motion
 
@@ -211,22 +215,18 @@ Every animation must respect `AccessibilityInfo.isReduceMotionEnabled()` — che
 
 ### Buttons
 - **Shape:** `rounded.md` (12px) for the standard full-width footer button; `rounded.sm`–`rounded.md` for inline/destructive buttons.
-- **Primary:** solid Cobalt Ink background, white `Headline`/`Title`-weight label, full-width in modal footers, `12px` vertical padding. Pressed state darkens to Cobalt Ink Pressed; disabled drops to 40% opacity — no other disabled treatment.
+- **Primary:** solid Ink Action background, white `Headline`/`Title`-weight label, full-width in modal footers, `12px` vertical padding. Pressed state darkens to Ink Action Pressed (true black); disabled drops to 40% opacity — no other disabled treatment.
 - **Destructive / Outline:** transparent background, 1px Status Overdue border, Status Overdue text — used for "Excluir," never filled solid red.
-- **Icon-only (add/back/close):** no background at rest; the header "+" action is the one circular filled exception (Cobalt Ink circle, white icon).
+- **Icon-only (add/back/close):** no background at rest; the header "+" action is the one circular filled exception (Ink Action circle, white icon).
 
 ### Chips
 - **Style:** pill shape (`rounded.lg`), used for every user-facing single/multi-select in forms (tipo, periodicidade, prioridade) — never a native picker or dropdown.
-- **Selected:** solid fill in the assigned accent (Cobalt Ink by default, or a semantic color when the chip represents a status/priority value), white text.
+- **Selected:** solid fill in the assigned accent (Ink Action by default, or a semantic color when the chip represents a status/priority value), white text.
 - **Unselected, neutral:** `Card White` background, `Hairline Border`, `Ink Primary` text.
 - **Unselected, color-coded:** 10%-opacity tint of the assigned color as background, full-opacity color as border and text (see Named Rule below).
 
-### Cards / Containers
-- **Corner Style:** `rounded.md` (12px).
-- **Background:** `Card White` on `Warm Paper`.
-- **Shadow Strategy:** none (see Elevation & Depth) — separation is the hairline border plus the tonal step from the page background.
-- **Border:** 1px `Hairline Border`.
-- **Internal Padding:** `spacing.md` (16px), internal vertical rhythm `spacing.xs`–`spacing.sm`.
+### Ruled Rows (signature pattern)
+A record — a contract, a plano de manutenção, a normativo — is a row on `Warm Paper`, not a card. It carries no background color of its own and no corner radius; it's separated from its neighbors by a 1px horizontal rule in `Hairline Border`, top and bottom. The first row of a group carries a heavier 2px rule in `Ink Action` above it, standing in for a section head — no separate header component, no card wrapper. Internal layout: the record's title sets in Source Serif (`Title`/`Headline`, by weight), supporting metadata sets in Inter `Label`, and a numeric value — when the row has one — right-aligns on the title's own baseline with `fontVariant: ['tabular-nums']` (see Typography → The Tabular Figures Rule). Press state: the entire row's background fills `Sunken Linen`, bleeding edge-to-edge to the screen's own margins, not just the row's own padded box — so the whole line reads as activated, never as a card lifting off the page.
 
 ### Inputs / Fields
 - **Style:** `Sunken Linen` background (recessed, not raised), 1px `Hairline Border`, `rounded.md`, `Body` text.
@@ -238,8 +238,8 @@ Every animation must respect `AccessibilityInfo.isReduceMotionEnabled()` — che
 - **Placement:** inline, directly below the content it qualifies (a card title, a progress bar) — never as a corner-pinned decoration.
 
 ### Navigation
-- **Header:** fixed row — a 32px-wide left tap target (back chevron or spacer), a centered `Headline` title, a 32px-wide right tap target (a circular Cobalt Ink "+", a context "…" menu, or a spacer to keep the title centered when no right action exists).
-- **Bottom Tab Bar:** the one persistent nav surface, frosted-glass (`BlurView intensity 40, tint light`) with a hairline top border and a faint white sheen gradient — used only where real scrollable content passes behind it. Active tab: Cobalt Ink icon + a small dot indicator; inactive: `Ink Primary` icon, no dot. An optional small red dot marks a pending-item badge on a tab.
+- **Header:** fixed row — a 32px-wide left tap target (back chevron or spacer), a centered `Headline` title, a 32px-wide right tap target (a circular Ink Action "+", a context "…" menu, or a spacer to keep the title centered when no right action exists).
+- **Bottom Tab Bar:** the one persistent nav surface, frosted-glass (`BlurView intensity 40, tint light`) with a hairline top border — used only where real scrollable content passes behind it. Active tab: Ink Action icon + a small dot indicator; inactive: `Ink Primary` icon, no dot. An optional small red dot marks a pending-item badge on a tab.
 
 ### Full-Screen Modal (signature pattern)
 Every create/edit flow — never a bottom sheet, never an inline expand — is a full-screen `Modal` that slides up: header with a centered title and a right-side "X" that closes **without saving**, a scrollable body of `label` + field-style groups, and a sticky footer with one full-width primary action. A destructive "Excluir" action, when present, lives inside this same modal body and — on tap — replaces its own area with an inline confirmation ("Confirmar exclusão?" + Cancelar/Excluir), never a native `Alert.alert` and never a second modal stacked on top.
@@ -253,22 +253,27 @@ Contracts render a thin progress bar whose fill color is a continuous function o
 See the Closed Status Set Rule's exception, above, for why this continuous blend is authorized where a fixed three-value badge would not be.
 
 ### AI Assistant Chat (signature pattern)
-Both shipped assistants (Normativos, Contratos) render inside this same full-screen modal shell. Assistant replies are left-aligned `Card White` bubbles with a copy affordance; user turns are right-aligned solid Cobalt Ink bubbles. A pending reply shows three animated dots in the assistant-bubble position — never a "Digitando…" text label. A fixed, non-generated caption ("Respostas geradas por IA…") sits above the input, outside the scrolling message list, at all times.
+Both shipped assistants (Normativos, Contratos) render inside this same full-screen modal shell. Assistant replies are left-aligned `Card White` bubbles with a copy affordance; user turns are right-aligned solid Ink Action bubbles. A pending reply shows three animated dots in the assistant-bubble position — never a "Digitando…" text label. A fixed, non-generated caption ("Respostas geradas por IA…") sits above the input, outside the scrolling message list, at all times.
+
+**Charts.** A Relatórios chart that doesn't represent a status value (e.g. a monthly total by contract type) marks its data in Ink Action, never a leftover accent color. Only a chart segment that literally represents ok/pending/overdue is allowed a status color; everything else drawn on a chart is ink.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use Cobalt Ink only for primary actions, selected state, and active indicators — everywhere else, reach for a neutral.
-- **Do** keep every resting surface flat with a 1px `Hairline Border`; reserve shadow for floating overlays that sit temporarily above the page.
+- **Do** build every list as ruled rows on `Warm Paper` — a title, its metadata, and a right-aligned tabular number, separated by a 1px rule — never a bordered, radius-cornered card.
+- **Do** use ink as shape, not color, to tell actions from text: a filled Ink Action block for the primary action, a 1.5px underline for a secondary one, plain text for everything else.
+- **Do** set Display and Headline in Source Serif 4 and everything else in Inter — two families, each with exactly one job, never a third.
 - **Do** use the tinted-background-plus-full-opacity-text pattern (`{status-color}` at ~10% opacity as fill, full opacity as text/border) for every status badge, chip, and tag.
-- **Do** route every date entry through the shared calendar-picker component; a date field is a trigger, never a free-text input.
+- **Do** route every date entry through `MiniCalendar`; a date field is a trigger, never a free-text input.
 - **Do** keep destructive confirmation inline inside the same modal (replace the area, don't stack a second modal or use a native alert).
-- **Do** treat Zeladoria/execution screens as full-screen, single-primary-action flows — strip, don't shrink, the Administrador density down to them.
+- **Do** treat Zeladoria/execution screens as full-screen, single-primary-action flows, set entirely in Inter — strip, don't shrink, the Administrador density down to them.
 
 ### Don't:
+- **Don't** reach for Cobalt Ink or any brand-blue accent — it's retired. The only accent left in the system is ink.
+- **Don't** give a list item its own background fill, border, or corner radius at rest — that's a card, and cards are reserved for surfaces genuinely floating above the page (`CardMenu`, the calendar overlay), never for a row in a plain list.
 - **Don't** introduce a purple-blue gradient, 3D illustration, or any other generic-SaaS-kit visual — this system is explicitly built against that look.
 - **Don't** pair Warm Paper with an orange/terracotta accent near `#D97757` — this exact combination was tried, recognized as an AI-generated-design signal, and deliberately replaced.
-- **Don't** add a drop shadow to a card, button, or input at rest. If it isn't a temporary floating overlay, it doesn't get one.
+- **Don't** add a drop shadow to a row, button, or input at rest. If it isn't a temporary floating overlay, it doesn't get one.
 - **Don't** apply blur/glass over a static, non-scrolling background — blur is reserved for the one surface with real content passing behind it.
 - **Don't** use a native `Alert.alert`, `confirm()`, or a stacked second modal for destructive confirmation — always the inline in-modal pattern.
-- **Don't** use uppercase text transforms, a second typeface, or any weight of Inter outside 400/500/600.
+- **Don't** use uppercase text transforms, or any font outside Source Serif 4 (Display/Headline) and Inter (Title/Body/Label).

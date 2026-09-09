@@ -1,7 +1,8 @@
-// Regra: a cor de marca (brand) é FUNCIONAL — usada em botões primários,
-// chips selecionados e indicadores ativos — permanecendo fora da família
-// das cores semânticas (verde/âmbar/vermelho), que continuam exclusivas
-// para status.
+// Redirecionamento "Papel Pautado": não há mais cor de marca. O accent
+// funcional é TINTA — inkAction/inkActionPressed — usado em botões
+// primários, chips selecionados e indicadores ativos, permanecendo fora
+// da família das cores semânticas (verde/âmbar/vermelho), que continuam
+// exclusivas para status. Ver DESIGN.md → The Ink-Only Action Rule.
 import { Easing } from 'react-native';
 
 export const light = {
@@ -13,9 +14,8 @@ export const light = {
   textPrimary: '#22221F',
   textSecondary: '#6B6862',
   textMuted: '#9A968D',
-  brand: '#1F4FE0',
-  brandPressed: '#16358F',
-  brandWash: '#E7ECFC',
+  inkAction: '#1A1A17',
+  inkActionPressed: '#000000',
 } as const;
 
 export const dark = {
@@ -44,9 +44,9 @@ export const motion = {
 } as const;
 
 export const radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
+  sm: 0,
+  md: 4,
+  lg: 999,
 } as const;
 
 const spacingBase = 8;
@@ -64,6 +64,8 @@ export const fonts = {
   regular: 'Inter_400Regular',
   medium: 'Inter_500Medium',
   semiBold: 'Inter_600SemiBold',
+  serif: 'SourceSerif4_400Regular',
+  serifSemiBold: 'SourceSerif4_600SemiBold',
 } as const;
 
 export const theme = {
