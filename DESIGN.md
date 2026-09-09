@@ -10,20 +10,19 @@ colors:
   ink-primary: "#22221F"
   ink-secondary: "#6B6862"
   ink-muted: "#9A968D"
-  cobalt-ink: "#1F4FE0"
-  cobalt-ink-pressed: "#16358F"
-  cobalt-wash: "#E7ECFC"
+  ink-action: "#1A1A17"
+  ink-action-pressed: "#000000"
   status-ok: "#2F7D53"
   status-pending: "#A9740B"
   status-overdue: "#B23A2E"
 typography:
   display:
-    fontFamily: "Inter_600SemiBold"
+    fontFamily: "SourceSerif4_400Regular"
     fontSize: "24px"
     fontWeight: 600
     lineHeight: 1.15
   headline:
-    fontFamily: "Inter_600SemiBold"
+    fontFamily: "SourceSerif4_600SemiBold"
     fontSize: "17px"
     fontWeight: 600
     lineHeight: 1.2
@@ -43,9 +42,9 @@ typography:
     fontWeight: 500
     lineHeight: 1.3
 rounded:
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
+  sm: "0px"
+  md: "4px"
+  lg: "999px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -54,13 +53,13 @@ spacing:
   xl: "32px"
 components:
   button-primary:
-    backgroundColor: "{colors.cobalt-ink}"
-    textColor: "#FFFFFF"
+    backgroundColor: "{colors.ink-action}"
+    textColor: "{colors.warm-paper}"
     typography: "{typography.headline}"
     rounded: "{rounded.md}"
     padding: "12px 16px"
   button-primary-pressed:
-    backgroundColor: "{colors.cobalt-ink-pressed}"
+    backgroundColor: "{colors.ink-action-pressed}"
   button-destructive-outline:
     backgroundColor: "transparent"
     textColor: "{colors.status-overdue}"
@@ -68,8 +67,8 @@ components:
     rounded: "{rounded.md}"
     padding: "12px 16px"
   chip-selected:
-    backgroundColor: "{colors.cobalt-ink}"
-    textColor: "#FFFFFF"
+    backgroundColor: "{colors.ink-action}"
+    textColor: "{colors.warm-paper}"
     typography: "{typography.label}"
     rounded: "{rounded.lg}"
     padding: "6px 12px"
@@ -85,10 +84,9 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "12px 16px"
-  card-surface:
-    backgroundColor: "{colors.card-white}"
-    rounded: "{rounded.md}"
-    padding: "16px"
+  row-record:
+    backgroundColor: "transparent"
+    borderTop: "1px solid {colors.hairline-border}"
 ---
 
 # Design System: Aegis Condomínios
@@ -97,16 +95,16 @@ components:
 
 **Creative North Star: "The Quiet Ledger"**
 
-Aegis is a ledger, not a billboard. Hierarchy and restraint communicate trust more than any visual effect could — the brand's one cobalt ink appears rarely and only with function (a primary action, a selected state, an active indicator), never as decoration. Surfaces stay warm and neutral, never cold or clinical: paper-toned backgrounds, hairline borders, no shine.
+This system was redirected. The direction it replaces was defined almost entirely by prohibitions — no gradients, no shadows, no terracotta, no SaaS clichés — and a visual language built only from what it refuses converges, quietly, on exactly the safe default it's trying to avoid. A blue-accented, white-card, hairline-bordered interface is the same shape as a hundred other products no matter which blue it picks. This redirect makes the metaphor load-bearing instead of decorative: The Quiet Ledger stops being a mood and starts being a structure.
 
-The system deliberately answers to two audiences with opposite densities inside one visual language. Administrador screens carry more on-screen structure — filters, menus, calendars, reports — because that work is desk-paced. Zeladoria screens strip to direct buttons and full-screen guided flow with no hidden menu, because that work happens on a phone, often outdoors in direct sun, where every extra tap costs something real. Both read as the same product; neither is a simplified version of the other.
+**Ruled Paper.** A ledger isn't a stack of cards floating on a tinted background — it's a sheet of paper with rules on it, and every entry is a line on that sheet. Aegis now builds its lists the same way: a contract, a plano de manutenção, a normativo is a row, delimited by a single ruled line above and below it, not a bordered, radius-cornered box sitting on a wash. The paper itself — Warm Paper, flat, unadorned — is the only background any screen has; nothing sits "on top of" it in a floating card anymore.
 
-Color is reserved almost entirely for status: a plan or order is ok (muted forest green), pending (ochre), or overdue (brick red) — never decorative. This system explicitly rejects two recognizable extremes: the generic SaaS kit (purple-blue gradients, cute 3D illustration, identical cards sharing one radius and one shadow with no hierarchy) and the warm-cream-plus-terracotta pairing near `#D97757` that reads today as an AI-generated-design tell — Aegis used exactly that accent early on and deliberately replaced it with the current cobalt once the resemblance was identified. Glass/blur is never decorative either: it appears only where real content actually scrolls behind it (the bottom tab bar), and was removed everywhere it showed up as an effect without a function.
+The accent is no longer a color. It's ink. Ink Action (`#1A1A17`, near-black) marks a primary action or a selected state as a filled block of ink, or its inverse — paper on ink. There is no brand blue left to reach for. Cobalt is retired (see Colors). What remains saturated is exactly, and only, the three status colors: a plan or a contract is ok, pending, or overdue, and that is the entire remaining vocabulary of color in the system.
 
 **Key Characteristics:**
-- One functional accent (cobalt ink), used rarely, never for decoration.
-- Warm neutral paper tones throughout — no cold grays, no clinical whites.
-- Status color (ok / pending / overdue) is the only place saturated color appears.
+- No brand color. The one accent is ink — black on paper, or paper on black — never a hue.
+- Records are ruled rows on a sheet, not cards floating on a background wash.
+- Status color (ok / pending / overdue) is the only saturated color anywhere, and it always means something operational.
 - Flat by default; shadow is reserved for temporary floating overlays only.
 - Two densities, one language: Administrador is structured, Zeladoria is stripped down — both are "the real app," not a simplified companion.
 
@@ -115,12 +113,13 @@ Color is reserved almost entirely for status: a plan or order is ok (muted fores
 Paper and cobalt ink, with a small disciplined set of earthy status colors — nothing else in the system is allowed to be loud.
 
 ### Primary
-- **Cobalt Ink** (`#1F4FE0`): the single functional accent — primary buttons, selected chips, active tab indicator, links. Used sparingly and only where it signals "this is the action" or "this is selected." Never a background wash for its own sake.
-- **Cobalt Ink, Pressed** (`#16358F`): the pressed/active state of Cobalt Ink, darker and more saturated.
-- **Cobalt Wash** (`#E7ECFC`): a near-white tint of the accent, reserved for the rare soft-fill treatment (e.g. an unselected switch track) — not a general-purpose light-blue background.
+- **Ink Action** (`#1A1A17`): the system's only accent, and it isn't a color — it's ink. Primary buttons, selected chips, active tab indicator, links: a filled block of Ink Action (action/selection), or its inverse (paper on ink). Used exactly where it signals "this is the action" or "this is selected," never as a wash.
+- **Ink Action, Pressed** (`#000000`): true black — the pressed/active state of Ink Action, one step darker with no remaining warmth.
+
+**Cobalt Ink (`#1F4FE0`) is retired.** It was this system's accent under the prior direction and is deliberately removed here — a redirect, not a bug fix. Saturated blue is the sector's safe default; it signals "software," not this product. The same logic that retired the warm-cream-plus-terracotta pairing (a recognizable AI-generated-design tell) retires cobalt now: a color everyone reaches for by default carries no identity, however competently it's used. The `brand`/`brandPressed`/`brandWash` tokens still exist in `src/theme/index.ts` and will be removed in a later cleanup pass — no new screen should consume them starting now.
 
 ### Neutral
-- **Warm Paper** (`#FAF9F6`): the base screen background. Every screen sits on this, reinforced by a very subtle warm-tinted linear wash (see Elevation & Depth → Screen Background Gradient).
+- **Warm Paper** (`#FAF9F6`): the base screen background — flat and unadorned. The lavender-tinted gradient wash every screen used to carry has been **removed**: it quietly contradicted this same document's own prohibition on decorative SaaS gradients, and a redirect built around a ruled sheet of paper doesn't get to keep an atmospheric wash on that paper. See Elevation & Depth → Screen Background Gradient — Retired.
 - **Card White** (`#FFFFFF`): the surface color for cards, inputs-at-rest containers, and modals — one step lighter than Warm Paper so surfaces read as distinct without a shadow.
 - **Sunken Linen** (`#F1EFE9`): the recessed surface for input fields and secondary tiles — visually "pressed into" Warm Paper.
 - **Hairline Border** (`#E3E0D8`): the default 1px border on nearly every surface — cards, inputs, dividers. This is how the system separates surfaces, not shadow.
@@ -139,9 +138,11 @@ A `dark` neutral palette (`bg #121211`, `surface #1A1A19`, `elevated #232322`, `
 **The Login-Only Dark Rule.** Dark mode belongs to the login screen and nowhere else. No post-login screen may import or reference `dark`. `light` and `dark` never coexist on the same screen.
 
 ### Named Rules
-**The Rare Ink Rule.** Cobalt Ink appears on primary actions, selection, and active indicators only — never as a background wash, never as decoration, never just because a screen "needs some color." If removing it wouldn't break comprehension of what's actionable or selected, it doesn't belong there.
+**The Ink-Only Action Rule.** The primary action is black ink on paper, or paper on black ink. Aegis has no brand color. When Ink Action marks the action and the surrounding text is also effectively black, the distinction is never color — it's *shape*: a filled block (primary action), a 1.5px underline (secondary action), or nothing at all (plain text). If two things need telling apart and both are ink, change the shape, never reach for a tint.
 
-**The Status-Only Saturation Rule.** OK/Pending/Overdue are the only saturated colors permitted anywhere in the system. A designer reaching for a "nice accent color" for anything else is reaching for the wrong tool — use Cobalt Ink (function) or a neutral (structure) instead. **Exception:** continuous RGB interpolation *between* status colors is authorized for a value that is itself continuous (e.g. days remaining until due) — see Components → Vencimento Gradient Bar. This is not a loophole for new hues; the interpolated color must always land between two status colors already in the palette.
+**The Color-Means-Urgency Rule.** Every drop of color in the app carries operational meaning. If an element has color, a user must be able to say — just by looking at it — whether it's overdue, close to due, or fine. This is the system's central affirmative rule: color is never spent on anything that isn't telling the user how urgent something is.
+
+**The Closed Status Set Rule** (formerly the Status-Only Saturation Rule — renamed to complement the Color-Means-Urgency Rule above). OK/Pending/Overdue are the only saturated colors permitted anywhere in the system: the complete, closed vocabulary the Color-Means-Urgency Rule draws from. A designer reaching for a "nice accent color" for anything else is reaching for the wrong tool — use Ink Action (function) or a neutral (structure) instead. **Exception:** continuous RGB interpolation *between* status colors is authorized for a value that is itself continuous (e.g. days remaining until due) — see Components → Vencimento Gradient Bar. This is not a loophole for new hues; the interpolated color must always land between two status colors already in the palette.
 
 **The No-Terracotta Rule.** Never pair Warm Paper with an orange/terracotta accent near `#D97757`. That combination is a known, deliberately rejected AI-generated-design signal for this product — it was tried and replaced.
 
@@ -159,7 +160,9 @@ A `dark` neutral palette (`bg #121211`, `surface #1A1A19`, `elevated #232322`, `
 - **Label** (Inter Medium 500, 11–13px): field labels, secondary meta text ("Atualizado em…", "Vence em…"), badge/selo text, chip text, bottom-tab labels. No uppercase transform anywhere in the system — case stays as written.
 
 ### Named Rules
-**The One-Family Rule.** Inter, three weights (400/500/600), no exceptions. Weight and size carry hierarchy; a second typeface would be decoration, not structure.
+**The Two-Family Rule.** Source Serif 4 in Display and Headline; Inter in Title, Body, and Label — exactly two families, each with a fixed job. Serif carries the big, rare moments (a hero number, a screen title); Inter carries everything read at length or in quantity. No third family, ever.
+
+**The Tabular Figures Rule.** Every numeral that appears in a comparable position — a monetary value, a date, a counter, days remaining — sets `fontVariant: ['tabular-nums']`, and right-aligns when it sits in a column with other numbers. Numbers in a ledger line up; a column of figures that doesn't align at the same digit isn't a ledger, it's just text that happens to be numeric.
 
 ## Layout
 
@@ -177,10 +180,10 @@ Shadow is reserved for genuinely temporary, floating content: a context menu or 
 
 Blur/glass is not a decorative material here — it is used exactly once, on the persistent bottom tab bar, and only because real scrollable content passes behind it; anywhere blur appeared over a flat, non-scrolling background it has been removed as an effect without a function.
 
-### Screen Background Gradient
-Every screen sits on `Warm Paper`, reinforced by a full-bleed `LinearGradient` wash — the one atmospheric effect in the system, applied identically everywhere it appears: colors `rgba(216, 220, 240, 0.12)` → `rgba(216, 220, 240, 0.35)` → `rgba(216, 220, 240, 0.7)`, stop locations `[0, 0.6, 1]`, direction top-to-bottom (`start {x:0, y:0}` → `end {x:0, y:1}`) — weak at the top, intensifying toward the bottom.
+### Screen Background Gradient — Retired
+Every screen used to sit on `Warm Paper` reinforced by a full-bleed lavender-tinted `LinearGradient` wash (`rgba(216, 220, 240, 0.12→0.35→0.7)`, top-to-bottom, weak at the top, intensifying toward the bottom). **This wash is retired as of the Ruled Paper redirect.** It was the one atmospheric effect anywhere in the system, and it stood in direct, unresolved tension with this document's own prohibition against decorative SaaS gradients. The background is now flat `Warm Paper`, full stop — no gradient, no wash.
 
-The canonical source is the shared `ScreenBackground` component (`src/components/ScreenBackground.tsx`), an absolutely-positioned full-bleed `LinearGradient` meant to be dropped into any screen. **Known divergence:** `app/home.tsx` duplicates these exact values inline instead of rendering `ScreenBackground` — the values match today, but this is drift, not a second sanctioned pattern. New screens should render `ScreenBackground`, not re-declare the gradient.
+The gradient still exists in code today — `src/components/ScreenBackground.tsx`, and duplicated inline in `app/home.tsx` — pending a code change that is outside the scope of this document edit. Both are now **stale relative to this design system**; treat their continued presence in the repo as a pending cleanup, not as design authority.
 
 ### Shadow Vocabulary
 - **Floating overlay** (`shadowColor: #000, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: {0,4}, elevation: 8`): context menus (`CardMenu`), inline date-picker overlays. Never applied to a resting card, button, or input.
@@ -247,7 +250,7 @@ Contracts render a thin progress bar whose fill color is a continuous function o
 - **30–60 days remaining:** continuous interpolation from `Status OK` toward `Status Pending` (`fator = (60 − dias) / 30`).
 - **0–30 days remaining:** continuous interpolation from `Status Pending` toward `Status Overdue` (`fator = (30 − dias) / 30`).
 - **Overdue (< 0 days remaining):** fixed `Status Overdue`.
-See the Status-Only Saturation Rule's exception, above, for why this continuous blend is authorized where a fixed three-value badge would not be.
+See the Closed Status Set Rule's exception, above, for why this continuous blend is authorized where a fixed three-value badge would not be.
 
 ### AI Assistant Chat (signature pattern)
 Both shipped assistants (Normativos, Contratos) render inside this same full-screen modal shell. Assistant replies are left-aligned `Card White` bubbles with a copy affordance; user turns are right-aligned solid Cobalt Ink bubbles. A pending reply shows three animated dots in the assistant-bubble position — never a "Digitando…" text label. A fixed, non-generated caption ("Respostas geradas por IA…") sits above the input, outside the scrolling message list, at all times.
