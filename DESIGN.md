@@ -120,7 +120,7 @@ Paper and cobalt ink, with a small disciplined set of earthy status colors — n
 - **Cobalt Wash** (`#E7ECFC`): a near-white tint of the accent, reserved for the rare soft-fill treatment (e.g. an unselected switch track) — not a general-purpose light-blue background.
 
 ### Neutral
-- **Warm Paper** (`#FAF9F6`): the base screen background. Every screen sits on this, reinforced by a very subtle warm-tinted radial/linear wash (see Elevation & Depth).
+- **Warm Paper** (`#FAF9F6`): the base screen background. Every screen sits on this, reinforced by a very subtle warm-tinted linear wash (see Elevation & Depth → Screen Background Gradient).
 - **Card White** (`#FFFFFF`): the surface color for cards, inputs-at-rest containers, and modals — one step lighter than Warm Paper so surfaces read as distinct without a shadow.
 - **Sunken Linen** (`#F1EFE9`): the recessed surface for input fields and secondary tiles — visually "pressed into" Warm Paper.
 - **Hairline Border** (`#E3E0D8`): the default 1px border on nearly every surface — cards, inputs, dividers. This is how the system separates surfaces, not shadow.
@@ -134,12 +134,14 @@ Paper and cobalt ink, with a small disciplined set of earthy status colors — n
 - **Status Pending** (`#A9740B`, ochre): approaching a deadline or awaiting attention — never used for anything but a real time-sensitive state.
 - **Status Overdue** (`#B23A2E`, muted brick red): past due, failed, or blocking. Reserved for genuine urgency.
 
-A `dark` neutral palette (`bg #121211`, `surface #1A1A19`, `elevated #232322`, `border #2E2E2C`, plus matching text tiers) exists in `src/theme/index.ts` but is not yet wired into any screen — every current screen imports `light` directly. Treat it as a reserved, unconfirmed direction rather than an active token set until a screen actually consumes it.
+A `dark` neutral palette (`bg #121211`, `surface #1A1A19`, `elevated #232322`, `border #2E2E2C`, plus matching text tiers `textPrimary #EDEBE7`/`textSecondary #A3A099`) exists in `src/theme/index.ts` and **is** in active use — exclusively in `app/login.tsx`. No post-login screen imports `dark`; every other screen imports `light` directly.
+
+**The Login-Only Dark Rule.** Dark mode belongs to the login screen and nowhere else. No post-login screen may import or reference `dark`. `light` and `dark` never coexist on the same screen.
 
 ### Named Rules
 **The Rare Ink Rule.** Cobalt Ink appears on primary actions, selection, and active indicators only — never as a background wash, never as decoration, never just because a screen "needs some color." If removing it wouldn't break comprehension of what's actionable or selected, it doesn't belong there.
 
-**The Status-Only Saturation Rule.** OK/Pending/Overdue are the only saturated colors permitted anywhere in the system. A designer reaching for a "nice accent color" for anything else is reaching for the wrong tool — use Cobalt Ink (function) or a neutral (structure) instead.
+**The Status-Only Saturation Rule.** OK/Pending/Overdue are the only saturated colors permitted anywhere in the system. A designer reaching for a "nice accent color" for anything else is reaching for the wrong tool — use Cobalt Ink (function) or a neutral (structure) instead. **Exception:** continuous RGB interpolation *between* status colors is authorized for a value that is itself continuous (e.g. days remaining until due) — see Components → Vencimento Gradient Bar. This is not a loophole for new hues; the interpolated color must always land between two status colors already in the palette.
 
 **The No-Terracotta Rule.** Never pair Warm Paper with an orange/terracotta accent near `#D97757`. That combination is a known, deliberately rejected AI-generated-design signal for this product — it was tried and replaced.
 
@@ -175,6 +177,11 @@ Shadow is reserved for genuinely temporary, floating content: a context menu or 
 
 Blur/glass is not a decorative material here — it is used exactly once, on the persistent bottom tab bar, and only because real scrollable content passes behind it; anywhere blur appeared over a flat, non-scrolling background it has been removed as an effect without a function.
 
+### Screen Background Gradient
+Every screen sits on `Warm Paper`, reinforced by a full-bleed `LinearGradient` wash — the one atmospheric effect in the system, applied identically everywhere it appears: colors `rgba(216, 220, 240, 0.12)` → `rgba(216, 220, 240, 0.35)` → `rgba(216, 220, 240, 0.7)`, stop locations `[0, 0.6, 1]`, direction top-to-bottom (`start {x:0, y:0}` → `end {x:0, y:1}`) — weak at the top, intensifying toward the bottom.
+
+The canonical source is the shared `ScreenBackground` component (`src/components/ScreenBackground.tsx`), an absolutely-positioned full-bleed `LinearGradient` meant to be dropped into any screen. **Known divergence:** `app/home.tsx` duplicates these exact values inline instead of rendering `ScreenBackground` — the values match today, but this is drift, not a second sanctioned pattern. New screens should render `ScreenBackground`, not re-declare the gradient.
+
 ### Shadow Vocabulary
 - **Floating overlay** (`shadowColor: #000, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: {0,4}, elevation: 8`): context menus (`CardMenu`), inline date-picker overlays. Never applied to a resting card, button, or input.
 
@@ -186,6 +193,16 @@ Blur/glass is not a decorative material here — it is used exactly once, on the
 ## Shapes
 
 Three radius steps only — `sm` (8px, small badges and secondary buttons), `md` (12px, the default: cards, inputs, primary buttons, modal panels), `lg` (16px, pills: chips, status badges, the largest modal-panel corners). No sharp (0px) corners and no fully circular corners outside genuinely circular controls (the header "+" add button, the bottom-tab icon indicator dot). Borders are always 1px and hairline-colored at rest; a colored 1px border (status color) marks an outline/destructive button or a status badge, never a decorative accent.
+
+## Motion
+
+Real tokens from `src/theme/index.ts` (`motion`), lines 37–44:
+- **Duration:** `fast: 150ms` · `base: 250ms` · `slow: 400ms`.
+- **Easing:** `Easing.out(Easing.cubic)` — a single system-wide easing curve, no per-component custom curves.
+
+Every animation must respect `AccessibilityInfo.isReduceMotionEnabled()` — check it before triggering non-essential motion, and skip or shorten the animation when it's on. Motion has a purpose (state change, feedback, orientation) or it doesn't ship.
+
+**Fixed prohibition: never install Reanimated or NativeWind.** This is a settled decision, not an open question. Build every animation with React Native's built-in `Animated` API, `Easing.bezier()` for custom curves when the standard easing above doesn't fit, `Animated.stagger()` for sequenced motion, and `Pressable`'s `({ pressed })` render-prop for press feedback. Translate any design-skill example written for CSS/web or Framer Motion into this native API rather than reaching for either banned dependency.
 
 ## Components
 
@@ -210,7 +227,7 @@ Three radius steps only — `sm` (8px, small badges and secondary buttons), `md`
 
 ### Inputs / Fields
 - **Style:** `Sunken Linen` background (recessed, not raised), 1px `Hairline Border`, `rounded.md`, `Body` text.
-- **Date fields never accept free text.** Every date value is entered through the shared calendar picker component, triggered from a field that echoes the already-formatted `DD/MM/AAAA` value — this is an enforced product rule, not a style preference.
+- **Date fields never accept free text.** Every date value is entered through `MiniCalendar` (`src/components/MiniCalendar.tsx`), triggered from a field that echoes the already-formatted `DD/MM/AAAA` value — this is an enforced product rule, not a style preference. Current consumers: `app/admin/contratos.tsx`, `app/admin/preservacao.tsx`, `src/components/AdiarAcao.tsx`. Any change to `MiniCalendar` requires a regression pass across all three.
 - **Multiline / long text:** same field style, taller `minHeight`, `textAlignVertical: top`.
 
 ### Status Badges / Selos
@@ -223,6 +240,14 @@ Three radius steps only — `sm` (8px, small badges and secondary buttons), `md`
 
 ### Full-Screen Modal (signature pattern)
 Every create/edit flow — never a bottom sheet, never an inline expand — is a full-screen `Modal` that slides up: header with a centered title and a right-side "X" that closes **without saving**, a scrollable body of `label` + field-style groups, and a sticky footer with one full-width primary action. A destructive "Excluir" action, when present, lives inside this same modal body and — on tap — replaces its own area with an inline confirmation ("Confirmar exclusão?" + Cancelar/Excluir), never a native `Alert.alert` and never a second modal stacked on top.
+
+### Vencimento Gradient Bar (signature pattern)
+Contracts render a thin progress bar whose fill color is a continuous function of days-until-due, not a fixed status color. It is rendered inline in `app/admin/contratos.tsx` — not an extracted component — and its color comes from `corVencimento()` in `src/data/contratos.ts`, built on the pure helper `interpolarCorHex(corA, corB, fator)` (linear per-channel RGB blend, `fator` clamped to `[0,1]`). Real thresholds, read from the source:
+- **≥ 60 days remaining:** fixed `Status OK`.
+- **30–60 days remaining:** continuous interpolation from `Status OK` toward `Status Pending` (`fator = (60 − dias) / 30`).
+- **0–30 days remaining:** continuous interpolation from `Status Pending` toward `Status Overdue` (`fator = (30 − dias) / 30`).
+- **Overdue (< 0 days remaining):** fixed `Status Overdue`.
+See the Status-Only Saturation Rule's exception, above, for why this continuous blend is authorized where a fixed three-value badge would not be.
 
 ### AI Assistant Chat (signature pattern)
 Both shipped assistants (Normativos, Contratos) render inside this same full-screen modal shell. Assistant replies are left-aligned `Card White` bubbles with a copy affordance; user turns are right-aligned solid Cobalt Ink bubbles. A pending reply shows three animated dots in the assistant-bubble position — never a "Digitando…" text label. A fixed, non-generated caption ("Respostas geradas por IA…") sits above the input, outside the scrolling message list, at all times.
