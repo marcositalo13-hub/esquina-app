@@ -111,7 +111,7 @@ export function BottomTabBar({
                   <Ionicons
                     name={isActive ? item.iconActive : item.icon}
                     size={24}
-                    color={isActive ? light.inkAction : light.textPrimary}
+                    color={isActive ? light.inkAction : light.textSecondary}
                   />
                 </Animated.View>
                 {item.badge ? <View style={styles.badge} /> : null}
