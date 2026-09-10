@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   },
   bolhaUsuario: {
     alignSelf: 'flex-end',
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   textoBolhaAssistente: {
     fontFamily: fonts.regular,
@@ -404,12 +404,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
   botaoEnviarPressionado: {
-    backgroundColor: light.brandPressed,
+    backgroundColor: light.inkActionPressed,
   },
   botaoEnviarDesabilitado: {
     opacity: 0.4,

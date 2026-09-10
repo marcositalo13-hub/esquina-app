@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
     color: light.textSecondary,
   },
   botaoIniciarRota: {
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     borderRadius: radius.md,
     paddingVertical: spacing.sm + 2,
     alignItems: 'center',

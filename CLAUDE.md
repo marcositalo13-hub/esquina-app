@@ -84,6 +84,10 @@ Livro-razão discreto: precisão silenciosa, hierarquia clara, sem efeito visual
 
 **Evitar deliberadamente:** gradiente roxo-azul genérico, ilustração 3D, densidade de ERP, papel creme + terracota.
 
+## Validação visual obrigatória
+
+Qualquer comando que altere `theme/index.ts`, tokens de cor, raio, ou qualquer valor consumido por múltiplas telas termina com verificação visual via `chrome-devtools-mcp`, não com `tsc --noEmit` isolado. `tsc` limpo não prova nada sobre aparência — um token que muda de VALOR mas continua existindo (ex: `radius.lg` de 16px para 999px) não gera erro de tipo, só deformação visual. Um token que é REMOVIDO gera erro de tipo, mas o app roda mesmo assim com `undefined` em runtime, e o efeito visual (botão invisível) só aparece na tela. Antes de reportar sucesso em qualquer mudança de tema: suba o servidor local, abra as telas afetadas via chrome-devtools-mcp, tire screenshot, compare com o esperado. Isso não substitui o teste manual de Porto no link do Vercel — é um portão antes dele, não no lugar dele.
+
 ## Erros recorrentes já enfrentados — reconheça rápido
 
 | Sintoma | Causa real |

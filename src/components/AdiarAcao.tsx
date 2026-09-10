@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm + 4,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   botaoConfirmarDesabilitado: {
     opacity: 0.4,

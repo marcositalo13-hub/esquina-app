@@ -251,7 +251,7 @@ export function corIndicadorGrupo(
     return semantic.ok;
   }
   if (iniciadas > 0) {
-    return light.brand;
+    return light.inkAction;
   }
   return light.textMuted;
 }

@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   },
   dropdownItemTextoSelecionado: {
     fontFamily: fonts.semiBold,
-    color: light.brand,
+    color: light.inkAction,
   },
   semanaRow: {
     flexDirection: 'row',
@@ -400,11 +400,11 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   diaHoje: {
-    borderColor: light.brand,
+    borderColor: light.inkAction,
   },
   diaSelecionado: {
-    backgroundColor: light.brand,
-    borderColor: light.brand,
+    backgroundColor: light.inkAction,
+    borderColor: light.inkAction,
   },
   diaTexto: {
     fontFamily: fonts.regular,
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
     height: 4,
   },
   pontoNormal: {
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   pontoAtrasado: {
     backgroundColor: semantic.overdue,

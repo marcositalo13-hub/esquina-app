@@ -1693,7 +1693,7 @@ export default function AdminPreservacao() {
                       <Ionicons
                         name={expandida ? 'chevron-up' : 'chevron-down'}
                         size={16}
-                        color={light.brand}
+                        color={light.inkAction}
                       />
                     </Pressable>
                   </View>
@@ -2494,12 +2494,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addButtonPressed: {
-    backgroundColor: light.brandPressed,
+    backgroundColor: light.inkActionPressed,
   },
   title: {
     flex: 1,
@@ -2531,7 +2531,7 @@ const styles = StyleSheet.create({
   novaRotaLink: {
     fontFamily: fonts.medium,
     fontSize: 13,
-    color: light.brand,
+    color: light.inkAction,
   },
   painelCard: {
     backgroundColor: light.card,
@@ -2556,7 +2556,7 @@ const styles = StyleSheet.create({
   selecionarLink: {
     fontFamily: fonts.medium,
     fontSize: 13,
-    color: light.brand,
+    color: light.inkAction,
     marginLeft: spacing.md,
   },
   calendarioTitulo: {
@@ -2612,7 +2612,7 @@ const styles = StyleSheet.create({
   filtroDataTexto: {
     fontFamily: fonts.medium,
     fontSize: 12,
-    color: light.brand,
+    color: light.inkAction,
   },
   segmentedControl: {
     flexDirection: 'row',
@@ -2741,7 +2741,7 @@ const styles = StyleSheet.create({
   grupoRotaExpandirTexto: {
     fontFamily: fonts.medium,
     fontSize: 13,
-    color: light.brand,
+    color: light.inkAction,
   },
   lista: {
     gap: spacing.sm,
@@ -2771,7 +2771,7 @@ const styles = StyleSheet.create({
     paddingRight: spacing.xs,
     backgroundColor: light.sunken,
     borderLeftWidth: 3,
-    borderLeftColor: light.brand,
+    borderLeftColor: light.inkAction,
     borderRadius: radius.sm,
     gap: spacing.sm,
   },
@@ -2878,7 +2878,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm + 4,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   barraSelecaoBotaoEditarTexto: {
     fontFamily: fonts.semiBold,
@@ -2908,7 +2908,7 @@ const styles = StyleSheet.create({
   },
   rotaChip: {
     alignSelf: 'flex-start',
-    backgroundColor: light.brandWash,
+    backgroundColor: `${light.inkAction}1A`,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.xs + 2,
     paddingVertical: 2,
@@ -2916,7 +2916,7 @@ const styles = StyleSheet.create({
   rotaChipTexto: {
     fontFamily: fonts.medium,
     fontSize: 11,
-    color: light.brand,
+    color: light.inkAction,
   },
   planoTipo: {
     fontFamily: fonts.regular,
@@ -2966,7 +2966,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     paddingVertical: spacing.sm + 2,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   botaoValidarTexto: {
     fontFamily: fonts.semiBold,
@@ -3044,10 +3044,10 @@ const styles = StyleSheet.create({
     color: light.textSecondary,
   },
   modalBotaoSalvar: {
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   modalBotaoPressionado: {
-    backgroundColor: light.brandPressed,
+    backgroundColor: light.inkActionPressed,
   },
   modalBotaoSalvarTexto: {
     fontFamily: fonts.semiBold,
@@ -3136,8 +3136,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   linhaRotaIndicadorSelecionado: {
-    backgroundColor: light.brand,
-    borderColor: light.brand,
+    backgroundColor: light.inkAction,
+    borderColor: light.inkAction,
   },
   novaRotaLinkAtribuir: {
     paddingVertical: spacing.md,
@@ -3146,7 +3146,7 @@ const styles = StyleSheet.create({
   novaRotaLinkAtribuirTexto: {
     fontFamily: fonts.medium,
     fontSize: 14,
-    color: light.brand,
+    color: light.inkAction,
   },
   rodapeAtribuir: {
     flexDirection: 'row',
@@ -3175,7 +3175,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm + 4,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   botaoConfirmarAtribuirDesabilitado: {
     opacity: 0.4,

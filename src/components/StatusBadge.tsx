@@ -17,7 +17,7 @@ export function getStatusBadgeInfo(ordem: OrdemServico): StatusBadgeInfo {
     return { label: 'Atrasada', color: semantic.overdue };
   }
   if (ordem.status === 'em_andamento') {
-    return { label: 'Em andamento', color: light.brand };
+    return { label: 'Em andamento', color: light.inkAction };
   }
   return { label: 'Pendente', color: light.textMuted, neutro: true };
 }

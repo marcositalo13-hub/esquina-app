@@ -792,7 +792,7 @@ export default function AdminContratos() {
                       <Ionicons
                         name="chatbubble-ellipses-outline"
                         size={14}
-                        color={light.brand}
+                        color={light.inkAction}
                       />
                       <Text style={styles.botaoConsultarAssistenteTexto}>
                         Consultar assistente
@@ -1119,7 +1119,9 @@ export default function AdminContratos() {
                   name={vigenciaIndeterminada ? 'checkbox' : 'square-outline'}
                   size={22}
                   color={
-                    vigenciaIndeterminada ? light.brand : light.textSecondary
+                    vigenciaIndeterminada
+                      ? light.inkAction
+                      : light.textSecondary
                   }
                 />
                 <Text style={styles.label}>Vigência indeterminada</Text>
@@ -1149,9 +1151,11 @@ export default function AdminContratos() {
                     onValueChange={setRenovacaoAutomatica}
                     trackColor={{
                       false: light.border,
-                      true: light.brandWash,
+                      true: `${light.inkAction}1A`,
                     }}
-                    thumbColor={renovacaoAutomatica ? light.brand : '#FFFFFF'}
+                    thumbColor={
+                      renovacaoAutomatica ? light.inkAction : '#FFFFFF'
+                    }
                   />
                 </View>
               </View>
@@ -1388,12 +1392,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addButtonPressed: {
-    backgroundColor: light.brandPressed,
+    backgroundColor: light.inkActionPressed,
   },
   title: {
     flex: 1,
@@ -1637,7 +1641,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm + 4,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   botaoDesabilitado: {
     opacity: 0.4,
@@ -1709,7 +1713,7 @@ const styles = StyleSheet.create({
   botaoConsultarAssistenteTexto: {
     fontFamily: fonts.medium,
     fontSize: 13,
-    color: light.brand,
+    color: light.inkAction,
   },
   chatAviso: {
     marginHorizontal: spacing.lg,
@@ -1743,7 +1747,7 @@ const styles = StyleSheet.create({
   },
   chatBolhaUsuario: {
     alignSelf: 'flex-end',
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   chatTextoBolhaAssistente: {
     fontFamily: fonts.regular,
@@ -1805,12 +1809,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chatBotaoEnviarPressionado: {
-    backgroundColor: light.brandPressed,
+    backgroundColor: light.inkActionPressed,
   },
   chatBotaoEnviarDesabilitado: {
     opacity: 0.4,

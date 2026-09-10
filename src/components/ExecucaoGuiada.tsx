@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
   },
   telaTransicao: {
     flex: 1,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -645,8 +645,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxMarcado: {
-    backgroundColor: light.brand,
-    borderColor: light.brand,
+    backgroundColor: light.inkAction,
+    borderColor: light.inkAction,
   },
   checkboxMarca: {
     fontFamily: fonts.semiBold,
@@ -695,7 +695,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm + 4,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   botaoSecundario: {
     alignItems: 'center',

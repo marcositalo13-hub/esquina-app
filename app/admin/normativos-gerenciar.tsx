@@ -397,12 +397,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addButtonPressed: {
-    backgroundColor: light.brandPressed,
+    backgroundColor: light.inkActionPressed,
   },
   title: {
     flex: 1,
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm + 4,
     borderRadius: radius.md,
-    backgroundColor: light.brand,
+    backgroundColor: light.inkAction,
   },
   botaoDesabilitado: {
     opacity: 0.4,

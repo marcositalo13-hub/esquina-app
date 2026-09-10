@@ -12,7 +12,7 @@ type ChipProps = {
 // com onPress) ou selo somente leitura (prioridade colorida nas listas,
 // sem onPress).
 export function Chip({ label, selected = false, onPress, color }: ChipProps) {
-  const accent = color ?? light.brand;
+  const accent = color ?? light.inkAction;
 
   const backgroundColor = selected ? accent : color ? `${color}1A` : light.card;
   const borderColor = selected ? accent : (color ?? light.border);
