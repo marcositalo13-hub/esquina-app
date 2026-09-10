@@ -11,9 +11,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { fonts, light, motion, semantic, spacing } from '../theme';
+import { fonts, light, motion, radius, semantic, spacing } from '../theme';
 
-const DOT_SIZE = 4;
 const BADGE_SIZE = 8;
 
 export type BottomTabItem = {
@@ -104,21 +103,32 @@ export function BottomTabBar({
               style={styles.taskbarItem}
               onPress={() => handlePressItem(item.key, index)}
             >
-              <View style={styles.iconWrapper}>
-                <Animated.View
-                  style={{ transform: [{ scale: iconScales[index] }] }}
+              <View
+                style={[
+                  styles.itemConteudo,
+                  isActive && styles.itemConteudoAtivo,
+                ]}
+              >
+                <View style={styles.iconWrapper}>
+                  <Animated.View
+                    style={{ transform: [{ scale: iconScales[index] }] }}
+                  >
+                    <Ionicons
+                      name={isActive ? item.iconActive : item.icon}
+                      size={24}
+                      color={isActive ? light.bg : light.textSecondary}
+                    />
+                  </Animated.View>
+                  {item.badge ? <View style={styles.badge} /> : null}
+                </View>
+                <Text
+                  style={[
+                    styles.taskbarLabel,
+                    isActive && styles.taskbarLabelAtivo,
+                  ]}
                 >
-                  <Ionicons
-                    name={isActive ? item.iconActive : item.icon}
-                    size={24}
-                    color={isActive ? light.inkAction : light.textSecondary}
-                  />
-                </Animated.View>
-                {item.badge ? <View style={styles.badge} /> : null}
-              </View>
-              <Text style={styles.taskbarLabel}>{item.label}</Text>
-              <View style={styles.indicatorSlot}>
-                {isActive ? <View style={styles.indicatorDot} /> : null}
+                  {item.label}
+                </Text>
               </View>
             </Pressable>
           );
@@ -159,7 +169,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
+  },
+  // Envolve ícone + texto. Aplicado a todos os itens para manter o
+  // alinhamento vertical; só o item ativo ganha fundo (a pílula).
+  itemConteudo: {
+    alignItems: 'center',
     gap: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: radius.lg,
+  },
+  itemConteudoAtivo: {
+    backgroundColor: light.inkAction,
   },
   iconWrapper: {
     position: 'relative',
@@ -178,16 +199,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: light.textSecondary,
   },
-  indicatorSlot: {
-    height: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  indicatorDot: {
-    width: DOT_SIZE,
-    height: DOT_SIZE,
-    borderRadius: DOT_SIZE / 2,
-    backgroundColor: light.inkAction,
+  taskbarLabelAtivo: {
+    color: light.bg,
   },
 });
 
