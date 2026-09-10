@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -108,20 +108,36 @@ export default function Admin() {
 
       {activeKey === 'gestao' ? (
         <View style={styles.grid}>
-          {cards.map((card) => (
-            <Pressable
-              key={card.key}
-              disabled={!card.ativo}
-              onPress={() => card.href && router.push(card.href as never)}
-              style={[styles.card, !card.ativo && styles.cardInativo]}
-            >
-              {card.key === 'preservacao' && temPendenciaAtrasada ? (
-                <View style={styles.badge} />
-              ) : null}
-              <Ionicons name={card.icon} size={28} color={light.textPrimary} />
-              <Text style={styles.cardLabel}>{card.label}</Text>
-            </Pressable>
-          ))}
+          {cards.map((card, index) => {
+            const iniciaSecaoFutura =
+              !card.ativo && (index === 0 || cards[index - 1].ativo);
+
+            return (
+              <Fragment key={card.key}>
+                {iniciaSecaoFutura ? (
+                  <View style={styles.separadorSecao} />
+                ) : null}
+                <Pressable
+                  disabled={!card.ativo}
+                  onPress={() => card.href && router.push(card.href as never)}
+                  style={[styles.card, !card.ativo && styles.cardInativo]}
+                >
+                  {card.key === 'preservacao' && temPendenciaAtrasada ? (
+                    <View style={styles.badge} />
+                  ) : null}
+                  <Ionicons
+                    name={card.icon}
+                    size={28}
+                    color={light.textPrimary}
+                  />
+                  <Text style={styles.cardLabel}>{card.label}</Text>
+                  {!card.ativo ? (
+                    <Text style={styles.cardEmBreve}>Em breve</Text>
+                  ) : null}
+                </Pressable>
+              </Fragment>
+            );
+          })}
         </View>
       ) : (
         <ScrollView
@@ -191,6 +207,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: light.textPrimary,
     textAlign: 'center',
+  },
+  cardEmBreve: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: light.textMuted,
+    textAlign: 'center',
+  },
+  // Cabeça de seção entre os módulos ativos e os "Em breve" — mesmo padrão
+  // da régua de 2px em Ink Action usada nas Ruled Rows de Contratos.
+  separadorSecao: {
+    width: '100%',
+    height: 2,
+    backgroundColor: light.inkAction,
   },
   badge: {
     position: 'absolute',
