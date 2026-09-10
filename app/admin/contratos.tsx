@@ -26,6 +26,7 @@ import { ScreenBackground } from '../../src/components/ScreenBackground';
 import {
   type Contrato,
   corVencimento,
+  DIAS_LIMIAR_VENCIMENTO,
   diasRestantes,
   digitosParaValorNumerico,
   extrairDigitosValor,
@@ -59,10 +60,44 @@ function formatarAtualizadoEm(iso: string): string {
   return `Atualizado em ${dia}/${mes}/${ano}`;
 }
 
-// Mesma condição usada na lista "Janela de renovação" do relatório: contrato
-// com vigência definida, prazo de aviso prévio configurado e dias_restantes
-// entre 0 e o prazo, inclusive. Vencidos (restantes < 0) ficam de fora — a
-// barra já vermelha do card comunica isso, o selo seria redundante.
+type StatusContrato = 'vigente' | 'renovacao' | 'vencido';
+
+const FILTROS_STATUS: { chave: StatusContrato; label: string; cor: string }[] =
+  [
+    { chave: 'vigente', label: 'Vigente', cor: semantic.ok },
+    { chave: 'renovacao', label: 'Renovação próxima', cor: semantic.pending },
+    { chave: 'vencido', label: 'Vencido', cor: semantic.overdue },
+  ];
+
+// Status derivado exatamente dos mesmos limiares que alimentam a barra de
+// vencimento e o selo — nenhuma categorização paralela. 'vencido' é a mesma
+// condição do ramo overdue de corVencimento(); 'renovacao' cobre tanto o
+// aviso prévio próprio do contrato quanto a faixa em que a barra já começou
+// a colorir (DIAS_LIMIAR_VENCIMENTO).
+function statusContrato(contrato: Contrato, hoje: string): StatusContrato {
+  if (contrato.vigencia_indeterminada || !contrato.data_fim) {
+    return 'vigente';
+  }
+
+  const restantes = diasRestantes(contrato.data_fim, hoje);
+
+  if (restantes < 0) {
+    return 'vencido';
+  }
+  if (
+    restantes <= DIAS_LIMIAR_VENCIMENTO ||
+    (contrato.prazo_aviso_previo_dias != null &&
+      restantes <= contrato.prazo_aviso_previo_dias)
+  ) {
+    return 'renovacao';
+  }
+  return 'vigente';
+}
+
+// O selo "Renovação em breve" só aparece quando o aviso prévio configurado
+// dispara ANTES da barra começar a colorir (restantes > 60). A partir de 60
+// dias a própria transição de cor da barra já comunica a proximidade, e o
+// selo seria redundante — ver DESIGN.md → Vencimento Gradient Bar.
 function estaEmJanelaDeAviso(contrato: Contrato, hoje: string): boolean {
   if (
     contrato.vigencia_indeterminada ||
@@ -73,7 +108,18 @@ function estaEmJanelaDeAviso(contrato: Contrato, hoje: string): boolean {
   }
 
   const restantes = diasRestantes(contrato.data_fim, hoje);
-  return restantes >= 0 && restantes <= contrato.prazo_aviso_previo_dias;
+  return (
+    restantes > DIAS_LIMIAR_VENCIMENTO &&
+    restantes <= contrato.prazo_aviso_previo_dias
+  );
+}
+
+// Busca client-side insensível a caixa e acento.
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 }
 
 // Três pontos que saltam em sequência, indicando resposta pendente — mesma
@@ -223,6 +269,12 @@ export default function AdminContratos() {
   const [abaAtiva, setAbaAtiva] = useState<'listagem' | 'relatorios'>(
     'listagem',
   );
+
+  // Busca e filtros da listagem: tudo client-side sobre `contratos` já
+  // carregado, sem ida ao banco. Nenhum filtro marcado = mostra tudo.
+  const [busca, setBusca] = useState('');
+  const [tiposFiltro, setTiposFiltro] = useState<string[]>([]);
+  const [statusFiltro, setStatusFiltro] = useState<StatusContrato[]>([]);
 
   // Chat do assistente: sempre reinicia vazio a cada abertura (contrato de
   // origem + histórico só existem em estado local, nada é persistido).
@@ -676,6 +728,66 @@ export default function AdminContratos() {
     };
   }, [contratos, tiposContrato, hoje]);
 
+  // Busca (título + contraparte) E tipo E status — os três combinam com AND;
+  // cada grupo vazio não filtra nada.
+  const contratosFiltrados = useMemo(() => {
+    const termo = normalizarTexto(busca.trim());
+
+    return contratos.filter((contrato) => {
+      if (termo) {
+        const alvo = normalizarTexto(
+          `${contrato.titulo} ${contrato.contraparte_nome}`,
+        );
+        if (!alvo.includes(termo)) {
+          return false;
+        }
+      }
+
+      if (
+        tiposFiltro.length > 0 &&
+        (contrato.tipo_contrato_id == null ||
+          !tiposFiltro.includes(contrato.tipo_contrato_id))
+      ) {
+        return false;
+      }
+
+      if (
+        statusFiltro.length > 0 &&
+        !statusFiltro.includes(statusContrato(contrato, hoje))
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [contratos, busca, tiposFiltro, statusFiltro, hoje]);
+
+  const temFiltroAtivo =
+    busca.trim().length > 0 ||
+    tiposFiltro.length > 0 ||
+    statusFiltro.length > 0;
+
+  function alternarTipoFiltro(tipoId: string) {
+    setTiposFiltro((atual) =>
+      atual.includes(tipoId)
+        ? atual.filter((id) => id !== tipoId)
+        : [...atual, tipoId],
+    );
+  }
+
+  function alternarStatusFiltro(status: StatusContrato) {
+    setStatusFiltro((atual) =>
+      atual.includes(status)
+        ? atual.filter((s) => s !== status)
+        : [...atual, status],
+    );
+  }
+
+  // O assistente precisa do contrato inteiro; dentro do modal só temos o id.
+  const contratoEmEdicao = editingId
+    ? (contratos.find((c) => c.id === editingId) ?? null)
+    : null;
+
   const tabs: BottomTabItem[] = [
     {
       key: 'listagem',
@@ -721,27 +833,91 @@ export default function AdminContratos() {
       </View>
 
       {abaAtiva === 'listagem' ? (
-        <ScrollView contentContainerStyle={styles.body}>
-          {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
+        <ScrollView
+          contentContainerStyle={styles.bodyListagem}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.buscaWrap}>
+            <TextInput
+              value={busca}
+              onChangeText={setBusca}
+              placeholder="Buscar por título ou fornecedor"
+              placeholderTextColor={light.textSecondary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filtrosLinha}
+            keyboardShouldPersistTaps="handled"
+          >
+            {FILTROS_STATUS.map((filtro) => (
+              <Chip
+                key={filtro.chave}
+                label={filtro.label}
+                color={filtro.cor}
+                selected={statusFiltro.includes(filtro.chave)}
+                onPress={() => alternarStatusFiltro(filtro.chave)}
+              />
+            ))}
+            {tiposContrato.map((tipo) => (
+              <Chip
+                key={tipo.id}
+                label={tipo.nome}
+                selected={tiposFiltro.includes(tipo.id)}
+                onPress={() => alternarTipoFiltro(tipo.id)}
+              />
+            ))}
+          </ScrollView>
+
+          {erroLista ? (
+            <Text style={[styles.erro, styles.mensagemListagem]}>
+              {erroLista}
+            </Text>
+          ) : null}
 
           {!carregando && contratos.length === 0 ? (
-            <Text style={styles.vazio}>Nenhum contrato cadastrado.</Text>
+            <Text style={[styles.vazio, styles.mensagemListagem]}>
+              Nenhum contrato cadastrado.
+            </Text>
+          ) : contratosFiltrados.length === 0 && temFiltroAtivo ? (
+            <Text style={[styles.vazio, styles.mensagemListagem]}>
+              Nenhum contrato encontrado com esses filtros.
+            </Text>
           ) : (
-            <View style={styles.lista}>
-              {contratos.map((contrato) => {
+            <View>
+              {contratosFiltrados.map((contrato, indice) => {
                 const renovacaoEmBreve = estaEmJanelaDeAviso(contrato, hoje);
 
                 return (
                   <Pressable
                     key={contrato.id}
-                    style={styles.card}
+                    style={({ pressed }) => [
+                      styles.linha,
+                      indice === 0 && styles.linhaPrimeira,
+                      pressed && styles.linhaPressionada,
+                    ]}
                     onPress={() => abrirModalEditar(contrato)}
                   >
-                    <Text style={styles.cardTitulo}>{contrato.titulo}</Text>
-                    <Text style={styles.cardContraparte}>
+                    <View style={styles.linhaTituloRow}>
+                      <Text style={styles.linhaTitulo} numberOfLines={2}>
+                        {contrato.titulo}
+                      </Text>
+                      {contrato.valor != null ? (
+                        <Text style={styles.linhaValor}>
+                          {formatarValorBRL(Math.round(contrato.valor * 100))}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.linhaMeta}>
                       {contrato.contraparte_nome}
                     </Text>
-                    <Text style={styles.cardResumo} numberOfLines={2}>
+                    <Text style={styles.linhaMeta} numberOfLines={2}>
                       {contrato.resumo_objeto}
                     </Text>
 
@@ -780,24 +956,6 @@ export default function AdminContratos() {
                         </Text>
                       </>
                     )}
-
-                    <Text style={styles.cardAtualizado}>
-                      {formatarAtualizadoEm(contrato.updated_at)}
-                    </Text>
-
-                    <Pressable
-                      style={styles.botaoConsultarAssistente}
-                      onPress={() => abrirAssistente(contrato)}
-                    >
-                      <Ionicons
-                        name="chatbubble-ellipses-outline"
-                        size={14}
-                        color={light.inkAction}
-                      />
-                      <Text style={styles.botaoConsultarAssistenteTexto}>
-                        Consultar assistente
-                      </Text>
-                    </Pressable>
                   </Pressable>
                 );
               })}
@@ -960,6 +1118,30 @@ export default function AdminContratos() {
             contentContainerStyle={styles.corpo}
             keyboardShouldPersistTaps="handled"
           >
+            {contratoEmEdicao ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.linkAssistente,
+                  pressed && styles.linkAssistentePressionado,
+                ]}
+                onPress={() => abrirAssistente(contratoEmEdicao)}
+              >
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={16}
+                  color={light.inkAction}
+                />
+                <Text style={styles.linkAssistenteTexto}>
+                  Consultar assistente sobre este contrato
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={light.textSecondary}
+                />
+              </Pressable>
+            ) : null}
+
             <View style={styles.field}>
               <Text style={styles.label}>Título</Text>
               <TextInput
@@ -1196,6 +1378,12 @@ export default function AdminContratos() {
               />
             </View>
 
+            {contratoEmEdicao ? (
+              <Text style={styles.cardAtualizado}>
+                {formatarAtualizadoEm(contratoEmEdicao.updated_at)}
+              </Text>
+            ) : null}
+
             {erroModal ? <Text style={styles.erro}>{erroModal}</Text> : null}
 
             {editingId && !confirmandoExclusao ? (
@@ -1423,30 +1611,62 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
-  lista: {
+  // Listagem em Ruled Rows: o ScrollView não tem padding horizontal para o
+  // estado de toque da linha sangrar até a borda da tela; o recuo vive
+  // dentro de cada linha.
+  bodyListagem: {
+    paddingBottom: 90,
+  },
+  buscaWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  filtrosLinha: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  mensagemListagem: {
+    paddingHorizontal: spacing.lg,
+  },
+  linha: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: light.border,
+  },
+  // Régua de cabeça de seção: a lista é flat (ordenada por data_fim), então
+  // só o primeiro registro a recebe.
+  linhaPrimeira: {
+    borderTopWidth: 2,
+    borderTopColor: light.inkAction,
+  },
+  linhaPressionada: {
+    backgroundColor: light.sunken,
+  },
+  linhaTituloRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
     gap: spacing.sm,
   },
-  card: {
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.xs,
+  linhaTitulo: {
+    flex: 1,
+    fontFamily: fonts.serifSemiBold,
+    fontSize: 17,
+    color: light.textPrimary,
   },
-  cardTitulo: {
+  linhaValor: {
     fontFamily: fonts.medium,
     fontSize: 15,
     color: light.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
-  cardContraparte: {
+  linhaMeta: {
     fontFamily: fonts.regular,
-    fontSize: 13,
-    color: light.textSecondary,
-  },
-  cardResumo: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
+    fontSize: 12,
     color: light.textSecondary,
   },
   barraFundo: {
@@ -1699,20 +1919,23 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  botaoConsultarAssistente: {
+  // Ponto de entrada do assistente dentro do modal de edição: item em régua,
+  // não botão primário de largura total (esse papel é do "Salvar").
+  linkAssistente: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    gap: spacing.sm,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: light.border,
+    borderBottomWidth: 1,
+    borderBottomColor: light.border,
   },
-  botaoConsultarAssistenteTexto: {
+  linkAssistentePressionado: {
+    backgroundColor: light.sunken,
+  },
+  linkAssistenteTexto: {
+    flex: 1,
     fontFamily: fonts.medium,
-    fontSize: 13,
+    fontSize: 14,
     color: light.inkAction,
   },
   chatAviso: {
