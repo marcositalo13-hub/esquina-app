@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -7,6 +6,7 @@ import {
   BottomTabBar,
   type BottomTabItem,
 } from '../src/components/BottomTabBar';
+import { ScreenBackground } from '../src/components/ScreenBackground';
 import condos from '../src/data/condos';
 import { fonts, light, radius, spacing } from '../src/theme';
 
@@ -34,17 +34,7 @@ export default function Home() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[
-          'rgba(216, 220, 240, 0.12)',
-          'rgba(216, 220, 240, 0.35)',
-          'rgba(216, 220, 240, 0.7)',
-        ]}
-        locations={[0, 0.6, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.backgroundGradient}
-      />
+      <ScreenBackground />
 
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.headerRow}>
@@ -80,13 +70,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: light.bg,
-  },
-  backgroundGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   header: {
     paddingHorizontal: spacing.lg,

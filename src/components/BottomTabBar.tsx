@@ -103,33 +103,45 @@ export function BottomTabBar({
               style={styles.taskbarItem}
               onPress={() => handlePressItem(item.key, index)}
             >
-              <View
-                style={[
-                  styles.itemConteudo,
-                  isActive && styles.itemConteudoAtivo,
-                ]}
-              >
-                <View style={styles.iconWrapper}>
-                  <Animated.View
-                    style={{ transform: [{ scale: iconScales[index] }] }}
-                  >
-                    <Ionicons
-                      name={isActive ? item.iconActive : item.icon}
-                      size={24}
-                      color={isActive ? light.bg : light.textSecondary}
-                    />
-                  </Animated.View>
-                  {item.badge ? <View style={styles.badge} /> : null}
+              {isActive ? (
+                // Item ativo: pílula única (row) envolvendo ícone + texto
+                // lado a lado — fundo e raio ficam só neste contêiner.
+                <View style={styles.itemAtivo}>
+                  <View style={styles.iconWrapper}>
+                    <Animated.View
+                      style={{ transform: [{ scale: iconScales[index] }] }}
+                    >
+                      <Ionicons
+                        name={item.iconActive}
+                        size={24}
+                        color={light.bg}
+                      />
+                    </Animated.View>
+                    {item.badge ? <View style={styles.badge} /> : null}
+                  </View>
+                  <Text style={[styles.taskbarLabel, styles.taskbarLabelAtivo]}>
+                    {item.label}
+                  </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.taskbarLabel,
-                    isActive && styles.taskbarLabelAtivo,
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              </View>
+              ) : (
+                // Item inativo: sem contêiner extra — ícone e texto direto,
+                // como antes da pílula existir.
+                <>
+                  <View style={styles.iconWrapper}>
+                    <Animated.View
+                      style={{ transform: [{ scale: iconScales[index] }] }}
+                    >
+                      <Ionicons
+                        name={item.icon}
+                        size={24}
+                        color={light.textSecondary}
+                      />
+                    </Animated.View>
+                    {item.badge ? <View style={styles.badge} /> : null}
+                  </View>
+                  <Text style={styles.taskbarLabel}>{item.label}</Text>
+                </>
+              )}
             </Pressable>
           );
         })}
@@ -170,17 +182,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 6,
   },
-  // Envolve ícone + texto. Aplicado a todos os itens para manter o
-  // alinhamento vertical; só o item ativo ganha fundo (a pílula).
-  itemConteudo: {
+  // Pílula do item ativo: único contêiner row com ícone + texto lado a
+  // lado, fundo e raio total — nunca aplicado ao item inativo.
+  itemAtivo: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: radius.lg,
-  },
-  itemConteudoAtivo: {
+    gap: 6,
     backgroundColor: light.inkAction,
+    borderRadius: radius.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   iconWrapper: {
     position: 'relative',

@@ -1,31 +1,19 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { light } from '../theme';
 
-// Mesmo gradiente de tela cheia validado em app/home.tsx: fraco no topo,
-// intensificando em direção à base.
+// Fundo sólido de tela cheia — papel liso, sem gradiente.
 export function ScreenBackground() {
-  return (
-    <LinearGradient
-      colors={[
-        'rgba(216, 220, 240, 0.12)',
-        'rgba(216, 220, 240, 0.35)',
-        'rgba(216, 220, 240, 0.7)',
-      ]}
-      locations={[0, 0.6, 1]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0, y: 1 }}
-      style={styles.gradient}
-    />
-  );
+  return <View style={styles.background} />;
 }
 
 const styles = StyleSheet.create({
-  gradient: {
+  background: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    backgroundColor: light.bg,
   },
 });
 

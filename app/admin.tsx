@@ -127,7 +127,7 @@ export default function Admin() {
                   ) : null}
                   <Ionicons
                     name={card.icon}
-                    size={28}
+                    size={19}
                     color={light.textPrimary}
                   />
                   <Text style={styles.cardLabel}>{card.label}</Text>
