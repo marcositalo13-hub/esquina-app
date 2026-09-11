@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -26,6 +26,14 @@ function formatarAtualizadoEm(iso: string): string {
   return `Atualizado em ${dia}/${mes}/${ano}`;
 }
 
+// Busca client-side insensível a caixa e acento.
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
 export default function AdminNormativosGerenciar() {
   const insets = useSafeAreaInsets();
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
@@ -43,6 +51,11 @@ export default function AdminNormativosGerenciar() {
   const [erroModal, setErroModal] = useState<string | null>(null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+
+  // Busca client-side sobre `normativos` já carregado, sem ida ao banco.
+  // `categoria` é texto livre (coluna `text` sem catálogo), então não há
+  // chips de filtro nem agrupamento — só a busca.
+  const [busca, setBusca] = useState('');
 
   const carregarNormativos = useCallback(async () => {
     const { data, error } = await supabase
@@ -63,6 +76,24 @@ export default function AdminNormativosGerenciar() {
     setCarregando(true);
     carregarNormativos().finally(() => setCarregando(false));
   }, [carregarNormativos]);
+
+  const normativosFiltrados = useMemo(() => {
+    const termo = normalizarTexto(busca.trim());
+    if (!termo) {
+      return normativos;
+    }
+
+    return normativos.filter((normativo) =>
+      normalizarTexto(
+        `${normativo.titulo} ${normativo.categoria ?? ''}`,
+      ).includes(termo),
+    );
+  }, [normativos, busca]);
+
+  // O modal só tem o id; o "Atualizado em" precisa do registro inteiro.
+  const normativoEmEdicao = editingId
+    ? (normativos.find((n) => n.id === editingId) ?? null)
+    : null;
 
   function limparFormulario() {
     setTitulo('');
@@ -194,14 +225,39 @@ export default function AdminNormativosGerenciar() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body}>
-        {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
+      <ScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.buscaWrap}>
+          <TextInput
+            value={busca}
+            onChangeText={setBusca}
+            placeholder="Buscar por título ou categoria"
+            placeholderTextColor={light.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+        </View>
+
+        {erroLista ? (
+          <Text style={[styles.erro, styles.mensagemListagem]}>
+            {erroLista}
+          </Text>
+        ) : null}
 
         {!carregando && normativos.length === 0 ? (
-          <Text style={styles.vazio}>Nenhum normativo cadastrado.</Text>
+          <Text style={[styles.vazio, styles.mensagemListagem]}>
+            Nenhum normativo cadastrado.
+          </Text>
+        ) : normativosFiltrados.length === 0 ? (
+          <Text style={[styles.vazio, styles.mensagemListagem]}>
+            Nenhum normativo encontrado para essa busca.
+          </Text>
         ) : (
-          <View style={styles.lista}>
-            {normativos.map((normativo) => (
+          <View>
+            {normativosFiltrados.map((normativo, indice) => (
               <Swipeable
                 key={normativo.id}
                 ref={(ref) => {
@@ -222,18 +278,19 @@ export default function AdminNormativosGerenciar() {
                 )}
               >
                 <Pressable
-                  style={styles.card}
+                  style={({ pressed }) => [
+                    styles.linha,
+                    indice === 0 && styles.linhaPrimeira,
+                    pressed && styles.linhaPressionada,
+                  ]}
                   onPress={() => abrirModalEditar(normativo)}
                 >
-                  <Text style={styles.cardTitulo}>{normativo.titulo}</Text>
+                  <Text style={styles.linhaTitulo}>{normativo.titulo}</Text>
                   {normativo.categoria ? (
-                    <Text style={styles.cardCategoria}>
+                    <Text style={styles.linhaCategoria}>
                       {normativo.categoria}
                     </Text>
                   ) : null}
-                  <Text style={styles.cardAtualizado}>
-                    {formatarAtualizadoEm(normativo.atualizado_em)}
-                  </Text>
                 </Pressable>
               </Swipeable>
             ))}
@@ -309,6 +366,12 @@ export default function AdminNormativosGerenciar() {
                 style={[styles.input, styles.inputConteudo]}
               />
             </View>
+
+            {normativoEmEdicao ? (
+              <Text style={styles.cardAtualizado}>
+                {formatarAtualizadoEm(normativoEmEdicao.atualizado_em)}
+              </Text>
+            ) : null}
 
             {erroModal ? <Text style={styles.erro}>{erroModal}</Text> : null}
 
@@ -411,10 +474,18 @@ const styles = StyleSheet.create({
     color: light.textPrimary,
     textAlign: 'center',
   },
+  // Sem padding horizontal: o recuo vive dentro de cada linha, para o
+  // estado de toque e a ação de swipe sangrarem até a borda da tela.
   body: {
-    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
-    gap: spacing.md,
+  },
+  buscaWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  mensagemListagem: {
+    paddingHorizontal: spacing.lg,
   },
   erro: {
     fontFamily: fonts.regular,
@@ -428,25 +499,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
-  lista: {
-    gap: spacing.sm,
+  linha: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: light.border,
+    backgroundColor: light.bg,
   },
-  card: {
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.xs / 2,
+  // `categoria` é texto livre, então não há agrupamento: a lista é um
+  // grupo só e apenas o primeiro registro leva a régua de cabeça.
+  linhaPrimeira: {
+    borderTopWidth: 2,
+    borderTopColor: light.inkAction,
   },
-  cardTitulo: {
-    fontFamily: fonts.medium,
-    fontSize: 15,
+  linhaPressionada: {
+    backgroundColor: light.sunken,
+  },
+  linhaTitulo: {
+    fontFamily: fonts.serifSemiBold,
+    fontSize: 17,
     color: light.textPrimary,
   },
-  cardCategoria: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
+  linhaCategoria: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
     color: light.textSecondary,
   },
   cardAtualizado: {
@@ -454,13 +531,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: light.textSecondary,
   },
+  // Ação de swipe rente à linha: sem raio e sem margem, ocupando toda a
+  // altura do registro, já que a linha não tem card próprio.
   acaoExcluirSwipe: {
     width: 72,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: semantic.overdue,
-    borderRadius: radius.md,
-    marginLeft: spacing.sm,
   },
   tela: {
     flex: 1,
