@@ -20,7 +20,8 @@ O texto visível ao usuário é **"Zeladoria"** (perfil de login) / **"Zeladoria
 - Nunca usar `Alert.alert()` — não existe na web. Construir componente próprio.
 - Nunca reintroduzir papel creme + terracota (`~#D97757`) — sinal reconhecido de design gerado por IA, já abandonado deliberadamente em favor do azul cobalto (`#1F4FE0`).
 - Nunca instalar Reanimated ou NativeWind — decisão fixada. Traduzir qualquer exemplo de skill de design (geralmente CSS/web ou Framer Motion) para API nativa: `Easing.bezier()`, `Animated.spring()`, `Animated.stagger()`, `Pressable` com `({pressed})`.
-- Toda tabela nova precisa de política de `select`, `insert`, `update` **e** `delete` no Supabase. RLS hoje está aberta (`using (true)`) em todas as tabelas — risco real porque Contratos carrega CPF/salário.
+- Toda tabela nova precisa de política de `select`, `insert`, `update` **e** `delete` no Supabase. RLS hoje está aberta (`using (true)`) nas tabelas com schema versionado (`tipos_atividade`, `rotas`, `planos_manutencao`, `ordens_servico`, `normativos`) — risco real porque Contratos carrega `contraparte_documento` (CPF/CNPJ) e `valor`. Não existe autenticação real (Supabase Auth) — login é seletor de perfil, sem sessão; `auth.uid()` não tem nada para checar hoje.
+- `contratos`, `tipos_contrato` e `cadastros_teste` **não têm arquivo `.sql` versionado no repositório** — schema existe só no banco ao vivo. Antes de qualquer trabalho de RLS nessas tabelas, faça `supabase db dump` (ou equivalente) e versione o schema real.
 - Consultas ao Supabase sempre com filtro/paginação explícita — o limite padrão de 1000 linhas por query já causou sumiço intermitente de registros.
 
 ## Estado atual — módulo por módulo

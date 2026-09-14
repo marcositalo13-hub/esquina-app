@@ -45,6 +45,13 @@ const cards: CardConfig[] = [
     href: '/admin/contratos',
   },
   {
+    key: 'ambientes',
+    label: 'Ambientes',
+    icon: 'map-outline',
+    ativo: true,
+    href: '/admin/ambientes',
+  },
+  {
     key: 'morador',
     label: 'Morador',
     icon: 'people-outline',
@@ -62,6 +69,8 @@ export default function Admin() {
   const insets = useSafeAreaInsets();
   const [activeKey, setActiveKey] = useState<'gestao' | 'relatorio'>('gestao');
   const [temPendenciaAtrasada, setTemPendenciaAtrasada] = useState(false);
+  const [temSugestaoAmbientePendente, setTemSugestaoAmbientePendente] =
+    useState(false);
 
   useEffect(() => {
     async function carregarPendencia() {
@@ -76,7 +85,18 @@ export default function Admin() {
       setTemPendenciaAtrasada((data?.length ?? 0) > 0);
     }
 
+    async function carregarSugestaoAmbiente() {
+      const { data } = await supabase
+        .from('locais_sugeridos')
+        .select('id')
+        .eq('status', 'pendente')
+        .limit(1);
+
+      setTemSugestaoAmbientePendente((data?.length ?? 0) > 0);
+    }
+
     carregarPendencia();
+    carregarSugestaoAmbiente();
   }, []);
 
   const tabs: BottomTabItem[] = [
@@ -122,7 +142,8 @@ export default function Admin() {
                   onPress={() => card.href && router.push(card.href as never)}
                   style={[styles.card, !card.ativo && styles.cardInativo]}
                 >
-                  {card.key === 'preservacao' && temPendenciaAtrasada ? (
+                  {(card.key === 'preservacao' && temPendenciaAtrasada) ||
+                  (card.key === 'ambientes' && temSugestaoAmbientePendente) ? (
                     <View style={styles.badge} />
                   ) : null}
                   <Ionicons
