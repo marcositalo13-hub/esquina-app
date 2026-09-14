@@ -574,28 +574,33 @@ export default function Preservacao() {
         {concluidasExibidas.length === 0 ? (
           <Text style={styles.vazio}>Nenhuma ordem concluída.</Text>
         ) : (
-          <View style={styles.lista}>
-            {concluidasExibidas.map((ordem) => {
+          <View style={styles.listaConcluidas}>
+            {concluidasExibidas.map((ordem, indice) => {
               const plano = ordem.planos_manutencao;
 
               return (
                 <View
                   key={ordem.id}
-                  style={[styles.card, styles.cardConcluida]}
+                  style={[
+                    styles.linhaConcluida,
+                    indice === 0 && styles.linhaConcluidaPrimeira,
+                  ]}
                 >
-                  <Text style={styles.cardTitulo}>
+                  <Text style={styles.linhaConcluidaTitulo}>
                     {plano?.titulo ?? 'Atividade'}
                   </Text>
-                  <Text style={styles.cardTipo}>
+                  <Text style={styles.linhaConcluidaTipo}>
                     {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
                   </Text>
                   {plano?.local ? (
-                    <Text style={styles.cardDetalhe}>{plano.local}</Text>
+                    <Text style={styles.linhaConcluidaDetalhe}>
+                      {plano.local}
+                    </Text>
                   ) : null}
 
-                  <View style={styles.cardRodape}>
-                    <View style={styles.cardRodapeEsquerda}>
-                      <Text style={styles.cardDetalhe}>
+                  <View style={styles.linhaConcluidaRodape}>
+                    <View style={styles.linhaConcluidaRodapeEsquerda}>
+                      <Text style={styles.linhaConcluidaDetalhe}>
                         Concluída em{' '}
                         {ordem.concluida_em
                           ? `${formatarDataBR(ordem.concluida_em.slice(0, 10))} às ${new Date(
@@ -768,39 +773,49 @@ const styles = StyleSheet.create({
   resumoRotaLista: {
     gap: spacing.sm,
   },
-  card: {
-    backgroundColor: light.card,
-    borderWidth: 1,
-    borderColor: light.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
+  // Ruled Rows (DESIGN.md → Components): sem gap entre registros — a
+  // régua de 1px entre linhas já é a separação, como em
+  // normativos-gerenciar.tsx.
+  listaConcluidas: {},
+  // Sem fundo/borda/raio por item — só a régua de 1px Hairline Border
+  // abaixo de cada linha. Opacidade reduzida mantém a leitura de "já
+  // concluída" sem reintroduzir o card. Título em Inter (não Source
+  // Serif): telas de Zeladoria nunca usam serifa.
+  linhaConcluida: {
+    paddingVertical: spacing.sm,
     gap: spacing.xs / 2,
-  },
-  cardConcluida: {
+    borderBottomWidth: 1,
+    borderBottomColor: light.border,
     opacity: 0.6,
   },
-  cardTitulo: {
+  // Primeira linha da lista leva a régua de 2px em Ink Action, cabeça de
+  // grupo — mesmo padrão de normativos-gerenciar.tsx.
+  linhaConcluidaPrimeira: {
+    borderTopWidth: 2,
+    borderTopColor: light.inkAction,
+  },
+  linhaConcluidaTitulo: {
     fontFamily: fonts.medium,
     fontSize: 15,
     color: light.textPrimary,
   },
-  cardTipo: {
+  linhaConcluidaTipo: {
     fontFamily: fonts.regular,
     fontSize: 13,
     color: light.textSecondary,
   },
-  cardDetalhe: {
+  linhaConcluidaDetalhe: {
     fontFamily: fonts.regular,
     fontSize: 12,
-    color: light.textMuted,
+    color: light.textSecondary,
   },
-  cardRodape: {
+  linhaConcluidaRodape: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: spacing.xs,
   },
-  cardRodapeEsquerda: {
+  linhaConcluidaRodapeEsquerda: {
     gap: spacing.xs / 2,
   },
   telaReprovacao: {
