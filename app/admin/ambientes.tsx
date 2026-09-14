@@ -26,6 +26,7 @@ import {
   desativarAmbiente,
   descartarSugestao,
   ErroAmbiente,
+  excluirAmbiente,
   listarAmbientes,
   listarSugestoesPendentes,
   type NovoAmbiente,
@@ -82,6 +83,10 @@ export default function AdminAmbientes() {
 
   const [secaoAtiva, setSecaoAtiva] = useState<Secao>('cadastrados');
   const [busca, setBusca] = useState('');
+  // Filtros da seção "Cadastrados" — só estado local, não persiste.
+  const [mostrarInativos, setMostrarInativos] = useState(false);
+  const [categoriaFiltro, setCategoriaFiltro] =
+    useState<CategoriaAmbiente | null>(null);
 
   // Modal de cadastro/edição — também usado para "Criar ambiente" a partir
   // de uma sugestão (sugestaoOrigemId preenchido nesse caso).
@@ -102,11 +107,15 @@ export default function AdminAmbientes() {
   // Menu de 3 pontos por ambiente — Modal próprio (CardMenu), nunca View
   // posicionada: fica obscurecida por cards vizinhos neste projeto.
   const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null);
+  const [menuEtapa, setMenuEtapa] = useState<'opcoes' | 'confirmarExclusao'>(
+    'opcoes',
+  );
   const [menuAncora, setMenuAncora] = useState<AnchorPosition>({ x: 0, y: 0 });
   const menuIconRefs = useRef<Map<string, View>>(new Map());
   const [alterandoStatusId, setAlterandoStatusId] = useState<string | null>(
     null,
   );
+  const [excluindoId, setExcluindoId] = useState<string | null>(null);
   const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   // Seletor buscável "Vincular a existente".
@@ -146,17 +155,28 @@ export default function AdminAmbientes() {
     }, [carregar]),
   );
 
+  // Busca por nome E filtro de categoria E "mostrar inativos" combinam com
+  // AND — cada filtro vazio/desligado simplesmente não restringe nada.
   const gruposCadastrados = useMemo(() => {
     const termo = normalizarTexto(busca.trim());
-    const filtrados = ambientes.filter((item) =>
-      termo ? normalizarTexto(item.nome).includes(termo) : true,
-    );
+    const filtrados = ambientes.filter((item) => {
+      if (!mostrarInativos && !item.ativo) {
+        return false;
+      }
+      if (categoriaFiltro && item.categoria !== categoriaFiltro) {
+        return false;
+      }
+      if (termo && !normalizarTexto(item.nome).includes(termo)) {
+        return false;
+      }
+      return true;
+    });
 
     return CATEGORIAS_AMBIENTE.map((cat) => ({
       categoria: cat,
       itens: filtrados.filter((item) => item.categoria === cat),
     })).filter((grupo) => grupo.itens.length > 0);
-  }, [ambientes, busca]);
+  }, [ambientes, busca, mostrarInativos, categoriaFiltro]);
 
   const sugestoesFiltradas = useMemo(() => {
     const termo = normalizarTexto(busca.trim());
@@ -267,12 +287,14 @@ export default function AdminAmbientes() {
     ref?.measureInWindow((x, y, _width, height) => {
       setMenuAncora({ x, y: y + height });
       setMenuAbertoId(id);
+      setMenuEtapa('opcoes');
       setErroAcao(null);
     });
   }
 
   function fecharMenu() {
     setMenuAbertoId(null);
+    setMenuEtapa('opcoes');
   }
 
   async function handleAlternarStatus(item: Ambiente) {
@@ -286,6 +308,28 @@ export default function AdminAmbientes() {
       setErroAcao(mensagemDeErro(erro));
     } finally {
       setAlterandoStatusId(null);
+    }
+  }
+
+  function handlePedirConfirmacaoExclusao() {
+    setMenuEtapa('confirmarExclusao');
+  }
+
+  // Se excluirAmbiente lançar ErroAmbiente de vínculo (23503), a mensagem
+  // aparece no topo da lista (erroAcao) — o menu só fecha, nunca trava a
+  // tela.
+  async function handleExcluirConfirmar(item: Ambiente) {
+    setExcluindoId(item.id);
+    setErroAcao(null);
+    try {
+      await excluirAmbiente(item.id);
+      fecharMenu();
+      await carregar();
+    } catch (erro) {
+      fecharMenu();
+      setErroAcao(mensagemDeErro(erro));
+    } finally {
+      setExcluindoId(null);
     }
   }
 
@@ -373,6 +417,28 @@ export default function AdminAmbientes() {
         />
       </View>
 
+      {secaoAtiva === 'cadastrados' ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsCategoriaRow}
+        >
+          <Chip
+            label="Todas"
+            selected={categoriaFiltro === null}
+            onPress={() => setCategoriaFiltro(null)}
+          />
+          {CATEGORIAS_AMBIENTE.map((item) => (
+            <Chip
+              key={item}
+              label={item}
+              selected={categoriaFiltro === item}
+              onPress={() => setCategoriaFiltro(item)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+
       <View style={styles.chipsSecaoRow}>
         <Chip
           label="Cadastrados"
@@ -395,6 +461,21 @@ export default function AdminAmbientes() {
       >
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
         {erroAcao ? <Text style={styles.erro}>{erroAcao}</Text> : null}
+
+        {!carregando && secaoAtiva === 'cadastrados' ? (
+          <View style={styles.linhaMostrarInativos}>
+            <Text style={styles.label}>Mostrar inativos</Text>
+            <Switch
+              value={mostrarInativos}
+              onValueChange={setMostrarInativos}
+              trackColor={{
+                false: light.border,
+                true: `${light.inkAction}1A`,
+              }}
+              thumbColor={mostrarInativos ? light.inkAction : '#FFFFFF'}
+            />
+          </View>
+        ) : null}
 
         {!carregando && secaoAtiva === 'cadastrados' ? (
           gruposCadastrados.length === 0 ? (
@@ -553,6 +634,36 @@ export default function AdminAmbientes() {
           if (!item) {
             return null;
           }
+
+          if (menuEtapa === 'confirmarExclusao') {
+            return (
+              <View style={styles.menuConfirmacao}>
+                <Text style={styles.menuConfirmacaoTexto}>
+                  Excluir este ambiente?
+                </Text>
+                <View style={styles.menuConfirmacaoBotoes}>
+                  <Pressable
+                    style={styles.menuConfirmacaoBotaoCancelar}
+                    onPress={() => setMenuEtapa('opcoes')}
+                  >
+                    <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>
+                      Cancelar
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.menuConfirmacaoBotaoExcluir}
+                    onPress={() => handleExcluirConfirmar(item)}
+                    disabled={excluindoId === item.id}
+                  >
+                    <Text style={styles.menuConfirmacaoBotaoExcluirTexto}>
+                      {excluindoId === item.id ? 'Excluindo…' : 'Excluir'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          }
+
           return (
             <>
               <Pressable
@@ -572,6 +683,16 @@ export default function AdminAmbientes() {
                     : item.ativo
                       ? 'Desativar'
                       : 'Reativar'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.menuItem}
+                onPress={handlePedirConfirmacaoExclusao}
+              >
+                <Text
+                  style={[styles.menuItemTexto, styles.menuItemExcluirTexto]}
+                >
+                  Excluir
                 </Text>
               </Pressable>
             </>
@@ -852,6 +973,14 @@ const styles = StyleSheet.create({
     minHeight: 72,
     textAlignVertical: 'top',
   },
+  // Linha de chips de categoria, rolável horizontalmente, logo abaixo da
+  // busca — só visível na seção "Cadastrados".
+  chipsCategoriaRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
   chipsSecaoRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -886,6 +1015,11 @@ const styles = StyleSheet.create({
     color: light.textSecondary,
     textAlign: 'center',
     paddingVertical: spacing.lg,
+  },
+  linhaMostrarInativos: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   // Ruled Rows (DESIGN.md → Components): cada ambiente é uma linha, sem
   // fundo/borda/raio próprio — só a régua de 1px Hairline Border entre
@@ -962,6 +1096,49 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     color: light.textPrimary,
+  },
+  menuItemExcluirTexto: {
+    color: semantic.overdue,
+  },
+  menuConfirmacao: {
+    padding: spacing.md,
+    gap: spacing.sm,
+    minWidth: 180,
+  },
+  menuConfirmacaoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textPrimary,
+  },
+  menuConfirmacaoBotoes: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  menuConfirmacaoBotaoCancelar: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.border,
+  },
+  menuConfirmacaoBotaoCancelarTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  menuConfirmacaoBotaoExcluir: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: semantic.overdue,
+  },
+  menuConfirmacaoBotaoExcluirTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
   },
   // Sugestões carregam 3 ações diretas cada — bordered card (radius.md, NÃO
   // radius.lg, que hoje vale 999px e deformaria este retângulo), diferente

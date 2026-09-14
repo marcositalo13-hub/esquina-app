@@ -69,6 +69,11 @@ export type SugestaoLocal = {
 // banco.
 export const CODIGO_ERRO_DUPLICADO = '23505';
 
+// Erro do Postgres para violação de chave estrangeira — ocorre ao tentar
+// excluir um ambiente que ainda é referenciado por outro registro (ex.:
+// atividade vinculada). Tratado explicitamente em excluirAmbiente.
+export const CODIGO_ERRO_VINCULO = '23503';
+
 // Preserva o `code` do erro do Postgres (perdido se só repassássemos
 // `error.message` num Error comum) — é o que a tela usa para reconhecer
 // violação de índice único e trocar por mensagem legível.
@@ -165,6 +170,31 @@ export async function desativarAmbiente(
   garantirLinhaAfetada(
     data,
     'Não foi possível atualizar o status do ambiente — nenhuma linha afetada.',
+  );
+}
+
+// Relança violação de chave estrangeira (23503 — atividade ainda vinculada
+// a este ambiente) com mensagem própria; o `code` original é preservado no
+// ErroAmbiente para a tela decidir como reagir a outros erros.
+export async function excluirAmbiente(id: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('locais')
+    .delete()
+    .eq('id', id)
+    .select('id');
+
+  if (error) {
+    if (error.code === CODIGO_ERRO_VINCULO) {
+      throw new ErroAmbiente(
+        'Este ambiente tem atividades vinculadas e não pode ser excluído. Desative-o em vez disso.',
+        error.code,
+      );
+    }
+    throw new ErroAmbiente(error.message, error.code);
+  }
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível excluir o ambiente — nenhuma linha afetada.',
   );
 }
 
