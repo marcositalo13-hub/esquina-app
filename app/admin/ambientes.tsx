@@ -978,7 +978,11 @@ const styles = StyleSheet.create({
   chipsCategoriaRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingLeft: spacing.lg,
+    // paddingRight maior que paddingLeft de propósito: o último chip
+    // ("Administrativa") precisa de folga própria além do padding
+    // simétrico normal, senão fica colado/cortado na borda da tela.
+    paddingRight: spacing.lg + spacing.sm,
     paddingBottom: spacing.sm,
   },
   chipsSecaoRow: {
