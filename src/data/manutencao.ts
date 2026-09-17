@@ -1,4 +1,5 @@
 import { light, semantic } from '../theme';
+import type { Ambiente } from './ambientes';
 
 export type Periodicidade =
   | 'Única'
@@ -96,6 +97,7 @@ export type PlanoManutencao = {
   tipo_id: string;
   descricao: string | null;
   local: string | null;
+  local_id: string | null;
   periodicidade: Periodicidade;
   prioridade: Prioridade;
   data_inicio: string;
@@ -105,6 +107,7 @@ export type PlanoManutencao = {
   created_at: string;
   tipos_atividade?: TipoAtividade | null;
   rotas?: Rota | null;
+  locais?: Ambiente | null;
 };
 
 export type StatusOrdemServico = 'pendente' | 'em_andamento' | 'concluida';

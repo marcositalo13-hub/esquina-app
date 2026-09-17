@@ -28,6 +28,7 @@ import {
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { ValidacaoGuiada } from '../../src/components/ValidacaoGuiada';
+import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
 import {
   adicionarDiasChave,
   formatarDataBR,
@@ -51,6 +52,26 @@ import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const hoje = hojeLocal;
+
+// Busca client-side insensível a caixa e acento — mesmo helper duplicado em
+// app/admin/ambientes.tsx, app/admin/contratos.tsx e
+// app/admin/normativos-gerenciar.tsx.
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+// Nome do local a exibir: prioriza o ambiente vinculado (locais.nome);
+// cai para o texto livre antigo (plano.local) só quando não há local_id —
+// nunca "Local: —" para um plano que já tinha local de texto preenchido.
+function nomeLocal(plano: {
+  local: string | null;
+  locais?: { nome: string } | null;
+}): string | null {
+  return plano.locais?.nome ?? plano.local ?? null;
+}
 
 type DateFilter = 'hoje' | 'todas';
 
@@ -108,7 +129,10 @@ export default function AdminPreservacao() {
   const [titulo, setTitulo] = useState('');
   const [tipoId, setTipoId] = useState<string | null>(null);
   const [descricao, setDescricao] = useState('');
-  const [local, setLocal] = useState('');
+  const [localId, setLocalId] = useState<string | null>(null);
+  const [ambientesAtivos, setAmbientesAtivos] = useState<Ambiente[]>([]);
+  const [seletorLocalVisivel, setSeletorLocalVisivel] = useState(false);
+  const [buscaLocal, setBuscaLocal] = useState('');
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>('Mensal');
   const [prioridade, setPrioridade] = useState<Prioridade>('Média');
   const [dataInicio, setDataInicio] = useState(() => hoje());
@@ -174,7 +198,7 @@ export default function AdminPreservacao() {
   const carregarPlanos = useCallback(async () => {
     const { data, error } = await supabase
       .from('planos_manutencao')
-      .select('*, tipos_atividade(*), rotas(*)')
+      .select('*, tipos_atividade(*), rotas(*), locais(*)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -198,7 +222,9 @@ export default function AdminPreservacao() {
   const carregarOrdens = useCallback(async () => {
     const { data, error } = await supabase
       .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .select(
+        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+      )
       .order('data_prevista', { ascending: false })
       .limit(5000);
 
@@ -213,7 +239,9 @@ export default function AdminPreservacao() {
   const carregarOrdensHoje = useCallback(async () => {
     const { data, error } = await supabase
       .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .select(
+        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+      )
       .eq('data_prevista', hoje());
 
     if (!error) {
@@ -253,6 +281,18 @@ export default function AdminPreservacao() {
     }
   }, []);
 
+  // Catálogo de Ambientes usado pelo seletor de "Local" do formulário de
+  // plano — só os ativos, mesmo padrão de app/admin/ambientes.tsx.
+  const carregarAmbientes = useCallback(async () => {
+    try {
+      const lista = await listarAmbientes();
+      setAmbientesAtivos(lista.filter((item) => item.ativo));
+    } catch {
+      // Falha aqui não trava o resto da tela — o seletor de local só fica
+      // vazio; o restante do formulário de plano continua funcional.
+    }
+  }, []);
+
   const carregarTudo = useCallback(async () => {
     await Promise.all([carregarPlanos(), recarregarOrdens()]);
   }, [carregarPlanos, recarregarOrdens]);
@@ -264,6 +304,7 @@ export default function AdminPreservacao() {
       carregarTipos(),
       recarregarOrdens(),
       carregarRotas(),
+      carregarAmbientes(),
     ]).finally(() => {
       setCarregando(false);
       // Top-up silencioso: roda depois do primeiro carregamento, sem
@@ -272,7 +313,13 @@ export default function AdminPreservacao() {
         recarregarOrdens();
       });
     });
-  }, [carregarPlanos, carregarTipos, recarregarOrdens, carregarRotas]);
+  }, [
+    carregarPlanos,
+    carregarTipos,
+    recarregarOrdens,
+    carregarRotas,
+    carregarAmbientes,
+  ]);
 
   // Realtime: qualquer INSERT/UPDATE/DELETE em ordens_servico (feito por
   // este admin, pela execução, ou por outra sessão) refaz o mesmo refetch
@@ -511,6 +558,20 @@ export default function AdminPreservacao() {
     return ids;
   }, [ordens]);
 
+  const localAmbienteSelecionado = useMemo(
+    () => ambientesAtivos.find((item) => item.id === localId) ?? null,
+    [ambientesAtivos, localId],
+  );
+
+  const ambientesLocalFiltrados = useMemo(() => {
+    const termo = normalizarTexto(buscaLocal.trim());
+    return termo
+      ? ambientesAtivos.filter((item) =>
+          normalizarTexto(item.nome).includes(termo),
+        )
+      : ambientesAtivos;
+  }, [ambientesAtivos, buscaLocal]);
+
   // Ocorrência pendente mais próxima de um plano — usada por Concluir/Adiar
   // no menu de "Todos os planos cadastrados" (que representa o plano, não
   // uma ordem específica).
@@ -625,7 +686,7 @@ export default function AdminPreservacao() {
   function limparFormulario() {
     setTitulo('');
     setDescricao('');
-    setLocal('');
+    setLocalId(null);
     setPeriodicidade('Mensal');
     setPrioridade('Média');
     setDataInicio(hoje());
@@ -635,11 +696,26 @@ export default function AdminPreservacao() {
     setOrdemNaRotaEditadoManualmente(false);
   }
 
+  // Se o plano só tem "local" de texto (dado antigo, local_id nulo),
+  // pré-seleciona no seletor o ambiente cujo nome bate exatamente — sem
+  // correspondência, deixa o seletor vazio em vez de quebrar a tela.
+  function encontrarLocalIdPorTexto(localTexto: string): string | null {
+    const texto = localTexto.trim();
+    if (!texto) {
+      return null;
+    }
+    const encontrado = ambientesAtivos.find((item) => item.nome === texto);
+    return encontrado?.id ?? null;
+  }
+
   function preencherFormulario(plano: PlanoManutencao) {
     setTitulo(plano.titulo);
     setTipoId(plano.tipo_id);
     setDescricao(plano.descricao ?? '');
-    setLocal(plano.local ?? '');
+    setLocalId(
+      plano.local_id ??
+        (plano.local ? encontrarLocalIdPorTexto(plano.local) : null),
+    );
     setPeriodicidade(plano.periodicidade);
     setPrioridade(plano.prioridade);
     setDataInicio(plano.data_inicio);
@@ -678,6 +754,7 @@ export default function AdminPreservacao() {
     setEditingId(null);
     setErroModal(null);
     setCalendarioDataInicioVisivel(false);
+    setSeletorLocalVisivel(false);
     setModalVisivel(true);
   }
 
@@ -685,6 +762,7 @@ export default function AdminPreservacao() {
     setModalVisivel(false);
     setEditingId(null);
     setCalendarioDataInicioVisivel(false);
+    setSeletorLocalVisivel(false);
   }
 
   function handleEditar(plano: PlanoManutencao) {
@@ -692,6 +770,7 @@ export default function AdminPreservacao() {
     setEditingId(plano.id);
     setErroModal(null);
     setCalendarioDataInicioVisivel(false);
+    setSeletorLocalVisivel(false);
     setModalVisivel(true);
   }
 
@@ -701,6 +780,7 @@ export default function AdminPreservacao() {
     setEditingId(null);
     setErroModal(null);
     setCalendarioDataInicioVisivel(false);
+    setSeletorLocalVisivel(false);
     setModalVisivel(true);
   }
 
@@ -1046,7 +1126,7 @@ export default function AdminPreservacao() {
             titulo,
             tipo_id: tipoId,
             descricao: descricao || null,
-            local: local || null,
+            local_id: localId,
             periodicidade,
             prioridade,
             data_inicio: dataInicio,
@@ -1075,7 +1155,7 @@ export default function AdminPreservacao() {
             titulo,
             tipo_id: tipoId,
             descricao: descricao || null,
-            local: local || null,
+            local_id: localId,
             periodicidade,
             prioridade,
             data_inicio: dataInicio,
@@ -1174,8 +1254,8 @@ export default function AdminPreservacao() {
           <Text style={styles.planoTipo}>
             {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
           </Text>
-          {plano?.local ? (
-            <Text style={styles.planoDetalhe}>{plano.local}</Text>
+          {plano && nomeLocal(plano) ? (
+            <Text style={styles.planoDetalhe}>{nomeLocal(plano)}</Text>
           ) : null}
 
           <View style={styles.planoRodape}>
@@ -1391,6 +1471,79 @@ export default function AdminPreservacao() {
             onPress={() => setCalendarioDataInicioVisivel(false)}
           >
             <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  ) : null;
+
+  // Overlay de "Selecionar local" — mesmo motivo dos dois de cima: INLINE
+  // dentro do modal de plano, nunca um <Modal> próprio empilhado. Busca
+  // client-side (catálogo de Ambientes tende a ser pequeno/médio, sem
+  // paginação no servidor).
+  const seletorLocalOverlay = seletorLocalVisivel ? (
+    <View style={styles.novaRotaOverlay}>
+      <View style={[styles.modalRotaCard, styles.modalLocalCard]}>
+        <Text style={styles.modalTitulo}>Selecionar local</Text>
+
+        <TextInput
+          value={buscaLocal}
+          onChangeText={setBuscaLocal}
+          placeholder="Buscar por nome"
+          placeholderTextColor={light.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.input}
+        />
+
+        <ScrollView
+          style={styles.modalLocalLista}
+          keyboardShouldPersistTaps="handled"
+        >
+          {ambientesLocalFiltrados.length === 0 ? (
+            <Text style={styles.vazio}>Nenhum ambiente encontrado.</Text>
+          ) : (
+            ambientesLocalFiltrados.map((ambiente) => (
+              <Pressable
+                key={ambiente.id}
+                style={styles.linhaRota}
+                onPress={() => {
+                  setLocalId(ambiente.id);
+                  setSeletorLocalVisivel(false);
+                }}
+              >
+                <Text style={styles.linhaRotaTexto}>{ambiente.nome}</Text>
+                <View
+                  style={[
+                    styles.linhaRotaIndicador,
+                    localId === ambiente.id &&
+                      styles.linhaRotaIndicadorSelecionado,
+                  ]}
+                >
+                  {localId === ambiente.id ? (
+                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                  ) : null}
+                </View>
+              </Pressable>
+            ))
+          )}
+        </ScrollView>
+
+        <View style={styles.modalBotoes}>
+          <Pressable
+            style={[styles.modalBotao, styles.modalBotaoCancelar]}
+            onPress={() => {
+              setLocalId(null);
+              setSeletorLocalVisivel(false);
+            }}
+          >
+            <Text style={styles.modalBotaoCancelarTexto}>Limpar</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modalBotao, styles.modalBotaoSalvar]}
+            onPress={() => setSeletorLocalVisivel(false)}
+          >
+            <Text style={styles.modalBotaoSalvarTexto}>Fechar</Text>
           </Pressable>
         </View>
       </View>
@@ -1819,8 +1972,10 @@ export default function AdminPreservacao() {
                         {plano.tipos_atividade?.nome ?? 'Sem tipo'}
                       </Text>
 
-                      {plano.local ? (
-                        <Text style={styles.planoDetalhe}>{plano.local}</Text>
+                      {nomeLocal(plano) ? (
+                        <Text style={styles.planoDetalhe}>
+                          {nomeLocal(plano)}
+                        </Text>
                       ) : null}
 
                       <View style={styles.planoRodape}>
@@ -2077,13 +2232,23 @@ export default function AdminPreservacao() {
 
             <View style={styles.field}>
               <Text style={styles.label}>Local</Text>
-              <TextInput
-                value={local}
-                onChangeText={setLocal}
-                placeholder="Local"
-                placeholderTextColor={light.textSecondary}
-                style={styles.input}
-              />
+              <Pressable
+                style={styles.campoData}
+                onPress={() => {
+                  setBuscaLocal('');
+                  setSeletorLocalVisivel(true);
+                }}
+              >
+                <Text
+                  style={
+                    localAmbienteSelecionado
+                      ? styles.campoDataTexto
+                      : styles.campoDataTextoPlaceholder
+                  }
+                >
+                  {localAmbienteSelecionado?.nome ?? 'Selecionar local'}
+                </Text>
+              </Pressable>
             </View>
 
             <View style={styles.field}>
@@ -2197,6 +2362,7 @@ export default function AdminPreservacao() {
 
           {novaRotaOverlay}
           {calendarioDataInicioOverlay}
+          {seletorLocalOverlay}
         </View>
       </Modal>
 
@@ -2985,6 +3151,14 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
+  // Variante de modalRotaCard para o seletor de "Local": precisa de altura
+  // máxima (a lista de ambientes rola dentro, o card não cresce sem limite).
+  modalLocalCard: {
+    maxHeight: '80%',
+  },
+  modalLocalLista: {
+    flexGrow: 0,
+  },
   modalTitulo: {
     fontFamily: fonts.semiBold,
     fontSize: 18,
@@ -3111,6 +3285,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 15,
     color: light.textPrimary,
+  },
+  campoDataTextoPlaceholder: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: light.textSecondary,
   },
   linhaRota: {
     flexDirection: 'row',

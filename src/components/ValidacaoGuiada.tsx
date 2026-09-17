@@ -33,6 +33,17 @@ type ValidacaoGuiadaProps = {
 
 const OPCOES_QUALIDADE: Qualidade[] = ['bom', 'medio', 'ruim'];
 
+// Nome do local a exibir: prioriza o ambiente vinculado (locais.nome); cai
+// para o texto livre antigo (plano.local) só quando não há local_id — nunca
+// "Local: —" para um plano que já tinha local de texto preenchido. Mesmo
+// helper duplicado em app/preservacao.tsx e app/admin/preservacao.tsx.
+function nomeLocal(plano: {
+  local: string | null;
+  locais?: { nome: string } | null;
+}): string | null {
+  return plano.locais?.nome ?? plano.local ?? null;
+}
+
 // Fluxo guiado em tela cheia, sem volta entre etapas — espelha o padrão
 // de ExecucaoGuiada.tsx. Busca todas as ordens de hoje concluídas e ainda
 // não validadas, reordena para começar por ordemInicialId, e para cada
@@ -82,7 +93,9 @@ export function ValidacaoGuiada({
 
     supabase
       .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .select(
+        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+      )
       .eq('data_prevista', hojeLocal())
       .eq('status', 'concluida')
       .eq('validada', false)
@@ -293,9 +306,10 @@ export function ValidacaoGuiada({
                     {ordemAtual.planos_manutencao?.tipos_atividade?.nome ??
                       'Sem tipo'}
                   </Text>
-                  {ordemAtual.planos_manutencao?.local ? (
+                  {ordemAtual.planos_manutencao &&
+                  nomeLocal(ordemAtual.planos_manutencao) ? (
                     <Text style={styles.detalhe}>
-                      {ordemAtual.planos_manutencao.local}
+                      {nomeLocal(ordemAtual.planos_manutencao)}
                     </Text>
                   ) : null}
                   {ordemAtual.planos_manutencao?.rotas ? (

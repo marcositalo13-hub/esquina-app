@@ -48,6 +48,17 @@ type AvisoCard = {
 
 const AVISO_DURACAO_MS = 4000;
 
+// Nome do local a exibir: prioriza o ambiente vinculado (locais.nome); cai
+// para o texto livre antigo (plano.local) só quando não há local_id — nunca
+// "Local: —" para um plano que já tinha local de texto preenchido. Mesmo
+// helper duplicado em app/admin/preservacao.tsx.
+function nomeLocal(plano: {
+  local: string | null;
+  locais?: { nome: string } | null;
+}): string | null {
+  return plano.locais?.nome ?? plano.local ?? null;
+}
+
 // Converte uma ordem (com plano/tipo já embutidos pela consulta) para o
 // formato enxuto que o ExecucaoGuiada espera.
 function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
@@ -56,7 +67,7 @@ function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
     id: ordem.id,
     titulo: plano?.titulo ?? 'Atividade',
     tipo: plano?.tipos_atividade?.nome ?? 'Sem tipo',
-    local: plano?.local ?? null,
+    local: plano?.locais?.nome ?? plano?.local ?? null,
     descricao: plano?.descricao ?? null,
     observacoes: plano?.observacoes ?? null,
     status: ordem.status,
@@ -124,7 +135,9 @@ export default function Preservacao() {
       await Promise.all([
         supabase
           .from('ordens_servico')
-          .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+          .select(
+            '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+          )
           .neq('status', 'concluida')
           // A equipe de execução nunca vê atrasadas: só "pendentes" de hoje
           // (nunca data_prevista < hoje). Atrasadas seguem visíveis só para
@@ -137,7 +150,9 @@ export default function Preservacao() {
         // só para achar o que foi concluído hoje).
         supabase
           .from('ordens_servico')
-          .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+          .select(
+            '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+          )
           .eq('status', 'concluida')
           .eq('data_prevista', hojeStr),
         // Histórico amplo de concluídas (qualquer data), só para a seção
@@ -148,7 +163,9 @@ export default function Preservacao() {
         // aqui, não bug.
         supabase
           .from('ordens_servico')
-          .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+          .select(
+            '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+          )
           .eq('status', 'concluida')
           .order('concluida_em', { ascending: false })
           .limit(5000),
@@ -189,7 +206,9 @@ export default function Preservacao() {
   const verificarReprovacoes = useCallback(async () => {
     const { data, error } = await supabase
       .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+      .select(
+        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+      )
       .eq('reprovacao_pendente', true)
       .order('reprovada_em', { ascending: true });
 
@@ -334,7 +353,9 @@ export default function Preservacao() {
     try {
       const { data, error } = await supabase
         .from('ordens_servico')
-        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
+        .select(
+          '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+        )
         .in('status', ['pendente', 'em_andamento'])
         .eq('data_prevista', hoje());
 
@@ -411,9 +432,10 @@ export default function Preservacao() {
                 {reprovacaoAtual.planos_manutencao?.tipos_atividade?.nome ??
                   'Sem tipo'}
               </Text>
-              {reprovacaoAtual.planos_manutencao?.local ? (
+              {reprovacaoAtual.planos_manutencao &&
+              nomeLocal(reprovacaoAtual.planos_manutencao) ? (
                 <Text style={styles.reprovacaoDetalhe}>
-                  {reprovacaoAtual.planos_manutencao.local}
+                  {nomeLocal(reprovacaoAtual.planos_manutencao)}
                 </Text>
               ) : null}
 
@@ -592,9 +614,9 @@ export default function Preservacao() {
                   <Text style={styles.linhaConcluidaTipo}>
                     {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
                   </Text>
-                  {plano?.local ? (
+                  {plano && nomeLocal(plano) ? (
                     <Text style={styles.linhaConcluidaDetalhe}>
-                      {plano.local}
+                      {nomeLocal(plano)}
                     </Text>
                   ) : null}
 

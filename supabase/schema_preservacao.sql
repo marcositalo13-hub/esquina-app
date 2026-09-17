@@ -44,6 +44,11 @@ create table if not exists planos_manutencao (
   tipo_id uuid not null references tipos_atividade (id),
   descricao text,
   local text,
+  -- Referencia o catálogo de Ambientes (tabela `locais`, sem schema
+  -- versionado neste repositório — existe só no banco ao vivo). `local`
+  -- (texto) permanece pelos dados antigos; o formulário passou a gravar só
+  -- em `local_id`.
+  local_id uuid references locais (id),
   periodicidade text not null check (
     periodicidade in (
       'Única', 'Diária', 'Semanal', 'Mensal',
@@ -63,6 +68,11 @@ create table if not exists planos_manutencao (
 -- anterior), rode isto para adicionar as colunas em vez de recriar a tabela:
 -- alter table planos_manutencao add column if not exists rota_id uuid references rotas (id);
 -- alter table planos_manutencao add column if not exists ordem_na_rota integer;
+
+-- Se planos_manutencao já existia sem local_id (script anterior), rode isto
+-- para adicionar a coluna: campo "Local" do formulário passou a ser um
+-- seletor do catálogo de Ambientes (tabela `locais`) em vez de texto livre.
+-- alter table planos_manutencao add column if not exists local_id uuid references locais (id);
 
 -- Ordens de serviço geradas a partir de um plano; tipo/título vêm sempre
 -- via join com planos_manutencao -> tipos_atividade, nunca duplicados aqui.
