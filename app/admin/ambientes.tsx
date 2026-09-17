@@ -421,6 +421,7 @@ export default function AdminAmbientes() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.chipsCategoriaScroll}
           contentContainerStyle={styles.chipsCategoriaRow}
         >
           <Chip
@@ -972,6 +973,15 @@ const styles = StyleSheet.create({
   inputMultiline: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  // Altura medida ao vivo do Chip renderizado (24.8px) + paddingBottom de
+  // chipsCategoriaRow (spacing.sm = 8px) + 4px de margem de segurança contra
+  // corte por arredondamento de subpixel. Sem isso o ScrollView encolhe para
+  // a altura do texto e o chip sobrepõe a linha "Cadastrados"/"Sugestões".
+  chipsCategoriaScroll: {
+    height: 36.8,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   // Linha de chips de categoria, rolável horizontalmente, logo abaixo da
   // busca — só visível na seção "Cadastrados".
