@@ -46,6 +46,7 @@ import {
   type PlanoManutencao,
   PRIORIDADES,
   type Prioridade,
+  pesoPrioridade,
   prioridadeOrdem,
   type Rota,
   type TipoAtividade,
@@ -429,12 +430,21 @@ export default function AdminPreservacao() {
   const atividadesDoDia = ordensHoje;
 
   // Agrupa as atividades de hoje por rota (ordenadas por ordem_na_rota).
-  // Atividades sem rota ficam soltas em semRota.
+  // Extraordinárias (sem plano, logo sem rota) vão para um grupo próprio,
+  // à parte, ordenado por prioridade (Alta > Média > Baixa) — aparece
+  // ANTES de tudo que é rotina na renderização, mesmo dos grupos por rota.
+  // Rotina sem rota atribuída continua em semRota, como já era.
   const atividadesAgrupadas = useMemo(() => {
     const grupos = new Map<string, { rota: Rota; itens: OrdemServico[] }>();
+    const extraordinarias: OrdemServico[] = [];
     const semRota: OrdemServico[] = [];
 
     for (const ordem of atividadesDoDia) {
+      if (ordem.origem === 'extraordinaria') {
+        extraordinarias.push(ordem);
+        continue;
+      }
+
       const plano = ordem.planos_manutencao;
       const rota = plano?.rotas;
 
@@ -458,7 +468,12 @@ export default function AdminPreservacao() {
       });
     }
 
-    return { grupos: Array.from(grupos.values()), semRota };
+    extraordinarias.sort(
+      (a, b) =>
+        pesoPrioridade(prioridadeOrdem(a)) - pesoPrioridade(prioridadeOrdem(b)),
+    );
+
+    return { extraordinarias, grupos: Array.from(grupos.values()), semRota };
   }, [atividadesDoDia]);
 
   // Planos com ao menos uma ordem pendente/em andamento e atrasada (para o
@@ -1496,6 +1511,12 @@ export default function AdminPreservacao() {
     // ordem — ver helpers em src/data/manutencao.ts.
     const localAtividade = localNomeOrdem(ordem);
     const prioridadeAtividade = prioridadeOrdem(ordem);
+    // Mesmo destaque visual (borda/fundo em tinta + selo) usado nos cards
+    // de extraordinária em app/preservacao.tsx — estilos extraCardAdmin/
+    // seloExtra/seloExtraTexto já existem no StyleSheet deste arquivo,
+    // reaproveitados aqui em vez de duplicados (eram usados só pela lista
+    // "Todos os planos cadastrados").
+    const extraordinaria = ordem.origem === 'extraordinaria';
     const menuAberto = menuAtividadeAbertaId === ordem.id;
     const tempoExecucaoTexto =
       ordem.status === 'concluida' && ordem.iniciado_em && ordem.concluida_em
@@ -1512,9 +1533,22 @@ export default function AdminPreservacao() {
 
     return (
       <Fragment key={ordem.id}>
-        <View style={[styles.planoCard, compacto && styles.planoCardCompacto]}>
+        <View
+          style={[
+            styles.planoCard,
+            compacto && styles.planoCardCompacto,
+            extraordinaria && styles.extraCardAdmin,
+          ]}
+        >
           <View style={styles.planoCabecalho}>
-            <Text style={styles.planoTitulo}>{tituloOrdem(ordem)}</Text>
+            <View style={styles.planoCabecalhoTitulos}>
+              <Text style={styles.planoTitulo}>{tituloOrdem(ordem)}</Text>
+              {extraordinaria ? (
+                <View style={styles.seloExtra}>
+                  <Text style={styles.seloExtraTexto}>Extraordinária</Text>
+                </View>
+              ) : null}
+            </View>
             <Pressable
               ref={(el) => {
                 if (el) {
@@ -2184,6 +2218,14 @@ export default function AdminPreservacao() {
           </Text>
         ) : (
           <View style={styles.listaGrupos}>
+            {atividadesAgrupadas.extraordinarias.length > 0 ? (
+              <View style={styles.lista}>
+                {atividadesAgrupadas.extraordinarias.map((ordem) =>
+                  renderAtividadeCard(ordem),
+                )}
+              </View>
+            ) : null}
+
             {atividadesAgrupadas.grupos.map(({ rota, itens }) => {
               const concluidas = itens.filter(
                 (o) => o.status === 'concluida',
@@ -3663,6 +3705,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  // Envolve título + selo "Extraordinária" (quando houver), ocupando o
+  // mesmo espaço que planoTitulo sozinho ocupava dentro de planoCabecalho.
+  planoCabecalhoTitulos: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   planoMenuButton: {
     padding: 6,

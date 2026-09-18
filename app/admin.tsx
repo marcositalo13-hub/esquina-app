@@ -55,7 +55,8 @@ const cards: CardConfig[] = [
     key: 'morador',
     label: 'Morador',
     icon: 'people-outline',
-    ativo: false,
+    ativo: true,
+    href: '/admin/unidades',
   },
   {
     key: 'prestadores',
