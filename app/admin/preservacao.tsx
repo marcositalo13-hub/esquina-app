@@ -1120,6 +1120,58 @@ export default function AdminPreservacao() {
 
     try {
       if (editingId) {
+        // Se a nova data_inicio ficar ANTES da primeira ordem_servico já
+        // existente para este plano, backfilla as ordens faltantes entre a
+        // nova data e a data mínima existente (exclusive) antes do update.
+        // Sem isso o buraco nunca é preenchido: o update em si não gera
+        // ordens, e o top-up (topUpOcorrencias.ts) só estende a janela
+        // para FRENTE a partir da última ordem, nunca olha a mais antiga.
+        const { data: ordemMaisAntiga, error: erroOrdemMaisAntiga } =
+          await supabase
+            .from('ordens_servico')
+            .select('data_prevista')
+            .eq('plano_id', editingId)
+            .order('data_prevista', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        if (erroOrdemMaisAntiga) {
+          setErroModal(erroOrdemMaisAntiga.message);
+          return;
+        }
+
+        // Sem nenhuma ordem existente (plano criado direto no banco, ou
+        // nunca teve top-up rodado), não há buraco a preencher aqui — seria
+        // responsabilidade do top-up na próxima abertura da tela.
+        if (ordemMaisAntiga && dataInicio < ordemMaisAntiga.data_prevista) {
+          const ateDataBuraco = adicionarDiasChave(
+            ordemMaisAntiga.data_prevista,
+            -1,
+          );
+          const datasFaltantes = gerarDatasOcorrencia(
+            dataInicio,
+            periodicidade,
+            ateDataBuraco,
+          );
+
+          if (datasFaltantes.length > 0) {
+            const { error: erroBackfill } = await supabase
+              .from('ordens_servico')
+              .insert(
+                datasFaltantes.map((data) => ({
+                  plano_id: editingId,
+                  data_prevista: data,
+                  status: 'pendente',
+                })),
+              );
+
+            if (erroBackfill) {
+              setErroModal(erroBackfill.message);
+              return;
+            }
+          }
+        }
+
         const { data, error } = await supabase
           .from('planos_manutencao')
           .update({
