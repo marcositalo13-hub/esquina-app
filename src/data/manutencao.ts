@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabase';
 import { light, semantic } from '../theme';
 import type { Ambiente } from './ambientes';
 
@@ -112,9 +113,24 @@ export type PlanoManutencao = {
 
 export type StatusOrdemServico = 'pendente' | 'em_andamento' | 'concluida';
 
+// 'rotina' = gerada a partir de um plano_manutencao (motor de recorrência).
+// 'extraordinaria' = avulsa, criada pelo Administrador, sem plano.
+// 'chamado' = reservado para o módulo de chamados (ainda não construído).
+export type OrigemOrdemServico = 'rotina' | 'chamado' | 'extraordinaria';
+
 export type OrdemServico = {
   id: string;
-  plano_id: string;
+  // Nulo quando origem <> 'rotina': uma extraordinária existe por si só,
+  // sem plano por trás — título/tipo/local/prioridade ficam na própria
+  // ordem, nas colunas abaixo, em vez de virem por join.
+  plano_id: string | null;
+  origem: OrigemOrdemServico;
+  titulo: string | null;
+  tipo_id: string | null;
+  local_id: string | null;
+  prioridade: Prioridade | null;
+  // Para rotina é a data da ocorrência; para extraordinária é o prazo
+  // definido manualmente pelo Administrador no ato de criar.
   data_prevista: string;
   status: StatusOrdemServico;
   iniciado_em: string | null;
@@ -132,7 +148,110 @@ export type OrdemServico = {
   validada_por: string | null;
   created_at: string;
   planos_manutencao?: PlanoManutencao | null;
+  // Joins diretos da própria ordem — só preenchidos em extraordinárias
+  // (em rotina, tipo e local vêm por planos_manutencao).
+  tipos_atividade?: TipoAtividade | null;
+  locais?: Ambiente | null;
 };
+
+export function ehExtraordinaria(ordem: OrdemServico): boolean {
+  return ordem.origem === 'extraordinaria';
+}
+
+// Título/tipo/local de uma ordem, venha ela de um plano (rotina) ou das
+// colunas da própria linha (extraordinária). Única fonte de verdade para
+// exibição — evita cada tela decidir de onde ler.
+export function tituloOrdem(ordem: OrdemServico): string {
+  return ordem.planos_manutencao?.titulo ?? ordem.titulo ?? 'Atividade';
+}
+
+export function tipoNomeOrdem(ordem: OrdemServico): string {
+  return (
+    ordem.planos_manutencao?.tipos_atividade?.nome ??
+    ordem.tipos_atividade?.nome ??
+    'Sem tipo'
+  );
+}
+
+export function localNomeOrdem(ordem: OrdemServico): string | null {
+  const plano = ordem.planos_manutencao;
+  if (plano) {
+    return plano.locais?.nome ?? plano.local ?? null;
+  }
+  return ordem.locais?.nome ?? null;
+}
+
+export function prioridadeOrdem(ordem: OrdemServico): Prioridade | null {
+  return ordem.planos_manutencao?.prioridade ?? ordem.prioridade ?? null;
+}
+
+// Alta primeiro, depois Média, depois Baixa — usado para ordenar a fila de
+// extraordinárias na tela da Zeladoria. Prioridade nula vai para o fim.
+const PESO_PRIORIDADE: Record<Prioridade, number> = {
+  Alta: 0,
+  Média: 1,
+  Baixa: 2,
+};
+
+export function pesoPrioridade(prioridade: Prioridade | null): number {
+  return prioridade ? PESO_PRIORIDADE[prioridade] : 3;
+}
+
+export type NovaAtividadeExtraordinaria = {
+  titulo: string;
+  tipo_id: string;
+  local_id: string;
+  prioridade: Prioridade;
+  // Prazo definido manualmente pelo Administrador (não há prazo-padrão por
+  // tipo nesta etapa — isso pertence ao módulo de chamados).
+  data_prevista: string;
+  observacao?: string | null;
+};
+
+// Mesmo padrão de verificação de escrita usado em src/data/ambientes.ts: o
+// Supabase devolve sucesso com 0 linhas quando falta política de insert na
+// RLS, então nunca basta checar só `error`.
+function garantirLinhaAfetada<T extends { id: string }[] | null>(
+  data: T,
+  mensagem: string,
+): void {
+  if (!data || data.length === 0) {
+    throw new Error(mensagem);
+  }
+}
+
+// Atividade extraordinária: entra direto em ordens_servico, sem plano por
+// trás (plano_id null) e sem passar pelo motor de recorrência — é uma
+// ocorrência única, criada apenas pelo Administrador.
+export async function criarAtividadeExtraordinaria(
+  dados: NovaAtividadeExtraordinaria,
+): Promise<OrdemServico> {
+  const { data, error } = await supabase
+    .from('ordens_servico')
+    .insert({
+      plano_id: null,
+      origem: 'extraordinaria',
+      status: 'pendente',
+      titulo: dados.titulo.trim(),
+      tipo_id: dados.tipo_id,
+      local_id: dados.local_id,
+      prioridade: dados.prioridade,
+      data_prevista: dados.data_prevista,
+      observacao: dados.observacao?.trim() || null,
+    })
+    .select('*, tipos_atividade(*), locais(*)');
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível criar a atividade extraordinária — nenhuma linha afetada. Verifique as permissões de escrita no Supabase.',
+  );
+
+  return (data as OrdemServico[])[0];
+}
 
 // Janela padrão (em dias) de geração de ordens_servico futuras a partir de
 // hoje ou de data_inicio, o que for maior.

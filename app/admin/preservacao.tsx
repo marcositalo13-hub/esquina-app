@@ -31,6 +31,7 @@ import { ValidacaoGuiada } from '../../src/components/ValidacaoGuiada';
 import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
 import {
   adicionarDiasChave,
+  criarAtividadeExtraordinaria,
   formatarDataBR,
   formatarDuracao,
   gerarDatasOcorrencia,
@@ -46,6 +47,7 @@ import {
   type Prioridade,
   type Rota,
   type TipoAtividade,
+  tituloOrdem,
 } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
@@ -103,6 +105,34 @@ export default function AdminPreservacao() {
   // Busca por nome em "Todos os planos cadastrados" — soma-se aos filtros
   // acima (não substitui), client-side, sem nova consulta ao banco.
   const [buscaPlano, setBuscaPlano] = useState('');
+
+  // Atividades extraordinárias (ordens_servico avulsas, sem plano). Vivem
+  // na mesma seção de "Todos os planos cadastrados", sujeitas aos mesmos
+  // filtros, mas com card próprio — não são planos e não têm recorrência,
+  // edição em massa nem atribuição de rota.
+  const [extraordinarias, setExtraordinarias] = useState<OrdemServico[]>([]);
+  const [menuCriarVisivel, setMenuCriarVisivel] = useState(false);
+  const [menuCriarAncora, setMenuCriarAncora] = useState<AnchorPosition>({
+    x: 0,
+    y: 0,
+  });
+  const botaoCriarRef = useRef<View | null>(null);
+
+  const [modalExtraVisivel, setModalExtraVisivel] = useState(false);
+  const [extraTitulo, setExtraTitulo] = useState('');
+  const [extraTipoId, setExtraTipoId] = useState<string | null>(null);
+  const [extraLocalId, setExtraLocalId] = useState<string | null>(null);
+  const [extraPrioridade, setExtraPrioridade] = useState<Prioridade | null>(
+    null,
+  );
+  const [extraPrazo, setExtraPrazo] = useState('');
+  const [extraObservacoes, setExtraObservacoes] = useState('');
+  const [extraSalvando, setExtraSalvando] = useState(false);
+  const [erroModalExtra, setErroModalExtra] = useState<string | null>(null);
+  const [extraSeletorLocalVisivel, setExtraSeletorLocalVisivel] =
+    useState(false);
+  const [extraBuscaLocal, setExtraBuscaLocal] = useState('');
+  const [extraCalendarioVisivel, setExtraCalendarioVisivel] = useState(false);
 
   const [atualizandoOrdemId, setAtualizandoOrdemId] = useState<string | null>(
     null,
@@ -296,9 +326,29 @@ export default function AdminPreservacao() {
     }
   }, []);
 
+  // Extraordinárias: ordens_servico sem plano, com título/tipo/local na
+  // própria linha (por isso os joins diretos, não via planos_manutencao).
+  // 'chamado' fica de fora de propósito — módulo ainda não construído.
+  const carregarExtraordinarias = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('ordens_servico')
+      .select('*, tipos_atividade(*), locais(*)')
+      .eq('origem', 'extraordinaria')
+      .order('data_prevista', { ascending: true })
+      .limit(1000);
+
+    if (!error) {
+      setExtraordinarias((data ?? []) as OrdemServico[]);
+    }
+  }, []);
+
   const carregarTudo = useCallback(async () => {
-    await Promise.all([carregarPlanos(), recarregarOrdens()]);
-  }, [carregarPlanos, recarregarOrdens]);
+    await Promise.all([
+      carregarPlanos(),
+      recarregarOrdens(),
+      carregarExtraordinarias(),
+    ]);
+  }, [carregarPlanos, recarregarOrdens, carregarExtraordinarias]);
 
   useEffect(() => {
     setCarregando(true);
@@ -308,6 +358,7 @@ export default function AdminPreservacao() {
       recarregarOrdens(),
       carregarRotas(),
       carregarAmbientes(),
+      carregarExtraordinarias(),
     ]).finally(() => {
       setCarregando(false);
       // Top-up silencioso: roda depois do primeiro carregamento, sem
@@ -322,6 +373,7 @@ export default function AdminPreservacao() {
     recarregarOrdens,
     carregarRotas,
     carregarAmbientes,
+    carregarExtraordinarias,
   ]);
 
   // Realtime: qualquer INSERT/UPDATE/DELETE em ordens_servico (feito por
@@ -409,7 +461,11 @@ export default function AdminPreservacao() {
     const ids = new Set<string>();
 
     for (const ordem of ordens) {
-      if (ordem.status !== 'concluida' && ordem.data_prevista < hojeStr) {
+      if (
+        ordem.plano_id &&
+        ordem.status !== 'concluida' &&
+        ordem.data_prevista < hojeStr
+      ) {
         ids.add(ordem.plano_id);
       }
     }
@@ -426,7 +482,7 @@ export default function AdminPreservacao() {
 
     const ids = new Set<string>();
     for (const ordem of ordens) {
-      if (ordem.data_prevista === selectedDate) {
+      if (ordem.plano_id && ordem.data_prevista === selectedDate) {
         ids.add(ordem.plano_id);
       }
     }
@@ -479,6 +535,58 @@ export default function AdminPreservacao() {
     atrasadasFiltro,
     planoIdsAtrasados,
     planoIdsNaDataSelecionada,
+    buscaPlano,
+  ]);
+
+  // Extraordinárias sujeitas aos MESMOS filtros da lista de planos, na
+  // medida em que fazem sentido: tipo, prioridade, busca por texto e dia
+  // selecionado (comparado com o prazo). O chip de Periodicidade zera a
+  // lista de propósito — atividade avulsa não tem recorrência, então não
+  // pertence a nenhuma das periodicidades filtradas.
+  const extraordinariasFiltradas = useMemo(() => {
+    const termoBusca = normalizarTexto(buscaPlano.trim());
+    const hojeStr = hoje();
+
+    return extraordinarias.filter((ordem) => {
+      if (periodicidadeFiltros.length > 0) {
+        return false;
+      }
+      if (
+        tipoFiltros.length > 0 &&
+        (!ordem.tipo_id || !tipoFiltros.includes(ordem.tipo_id))
+      ) {
+        return false;
+      }
+      if (
+        prioridadeFiltros.length > 0 &&
+        (!ordem.prioridade || !prioridadeFiltros.includes(ordem.prioridade))
+      ) {
+        return false;
+      }
+      if (
+        atrasadasFiltro &&
+        !(ordem.status !== 'concluida' && ordem.data_prevista < hojeStr)
+      ) {
+        return false;
+      }
+      if (selectedDate && ordem.data_prevista !== selectedDate) {
+        return false;
+      }
+      if (
+        termoBusca &&
+        !normalizarTexto(tituloOrdem(ordem)).includes(termoBusca)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    extraordinarias,
+    tipoFiltros,
+    prioridadeFiltros,
+    periodicidadeFiltros,
+    atrasadasFiltro,
+    selectedDate,
     buscaPlano,
   ]);
 
@@ -572,14 +680,22 @@ export default function AdminPreservacao() {
     [ambientesAtivos, localId],
   );
 
-  const ambientesLocalFiltrados = useMemo(() => {
-    const termo = normalizarTexto(buscaLocal.trim());
-    return termo
-      ? ambientesAtivos.filter((item) =>
-          normalizarTexto(item.nome).includes(termo),
-        )
-      : ambientesAtivos;
-  }, [ambientesAtivos, buscaLocal]);
+  const extraLocalSelecionado = useMemo(
+    () => ambientesAtivos.find((item) => item.id === extraLocalId) ?? null,
+    [ambientesAtivos, extraLocalId],
+  );
+
+  const filtrarAmbientesPorNome = useCallback(
+    (termoBruto: string) => {
+      const termo = normalizarTexto(termoBruto.trim());
+      return termo
+        ? ambientesAtivos.filter((item) =>
+            normalizarTexto(item.nome).includes(termo),
+          )
+        : ambientesAtivos;
+    },
+    [ambientesAtivos],
+  );
 
   // Ocorrência pendente mais próxima de um plano — usada por Concluir/Adiar
   // no menu de "Todos os planos cadastrados" (que representa o plano, não
@@ -765,6 +881,80 @@ export default function AdminPreservacao() {
     setCalendarioDataInicioVisivel(false);
     setSeletorLocalVisivel(false);
     setModalVisivel(true);
+  }
+
+  // O "+" do cabeçalho abre um menu com os dois tipos de criação (plano de
+  // rotina e atividade extraordinária), ancorado no próprio botão — mesmo
+  // CardMenu usado pelos menus de 3 pontos dos cards.
+  function abrirMenuCriar() {
+    botaoCriarRef.current?.measureInWindow((x, y, _largura, altura) => {
+      setMenuCriarAncora({ x, y: y + altura });
+      setMenuCriarVisivel(true);
+    });
+  }
+
+  function abrirModalExtraordinaria() {
+    setMenuCriarVisivel(false);
+    setExtraTitulo('');
+    setExtraTipoId(null);
+    setExtraLocalId(null);
+    setExtraPrioridade(null);
+    setExtraPrazo('');
+    setExtraObservacoes('');
+    setErroModalExtra(null);
+    setExtraSeletorLocalVisivel(false);
+    setExtraCalendarioVisivel(false);
+    setModalExtraVisivel(true);
+  }
+
+  function fecharModalExtraordinaria() {
+    setModalExtraVisivel(false);
+    setExtraSeletorLocalVisivel(false);
+    setExtraCalendarioVisivel(false);
+  }
+
+  const extraFormularioCompleto =
+    extraTitulo.trim().length > 0 &&
+    extraTipoId !== null &&
+    extraLocalId !== null &&
+    extraPrioridade !== null &&
+    extraPrazo.trim().length > 0;
+
+  async function handleSalvarExtraordinaria() {
+    if (
+      extraSalvando ||
+      !extraFormularioCompleto ||
+      !extraTipoId ||
+      !extraLocalId ||
+      !extraPrioridade
+    ) {
+      return;
+    }
+
+    setExtraSalvando(true);
+    setErroModalExtra(null);
+
+    try {
+      await criarAtividadeExtraordinaria({
+        titulo: extraTitulo,
+        tipo_id: extraTipoId,
+        local_id: extraLocalId,
+        prioridade: extraPrioridade,
+        data_prevista: extraPrazo,
+        observacao: extraObservacoes,
+      });
+
+      setModalExtraVisivel(false);
+      await carregarExtraordinarias();
+    } catch (erro) {
+      setErroModalExtra(
+        erro instanceof Error
+          ? erro.message
+          : 'Não foi possível criar a atividade extraordinária.',
+      );
+    } finally {
+      setExtraSalvando(false);
+    }
   }
 
   function fecharModal() {
@@ -1563,72 +1753,143 @@ export default function AdminPreservacao() {
   ) : null;
 
   // Overlay de "Selecionar local" — mesmo motivo dos dois de cima: INLINE
-  // dentro do modal de plano, nunca um <Modal> próprio empilhado. Busca
+  // dentro do modal que o acionar, nunca um <Modal> próprio empilhado. Busca
   // client-side (catálogo de Ambientes tende a ser pequeno/médio, sem
-  // paginação no servidor).
-  const seletorLocalOverlay = seletorLocalVisivel ? (
-    <View style={styles.novaRotaOverlay}>
-      <View style={[styles.modalRotaCard, styles.modalLocalCard]}>
-        <Text style={styles.modalTitulo}>Selecionar local</Text>
+  // paginação no servidor). Parametrizado porque é usado por dois
+  // formulários (plano de rotina e atividade extraordinária) — o estado de
+  // cada um é próprio, o visual e a busca são os mesmos.
+  function renderSeletorLocalOverlay(opcoes: {
+    busca: string;
+    onBuscaChange: (valor: string) => void;
+    selecionadoId: string | null;
+    onSelecionar: (id: string) => void;
+    onLimpar: () => void;
+    onFechar: () => void;
+  }) {
+    const lista = filtrarAmbientesPorNome(opcoes.busca);
 
-        <TextInput
-          value={buscaLocal}
-          onChangeText={setBuscaLocal}
-          placeholder="Buscar por nome"
-          placeholderTextColor={light.textSecondary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.input}
-        />
+    return (
+      <View style={styles.novaRotaOverlay}>
+        <View style={[styles.modalRotaCard, styles.modalLocalCard]}>
+          <Text style={styles.modalTitulo}>Selecionar local</Text>
 
-        <ScrollView
-          style={styles.modalLocalLista}
-          keyboardShouldPersistTaps="handled"
-        >
-          {ambientesLocalFiltrados.length === 0 ? (
-            <Text style={styles.vazio}>Nenhum ambiente encontrado.</Text>
-          ) : (
-            ambientesLocalFiltrados.map((ambiente) => (
-              <Pressable
-                key={ambiente.id}
-                style={styles.linhaRota}
-                onPress={() => {
-                  setLocalId(ambiente.id);
-                  setSeletorLocalVisivel(false);
-                }}
-              >
-                <Text style={styles.linhaRotaTexto}>{ambiente.nome}</Text>
-                <View
-                  style={[
-                    styles.linhaRotaIndicador,
-                    localId === ambiente.id &&
-                      styles.linhaRotaIndicadorSelecionado,
-                  ]}
+          <TextInput
+            value={opcoes.busca}
+            onChangeText={opcoes.onBuscaChange}
+            placeholder="Buscar por nome"
+            placeholderTextColor={light.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+
+          <ScrollView
+            style={styles.modalLocalLista}
+            keyboardShouldPersistTaps="handled"
+          >
+            {lista.length === 0 ? (
+              <Text style={styles.vazio}>Nenhum ambiente encontrado.</Text>
+            ) : (
+              lista.map((ambiente) => (
+                <Pressable
+                  key={ambiente.id}
+                  style={styles.linhaRota}
+                  onPress={() => opcoes.onSelecionar(ambiente.id)}
                 >
-                  {localId === ambiente.id ? (
-                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                  ) : null}
-                </View>
-              </Pressable>
-            ))
-          )}
-        </ScrollView>
+                  <Text style={styles.linhaRotaTexto}>{ambiente.nome}</Text>
+                  <View
+                    style={[
+                      styles.linhaRotaIndicador,
+                      opcoes.selecionadoId === ambiente.id &&
+                        styles.linhaRotaIndicadorSelecionado,
+                    ]}
+                  >
+                    {opcoes.selecionadoId === ambiente.id ? (
+                      <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+
+          <View style={styles.modalBotoes}>
+            <Pressable
+              style={[styles.modalBotao, styles.modalBotaoCancelar]}
+              onPress={opcoes.onLimpar}
+            >
+              <Text style={styles.modalBotaoCancelarTexto}>Limpar</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalBotao, styles.modalBotaoSalvar]}
+              onPress={opcoes.onFechar}
+            >
+              <Text style={styles.modalBotaoSalvarTexto}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const seletorLocalOverlay = seletorLocalVisivel
+    ? renderSeletorLocalOverlay({
+        busca: buscaLocal,
+        onBuscaChange: setBuscaLocal,
+        selecionadoId: localId,
+        onSelecionar: (id) => {
+          setLocalId(id);
+          setSeletorLocalVisivel(false);
+        },
+        onLimpar: () => {
+          setLocalId(null);
+          setSeletorLocalVisivel(false);
+        },
+        onFechar: () => setSeletorLocalVisivel(false),
+      })
+    : null;
+
+  const extraSeletorLocalOverlay = extraSeletorLocalVisivel
+    ? renderSeletorLocalOverlay({
+        busca: extraBuscaLocal,
+        onBuscaChange: setExtraBuscaLocal,
+        selecionadoId: extraLocalId,
+        onSelecionar: (id) => {
+          setExtraLocalId(id);
+          setExtraSeletorLocalVisivel(false);
+        },
+        onLimpar: () => {
+          setExtraLocalId(null);
+          setExtraSeletorLocalVisivel(false);
+        },
+        onFechar: () => setExtraSeletorLocalVisivel(false),
+      })
+    : null;
+
+  // Prazo da extraordinária: overlay inline (mesma razão dos demais) e,
+  // diferente da data de início do plano, NUNCA permite data passada —
+  // prazo é sempre para frente.
+  const extraCalendarioOverlay = extraCalendarioVisivel ? (
+    <View style={styles.novaRotaOverlay}>
+      <View style={styles.modalRotaCard}>
+        <Text style={styles.modalTitulo}>Prazo</Text>
+
+        <MiniCalendar
+          markedDates={{}}
+          selectedDate={extraPrazo || null}
+          onSelectDay={(data) => {
+            setExtraPrazo(data);
+            setExtraCalendarioVisivel(false);
+          }}
+          desabilitarAntesDe={hoje()}
+        />
 
         <View style={styles.modalBotoes}>
           <Pressable
             style={[styles.modalBotao, styles.modalBotaoCancelar]}
-            onPress={() => {
-              setLocalId(null);
-              setSeletorLocalVisivel(false);
-            }}
+            onPress={() => setExtraCalendarioVisivel(false)}
           >
-            <Text style={styles.modalBotaoCancelarTexto}>Limpar</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modalBotao, styles.modalBotaoSalvar]}
-            onPress={() => setSeletorLocalVisivel(false)}
-          >
-            <Text style={styles.modalBotaoSalvarTexto}>Fechar</Text>
+            <Text style={styles.modalBotaoCancelarTexto}>Cancelar</Text>
           </Pressable>
         </View>
       </View>
@@ -1650,7 +1911,8 @@ export default function AdminPreservacao() {
         <Text style={styles.title}>Zeladoria e Manutenção</Text>
 
         <Pressable
-          onPress={abrirModalNovo}
+          ref={botaoCriarRef}
+          onPress={abrirMenuCriar}
           style={({ pressed }) => [
             styles.addButton,
             pressed && styles.addButtonPressed,
@@ -1660,8 +1922,37 @@ export default function AdminPreservacao() {
         </Pressable>
       </View>
 
+      <CardMenu
+        visible={menuCriarVisivel}
+        onClose={() => setMenuCriarVisivel(false)}
+        anchorPosition={menuCriarAncora}
+      >
+        <Pressable
+          style={styles.menuItem}
+          onPress={() => {
+            setMenuCriarVisivel(false);
+            abrirModalNovo();
+          }}
+        >
+          <Text style={styles.menuItemTexto}>Plano de rotina</Text>
+        </Pressable>
+        <Pressable style={styles.menuItem} onPress={abrirModalExtraordinaria}>
+          <Text style={styles.menuItemTexto}>Atividade extraordinária</Text>
+        </Pressable>
+      </CardMenu>
+
       <ScrollView contentContainerStyle={styles.body}>
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
+
+        <TextInput
+          value={buscaPlano}
+          onChangeText={setBuscaPlano}
+          placeholder="Buscar por nome"
+          placeholderTextColor={light.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.input}
+        />
 
         <View style={styles.painelCard}>
           <Pressable
@@ -1979,23 +2270,48 @@ export default function AdminPreservacao() {
 
           {planosAbertos ? (
             <View style={styles.lista}>
-              <TextInput
-                value={buscaPlano}
-                onChangeText={setBuscaPlano}
-                placeholder="Buscar por nome"
-                placeholderTextColor={light.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-              />
-
-              {!carregando && planosFiltrados.length === 0 ? (
+              {!carregando &&
+              planosFiltrados.length === 0 &&
+              extraordinariasFiltradas.length === 0 ? (
                 <Text style={styles.vazio}>
                   {buscaPlano.trim()
                     ? 'Nenhuma atividade encontrada.'
                     : 'Nenhuma atividade cadastrada.'}
                 </Text>
               ) : null}
+
+              {/* Extraordinárias primeiro: são avulsas e têm prazo próprio,
+                  então não entram no .map de planos (que espera
+                  PlanoManutencao e oferece editar/duplicar/rota/massa). */}
+              {extraordinariasFiltradas.map((ordem) => (
+                <View key={ordem.id} style={styles.extraCardAdmin}>
+                  <View style={styles.extraCabecalhoAdmin}>
+                    <Text style={styles.planoTitulo}>{tituloOrdem(ordem)}</Text>
+                    <View style={styles.seloExtra}>
+                      <Text style={styles.seloExtraTexto}>Extraordinária</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.planoTipo}>
+                    {ordem.tipos_atividade?.nome ?? 'Sem tipo'}
+                  </Text>
+                  {ordem.locais?.nome ? (
+                    <Text style={styles.planoDetalhe}>{ordem.locais.nome}</Text>
+                  ) : null}
+
+                  <View style={styles.planoRodape}>
+                    <Text style={styles.planoDetalhe}>
+                      Prazo · {formatarDataBR(ordem.data_prevista)}
+                    </Text>
+                    {ordem.prioridade ? (
+                      <Chip
+                        label={ordem.prioridade}
+                        color={getCorPrioridade(ordem.prioridade)}
+                      />
+                    ) : null}
+                  </View>
+                </View>
+              ))}
 
               {planosFiltrados.map((plano) => {
                 const menuAberto = menuAbertoId === plano.id;
@@ -2462,6 +2778,161 @@ export default function AdminPreservacao() {
           {novaRotaOverlay}
           {calendarioDataInicioOverlay}
           {seletorLocalOverlay}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalExtraVisivel}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={fecharModalExtraordinaria}
+      >
+        <View style={styles.telaAtribuir}>
+          <View
+            style={[
+              styles.cabecalhoAtribuir,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <View style={styles.cabecalhoAtribuirBotao} />
+            <Text style={styles.tituloAtribuir}>Atividade extraordinária</Text>
+            <Pressable
+              style={styles.cabecalhoAtribuirBotao}
+              onPress={fecharModalExtraordinaria}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.corpoPlano}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.field}>
+              <Text style={styles.label}>Título</Text>
+              <TextInput
+                value={extraTitulo}
+                onChangeText={setExtraTitulo}
+                placeholder="Título"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Tipo</Text>
+              <View style={styles.chipWrap}>
+                {tiposAtivos.map((tipo) => (
+                  <Chip
+                    key={tipo.id}
+                    label={tipo.nome}
+                    selected={extraTipoId === tipo.id}
+                    onPress={() => setExtraTipoId(tipo.id)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Local</Text>
+              <Pressable
+                style={styles.campoData}
+                onPress={() => {
+                  setExtraBuscaLocal('');
+                  setExtraSeletorLocalVisivel(true);
+                }}
+              >
+                <Text
+                  style={
+                    extraLocalSelecionado
+                      ? styles.campoDataTexto
+                      : styles.campoDataTextoPlaceholder
+                  }
+                >
+                  {extraLocalSelecionado?.nome ?? 'Selecionar local'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Prioridade</Text>
+              <View style={styles.chipWrap}>
+                {PRIORIDADES.map((item) => (
+                  <Chip
+                    key={item}
+                    label={item}
+                    selected={extraPrioridade === item}
+                    color={getCorPrioridade(item)}
+                    onPress={() => setExtraPrioridade(item)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Prazo</Text>
+              <Pressable
+                style={styles.campoData}
+                onPress={() => setExtraCalendarioVisivel(true)}
+              >
+                <Text
+                  style={
+                    extraPrazo
+                      ? styles.campoDataTexto
+                      : styles.campoDataTextoPlaceholder
+                  }
+                >
+                  {extraPrazo ? formatarDataBR(extraPrazo) : 'Definir prazo'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Observações</Text>
+              <TextInput
+                value={extraObservacoes}
+                onChangeText={setExtraObservacoes}
+                placeholder="Observações"
+                placeholderTextColor={light.textSecondary}
+                multiline
+                numberOfLines={3}
+                style={[styles.input, styles.inputMultiline]}
+              />
+            </View>
+
+            {erroModalExtra ? (
+              <Text style={styles.erro}>{erroModalExtra}</Text>
+            ) : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.rodapeAtribuir,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={[
+                styles.botaoConfirmarAtribuir,
+                (extraSalvando || !extraFormularioCompleto) &&
+                  styles.botaoConfirmarAtribuirDesabilitado,
+              ]}
+              onPress={handleSalvarExtraordinaria}
+              disabled={extraSalvando || !extraFormularioCompleto}
+            >
+              <Text style={styles.botaoConfirmarAtribuirTexto}>
+                {extraSalvando ? 'Salvando…' : 'Salvar'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {extraSeletorLocalOverlay}
+          {extraCalendarioOverlay}
         </View>
       </Modal>
 
@@ -3028,6 +3499,35 @@ const styles = StyleSheet.create({
   },
   planoCardCompacto: {
     borderRadius: 8,
+  },
+  // Extraordinária no Admin: mesmo card, tingido com o accent de TINTA
+  // (inkAction) para se distinguir dos planos de rotina. Nunca usa cor
+  // semântica no destaque — verde/âmbar/vermelho seguem exclusivos de
+  // status, e a prioridade continua colorida dentro do card.
+  extraCardAdmin: {
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.inkAction,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xs / 2,
+  },
+  extraCabecalhoAdmin: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  seloExtra: {
+    backgroundColor: light.inkAction,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+  },
+  seloExtraTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: '#FFFFFF',
   },
   atividadesRotaContainer: {
     marginLeft: 16,

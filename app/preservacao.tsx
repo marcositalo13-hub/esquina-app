@@ -22,8 +22,13 @@ import {
   formatarDataBR,
   getCorPrioridade,
   hojeLocal,
+  localNomeOrdem,
   type OrdemServico,
+  pesoPrioridade,
+  prioridadeOrdem,
   type Rota,
+  tipoNomeOrdem,
+  tituloOrdem,
 } from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../src/lib/topUpOcorrencias';
@@ -65,11 +70,13 @@ function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
   const plano = ordem.planos_manutencao;
   return {
     id: ordem.id,
-    titulo: plano?.titulo ?? 'Atividade',
-    tipo: plano?.tipos_atividade?.nome ?? 'Sem tipo',
-    local: plano?.locais?.nome ?? plano?.local ?? null,
+    // Em rotina os dados vêm do plano; em extraordinária, das colunas da
+    // própria ordem (ver helpers em src/data/manutencao.ts).
+    titulo: tituloOrdem(ordem),
+    tipo: tipoNomeOrdem(ordem),
+    local: localNomeOrdem(ordem),
     descricao: plano?.descricao ?? null,
-    observacoes: plano?.observacoes ?? null,
+    observacoes: plano ? plano.observacoes : ordem.observacao,
     status: ordem.status,
     iniciadoEm: ordem.iniciado_em,
     pausadoEm: ordem.pausado_em,
@@ -107,6 +114,10 @@ export default function Preservacao() {
   // Histórico amplo de concluídas (qualquer data) — só para a seção
   // "Concluídas". Ver comentário sobre .limit(5000) em carregar().
   const [concluidas, setConcluidas] = useState<OrdemServico[]>([]);
+  // Atividades extraordinárias em aberto (pendente/em_andamento), de
+  // qualquer prazo — não são filtradas por "hoje" como as de rotina: são
+  // avulsas e ficam visíveis até serem concluídas.
+  const [extraordinarias, setExtraordinarias] = useState<OrdemServico[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [execucao, setExecucao] = useState<ExecucaoAtiva | null>(null);
   const [verificandoId, setVerificandoId] = useState<string | null>(null);
@@ -131,45 +142,59 @@ export default function Preservacao() {
   const carregar = useCallback(async () => {
     const hojeStr = hoje();
 
-    const [respostaPendentes, respostaConcluidasHoje, respostaConcluidas] =
-      await Promise.all([
-        supabase
-          .from('ordens_servico')
-          .select(
-            '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
-          )
-          .neq('status', 'concluida')
-          // A equipe de execução nunca vê atrasadas: só "pendentes" de hoje
-          // (nunca data_prevista < hoje). Atrasadas seguem visíveis só para
-          // o Administrador em app/admin/preservacao.tsx.
-          .eq('data_prevista', hojeStr)
-          .order('data_prevista', { ascending: true }),
-        // Concluídas de hoje, filtradas por data_prevista=hoje direto no
-        // banco — junto com "pendentes" acima, alimenta exclusivamente
-        // "Resumo do dia" (nunca precisa varrer o histórico amplo abaixo
-        // só para achar o que foi concluído hoje).
-        supabase
-          .from('ordens_servico')
-          .select(
-            '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
-          )
-          .eq('status', 'concluida')
-          .eq('data_prevista', hojeStr),
-        // Histórico amplo de concluídas (qualquer data), só para a seção
-        // "Concluídas". .limit(5000) explícito: sem isso, o corte de
-        // segurança padrão do Supabase (1000 linhas) trunca silenciosamente
-        // conforme o histórico cresce. Se o volume real ultrapassar isso,
-        // é preciso paginação de verdade — dívida técnica documentada
-        // aqui, não bug.
-        supabase
-          .from('ordens_servico')
-          .select(
-            '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
-          )
-          .eq('status', 'concluida')
-          .order('concluida_em', { ascending: false })
-          .limit(5000),
-      ]);
+    const [
+      respostaPendentes,
+      respostaConcluidasHoje,
+      respostaConcluidas,
+      respostaExtraordinarias,
+    ] = await Promise.all([
+      supabase
+        .from('ordens_servico')
+        .select(
+          '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+        )
+        .neq('status', 'concluida')
+        // A equipe de execução nunca vê atrasadas: só "pendentes" de hoje
+        // (nunca data_prevista < hoje). Atrasadas seguem visíveis só para
+        // o Administrador em app/admin/preservacao.tsx.
+        .eq('data_prevista', hojeStr)
+        .order('data_prevista', { ascending: true }),
+      // Concluídas de hoje, filtradas por data_prevista=hoje direto no
+      // banco — junto com "pendentes" acima, alimenta exclusivamente
+      // "Resumo do dia" (nunca precisa varrer o histórico amplo abaixo
+      // só para achar o que foi concluído hoje).
+      supabase
+        .from('ordens_servico')
+        .select(
+          '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*)), tipos_atividade(*), locais(*)',
+        )
+        .eq('status', 'concluida')
+        .eq('data_prevista', hojeStr),
+      // Histórico amplo de concluídas (qualquer data), só para a seção
+      // "Concluídas". .limit(5000) explícito: sem isso, o corte de
+      // segurança padrão do Supabase (1000 linhas) trunca silenciosamente
+      // conforme o histórico cresce. Se o volume real ultrapassar isso,
+      // é preciso paginação de verdade — dívida técnica documentada
+      // aqui, não bug.
+      supabase
+        .from('ordens_servico')
+        .select(
+          '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*)), tipos_atividade(*), locais(*)',
+        )
+        .eq('status', 'concluida')
+        .order('concluida_em', { ascending: false })
+        .limit(5000),
+      // Extraordinárias em aberto: sem plano por trás, então título/tipo/
+      // local vêm por join direto na própria ordem. Sem filtro de data —
+      // a atividade avulsa fica visível até ser concluída, e o prazo
+      // (data_prevista) é exibido no card, não usado como corte.
+      supabase
+        .from('ordens_servico')
+        .select('*, tipos_atividade(*), locais(*)')
+        .eq('origem', 'extraordinaria')
+        .in('status', ['pendente', 'em_andamento'])
+        .limit(1000),
+    ]);
 
     if (respostaPendentes.error) {
       setErro(respostaPendentes.error.message);
@@ -183,11 +208,16 @@ export default function Preservacao() {
       setErro(respostaConcluidas.error.message);
       return;
     }
+    if (respostaExtraordinarias.error) {
+      setErro(respostaExtraordinarias.error.message);
+      return;
+    }
 
     setErro(null);
     setPendentes((respostaPendentes.data ?? []) as OrdemServico[]);
     setConcluidasHoje((respostaConcluidasHoje.data ?? []) as OrdemServico[]);
     setConcluidas((respostaConcluidas.data ?? []) as OrdemServico[]);
+    setExtraordinarias((respostaExtraordinarias.data ?? []) as OrdemServico[]);
   }, []);
 
   useEffect(() => {
@@ -320,6 +350,21 @@ export default function Preservacao() {
     return Array.from(grupos.values());
   }, [pendentes, concluidasHoje]);
 
+  // Alta primeiro, depois Média, depois Baixa; empate desempata pelo prazo
+  // mais próximo. Prioridade Alta NÃO interrompe trabalho em andamento —
+  // só sobe na ordem de exibição (decisão de produto, sem lógica de
+  // interrupção).
+  const extraordinariasOrdenadas = useMemo(() => {
+    return [...extraordinarias].sort((a, b) => {
+      const peso =
+        pesoPrioridade(prioridadeOrdem(a)) - pesoPrioridade(prioridadeOrdem(b));
+      if (peso !== 0) {
+        return peso;
+      }
+      return a.data_prevista.localeCompare(b.data_prevista);
+    });
+  }, [extraordinarias]);
+
   // Atividades de hoje COM rota já aparecem no Resumo do dia — somem da
   // seção Concluídas para não duplicar. Sem rota (hoje ou não) e qualquer
   // outra data continuam aparecendo normalmente.
@@ -396,6 +441,16 @@ export default function Preservacao() {
     } finally {
       setVerificandoId(null);
     }
+  }
+
+  // Extraordinária entra no MESMO fluxo guiado das ordens de rotina — só
+  // muda o contexto (uma atividade avulsa, sem rota). Nenhuma lógica de
+  // execução é duplicada aqui.
+  function handleIniciarExtraordinaria(ordem: OrdemServico) {
+    setExecucao({
+      ordens: [paraItemExecucao(ordem)],
+      tituloContexto: null,
+    });
   }
 
   function handleFinalizarExecucao() {
@@ -499,6 +554,59 @@ export default function Preservacao() {
       <ScrollView contentContainerStyle={styles.body}>
         {erro ? <Text style={styles.erro}>{erro}</Text> : null}
 
+        {/* Sem extraordinária em aberto, a seção inteira some — nada de
+            título órfão nem card vazio. */}
+        {extraordinariasOrdenadas.length > 0 ? (
+          <>
+            <Text style={styles.secaoTitulo}>Extraordinárias</Text>
+            <View style={styles.lista}>
+              {extraordinariasOrdenadas.map((ordem) => {
+                const prioridade = prioridadeOrdem(ordem);
+                const local = localNomeOrdem(ordem);
+                const emAndamento = ordem.status === 'em_andamento';
+
+                return (
+                  <View key={ordem.id} style={styles.extraCard}>
+                    <View style={styles.extraCabecalho}>
+                      <View style={styles.seloExtra}>
+                        <Text style={styles.seloExtraTexto}>
+                          Extraordinária
+                        </Text>
+                      </View>
+                      {prioridade ? (
+                        <Chip
+                          label={prioridade}
+                          color={getCorPrioridade(prioridade)}
+                        />
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.extraTitulo}>{tituloOrdem(ordem)}</Text>
+                    <Text style={styles.extraDetalhe}>
+                      {tipoNomeOrdem(ordem)}
+                    </Text>
+                    {local ? (
+                      <Text style={styles.extraDetalhe}>{local}</Text>
+                    ) : null}
+                    <Text style={styles.extraDetalhe}>
+                      Prazo · {formatarDataBR(ordem.data_prevista)}
+                    </Text>
+
+                    <Pressable
+                      style={styles.botaoIniciarRota}
+                      onPress={() => handleIniciarExtraordinaria(ordem)}
+                    >
+                      <Text style={styles.botaoIniciarRotaTexto}>
+                        {emAndamento ? 'Continuar' : 'Iniciar'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+
         {resumoRotas.length > 0 ? (
           <>
             <Text style={styles.secaoTitulo}>Resumo do dia</Text>
@@ -598,7 +706,10 @@ export default function Preservacao() {
         ) : (
           <View style={styles.listaConcluidas}>
             {concluidasExibidas.map((ordem, indice) => {
-              const plano = ordem.planos_manutencao;
+              // Rotina lê do plano; extraordinária, das colunas da própria
+              // ordem — os helpers cobrem os dois casos.
+              const local = localNomeOrdem(ordem);
+              const prioridade = prioridadeOrdem(ordem);
 
               return (
                 <View
@@ -609,15 +720,13 @@ export default function Preservacao() {
                   ]}
                 >
                   <Text style={styles.linhaConcluidaTitulo}>
-                    {plano?.titulo ?? 'Atividade'}
+                    {tituloOrdem(ordem)}
                   </Text>
                   <Text style={styles.linhaConcluidaTipo}>
-                    {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
+                    {tipoNomeOrdem(ordem)}
                   </Text>
-                  {plano && nomeLocal(plano) ? (
-                    <Text style={styles.linhaConcluidaDetalhe}>
-                      {nomeLocal(plano)}
-                    </Text>
+                  {local ? (
+                    <Text style={styles.linhaConcluidaDetalhe}>{local}</Text>
                   ) : null}
 
                   <View style={styles.linhaConcluidaRodape}>
@@ -635,10 +744,10 @@ export default function Preservacao() {
                       </Text>
                       <StatusBadge ordem={ordem} />
                     </View>
-                    {plano ? (
+                    {prioridade ? (
                       <Chip
-                        label={plano.prioridade}
-                        color={getCorPrioridade(plano.prioridade)}
+                        label={prioridade}
+                        color={getCorPrioridade(prioridade)}
                       />
                     ) : null}
                   </View>
@@ -745,6 +854,46 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  // Destaque de "isto é extraordinária": borda e fundo tingidos com o
+  // accent funcional do tema (TINTA — inkAction/sunken), nunca com cor
+  // semântica. Verde/âmbar/vermelho seguem exclusivos de status, e a
+  // prioridade continua usando essas cores no chip DENTRO do card.
+  extraCard: {
+    backgroundColor: light.sunken,
+    borderWidth: 1,
+    borderColor: light.inkAction,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  extraCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs / 2,
+  },
+  seloExtra: {
+    backgroundColor: light.inkAction,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+  },
+  seloExtraTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: '#FFFFFF',
+  },
+  extraTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 16,
+    color: light.textPrimary,
+  },
+  extraDetalhe: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textSecondary,
   },
   resumoRotaCabecalho: {
     flexDirection: 'row',

@@ -11,7 +11,9 @@ type AdiarAcaoProps = {
   // Ordem sendo adiada e o plano dela — usados só para a checagem de
   // duplicidade (ver handleSelecionarDia). Não afetam onConfirmar.
   ordemId: string;
-  planoId: string;
+  // Nulo em ordem sem plano (extraordinária): não existe "outra ocorrência
+  // do mesmo plano", então a checagem de duplicidade não se aplica.
+  planoId: string | null;
   onConfirmar: (novaData: string) => void | Promise<void>;
   // 'botao': gatilho em bloco com borda (uso padrão, solto no card).
   // 'menuItem': gatilho como linha de texto simples, para viver dentro de
@@ -58,6 +60,10 @@ export function AdiarAcao({
     setDataSelecionada(data);
     setDataDuplicada(false);
     setErroChecagem(null);
+    if (!planoId) {
+      return;
+    }
+
     setVerificandoDuplicidade(true);
 
     const idChecagem = ++checagemIdRef.current;

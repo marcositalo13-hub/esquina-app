@@ -80,7 +80,20 @@ create table if not exists planos_manutencao (
 -- (usado pela ação "Excluir" do card de plano em app/admin/preservacao.tsx).
 create table if not exists ordens_servico (
   id uuid primary key default gen_random_uuid(),
-  plano_id uuid not null references planos_manutencao (id) on delete cascade,
+  -- Nulo quando origem <> 'rotina': uma atividade extraordinária existe sem
+  -- plano por trás, com título/tipo/local/prioridade nas colunas abaixo.
+  plano_id uuid references planos_manutencao (id) on delete cascade,
+  origem text not null default 'rotina' check (
+    origem in ('rotina', 'chamado', 'extraordinaria')
+  ),
+  -- Só preenchidos em ordem sem plano; em rotina seguem nulos e os dados
+  -- vêm por join com planos_manutencao (nunca duplicados aqui).
+  titulo text,
+  tipo_id uuid references tipos_atividade (id),
+  local_id uuid references locais (id),
+  prioridade text check (prioridade in ('Baixa', 'Média', 'Alta')),
+  -- Em rotina é a data da ocorrência; em extraordinária é o prazo definido
+  -- manualmente pelo Administrador no ato de criar.
   data_prevista date not null,
   status text not null default 'pendente' check (
     status in ('pendente', 'em_andamento', 'concluida')
@@ -105,6 +118,17 @@ create table if not exists ordens_servico (
 -- para adicionar a coluna em vez de recriar a tabela — usada pelo fluxo
 -- guiado (ExecucaoGuiada) para calcular o tempo gasto em cada atividade:
 -- alter table ordens_servico add column if not exists iniciado_em timestamptz;
+
+-- Se ordens_servico já existia sem as colunas de atividade avulsa (script
+-- anterior), rode isto para adicioná-las — usadas pela "Atividade
+-- extraordinária" criada pelo Administrador, que não tem plano por trás.
+-- plano_id precisa deixar de ser NOT NULL para a ordem existir sozinha:
+-- alter table ordens_servico alter column plano_id drop not null;
+-- alter table ordens_servico add column if not exists origem text not null default 'rotina' check (origem in ('rotina', 'chamado', 'extraordinaria'));
+-- alter table ordens_servico add column if not exists titulo text;
+-- alter table ordens_servico add column if not exists tipo_id uuid references tipos_atividade (id);
+-- alter table ordens_servico add column if not exists local_id uuid references locais (id);
+-- alter table ordens_servico add column if not exists prioridade text check (prioridade in ('Baixa', 'Média', 'Alta'));
 
 -- Se ordens_servico já existia sem as colunas de reprovação (script
 -- anterior), rode isto para adicioná-las em vez de recriar a tabela —
