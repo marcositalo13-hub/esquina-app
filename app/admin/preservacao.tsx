@@ -100,6 +100,9 @@ export default function AdminPreservacao() {
   const [periodicidadeFiltros, setPeriodicidadeFiltros] = useState<
     Periodicidade[]
   >([]);
+  // Busca por nome em "Todos os planos cadastrados" — soma-se aos filtros
+  // acima (não substitui), client-side, sem nova consulta ao banco.
+  const [buscaPlano, setBuscaPlano] = useState('');
 
   const [atualizandoOrdemId, setAtualizandoOrdemId] = useState<string | null>(
     null,
@@ -436,6 +439,8 @@ export default function AdminPreservacao() {
   // só afeta a barra de progresso (exceto quando um dia está selecionado,
   // caso em que ele fica desabilitado e a data escolhida vale para os dois).
   const planosFiltrados = useMemo(() => {
+    const termoBusca = normalizarTexto(buscaPlano.trim());
+
     return planos.filter((plano) => {
       if (tipoFiltros.length > 0 && !tipoFiltros.includes(plano.tipo_id)) {
         return false;
@@ -461,6 +466,9 @@ export default function AdminPreservacao() {
       ) {
         return false;
       }
+      if (termoBusca && !normalizarTexto(plano.titulo).includes(termoBusca)) {
+        return false;
+      }
       return true;
     });
   }, [
@@ -471,6 +479,7 @@ export default function AdminPreservacao() {
     atrasadasFiltro,
     planoIdsAtrasados,
     planoIdsNaDataSelecionada,
+    buscaPlano,
   ]);
 
   // Barra de progresso: mesmos filtros da lista, mais o escopo de data —
@@ -1120,38 +1129,62 @@ export default function AdminPreservacao() {
 
     try {
       if (editingId) {
-        // Se a nova data_inicio ficar ANTES da primeira ordem_servico já
-        // existente para este plano, backfilla as ordens faltantes entre a
-        // nova data e a data mínima existente (exclusive) antes do update.
-        // Sem isso o buraco nunca é preenchido: o update em si não gera
-        // ordens, e o top-up (topUpOcorrencias.ts) só estende a janela
-        // para FRENTE a partir da última ordem, nunca olha a mais antiga.
-        const { data: ordemMaisAntiga, error: erroOrdemMaisAntiga } =
-          await supabase
-            .from('ordens_servico')
-            .select('data_prevista')
-            .eq('plano_id', editingId)
-            .order('data_prevista', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+        // Se data_inicio e/ou periodicidade mudaram, backfilla as ordens
+        // que a configuração NOVA exige e ainda não existem — sem isso
+        // nada gera ordens novas: o update em si não toca ordens_servico,
+        // e o top-up (topUpOcorrencias.ts) só estende a janela para FRENTE
+        // a partir da ÚLTIMA ordem já existente, nunca preenche buracos
+        // atrás dela nem reage a mudança de periodicidade.
+        const { data: planoAtual, error: erroPlanoAtual } = await supabase
+          .from('planos_manutencao')
+          .select('data_inicio, periodicidade')
+          .eq('id', editingId)
+          .single();
 
-        if (erroOrdemMaisAntiga) {
-          setErroModal(erroOrdemMaisAntiga.message);
+        if (erroPlanoAtual) {
+          setErroModal(erroPlanoAtual.message);
           return;
         }
 
-        // Sem nenhuma ordem existente (plano criado direto no banco, ou
-        // nunca teve top-up rodado), não há buraco a preencher aqui — seria
-        // responsabilidade do top-up na próxima abertura da tela.
-        if (ordemMaisAntiga && dataInicio < ordemMaisAntiga.data_prevista) {
-          const ateDataBuraco = adicionarDiasChave(
-            ordemMaisAntiga.data_prevista,
-            -1,
+        if (
+          planoAtual.data_inicio !== dataInicio ||
+          planoAtual.periodicidade !== periodicidade
+        ) {
+          const { data: ordensExistentes, error: erroOrdensExistentes } =
+            await supabase
+              .from('ordens_servico')
+              .select('data_prevista')
+              .eq('plano_id', editingId);
+
+          if (erroOrdensExistentes) {
+            setErroModal(erroOrdensExistentes.message);
+            return;
+          }
+
+          // Nenhum status é considerado aqui de propósito: uma ordem já
+          // concluída/em andamento conta como "já existe" tanto quanto uma
+          // pendente — nunca é apagada, tocada ou duplicada por esta
+          // rotina. O que "sobra" de uma periodicidade antiga mais densa
+          // fica no banco sem alteração; removê-las é ação manual do
+          // usuário via "Excluir" no card, fora do escopo daqui.
+          const datasExistentes = new Set(
+            (ordensExistentes ?? []).map((ordem) => ordem.data_prevista),
           );
-          const datasFaltantes = gerarDatasOcorrencia(
+
+          const ateDataPorHoje = adicionarDiasChave(hoje(), JANELA_DIAS);
+          const ateDataPorInicio = adicionarDiasChave(dataInicio, JANELA_DIAS);
+          const ateData =
+            ateDataPorHoje > ateDataPorInicio
+              ? ateDataPorHoje
+              : ateDataPorInicio;
+
+          const datasEsperadas = gerarDatasOcorrencia(
             dataInicio,
             periodicidade,
-            ateDataBuraco,
+            ateData,
+          );
+          const datasFaltantes = datasEsperadas.filter(
+            (data) => !datasExistentes.has(data),
           );
 
           if (datasFaltantes.length > 0) {
@@ -1946,8 +1979,22 @@ export default function AdminPreservacao() {
 
           {planosAbertos ? (
             <View style={styles.lista}>
+              <TextInput
+                value={buscaPlano}
+                onChangeText={setBuscaPlano}
+                placeholder="Buscar por nome"
+                placeholderTextColor={light.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+              />
+
               {!carregando && planosFiltrados.length === 0 ? (
-                <Text style={styles.vazio}>Nenhuma atividade cadastrada.</Text>
+                <Text style={styles.vazio}>
+                  {buscaPlano.trim()
+                    ? 'Nenhuma atividade encontrada.'
+                    : 'Nenhuma atividade cadastrada.'}
+                </Text>
               ) : null}
 
               {planosFiltrados.map((plano) => {
