@@ -39,14 +39,17 @@ import {
   getQualidadeInfo,
   hojeLocal,
   JANELA_DIAS,
+  localNomeOrdem,
   type OrdemServico,
   PERIODICIDADES,
   type Periodicidade,
   type PlanoManutencao,
   PRIORIDADES,
   type Prioridade,
+  prioridadeOrdem,
   type Rota,
   type TipoAtividade,
+  tipoNomeOrdem,
   tituloOrdem,
 } from '../../src/data/manutencao';
 import { supabase } from '../../src/lib/supabase';
@@ -273,7 +276,11 @@ export default function AdminPreservacao() {
     const { data, error } = await supabase
       .from('ordens_servico')
       .select(
-        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+        // Join via planos_manutencao cobre origem='rotina'; join direto de
+        // tipo_id/local_id cobre origem='extraordinaria' (e futuramente
+        // 'chamado'), que não tem plano_id — ver tipoNomeOrdem/localNomeOrdem
+        // em src/data/manutencao.ts para a lógica de fallback na exibição.
+        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*)), tipos_atividade(*), locais(*)',
       )
       .eq('data_prevista', hoje());
 
@@ -1484,6 +1491,11 @@ export default function AdminPreservacao() {
 
   function renderAtividadeCard(ordem: OrdemServico, compacto = false) {
     const plano = ordem.planos_manutencao;
+    // União de fonte: rotina lê do plano; extraordinária (e futuramente
+    // chamado), sem plano_id, lê das colunas/joins diretos da própria
+    // ordem — ver helpers em src/data/manutencao.ts.
+    const localAtividade = localNomeOrdem(ordem);
+    const prioridadeAtividade = prioridadeOrdem(ordem);
     const menuAberto = menuAtividadeAbertaId === ordem.id;
     const tempoExecucaoTexto =
       ordem.status === 'concluida' && ordem.iniciado_em && ordem.concluida_em
@@ -1502,9 +1514,7 @@ export default function AdminPreservacao() {
       <Fragment key={ordem.id}>
         <View style={[styles.planoCard, compacto && styles.planoCardCompacto]}>
           <View style={styles.planoCabecalho}>
-            <Text style={styles.planoTitulo}>
-              {plano?.titulo ?? 'Atividade'}
-            </Text>
+            <Text style={styles.planoTitulo}>{tituloOrdem(ordem)}</Text>
             <Pressable
               ref={(el) => {
                 if (el) {
@@ -1526,11 +1536,9 @@ export default function AdminPreservacao() {
             </Pressable>
           </View>
 
-          <Text style={styles.planoTipo}>
-            {plano?.tipos_atividade?.nome ?? 'Sem tipo'}
-          </Text>
-          {plano && nomeLocal(plano) ? (
-            <Text style={styles.planoDetalhe}>{nomeLocal(plano)}</Text>
+          <Text style={styles.planoTipo}>{tipoNomeOrdem(ordem)}</Text>
+          {localAtividade ? (
+            <Text style={styles.planoDetalhe}>{localAtividade}</Text>
           ) : null}
 
           <View style={styles.planoRodape}>
@@ -1565,10 +1573,10 @@ export default function AdminPreservacao() {
                 </View>
               ) : null}
             </View>
-            {plano ? (
+            {prioridadeAtividade ? (
               <Chip
-                label={plano.prioridade}
-                color={getCorPrioridade(plano.prioridade)}
+                label={prioridadeAtividade}
+                color={getCorPrioridade(prioridadeAtividade)}
               />
             ) : null}
           </View>
