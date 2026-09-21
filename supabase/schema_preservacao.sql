@@ -168,6 +168,47 @@ create table if not exists ordens_servico (
 --   add constraint ordens_servico_status_check
 --   check (status in ('pendente', 'em_andamento', 'concluida'));
 
+-- Bloco de Chamados/SLA — passo 1 (só schema, sem UI ainda): reaproveita
+-- ordens_servico via origem = 'chamado' (já presente no CHECK de origem
+-- acima) em vez de criar tabela nova. Não toca a coluna `status` nem seu
+-- CHECK — essa é a fila de execução da Zeladoria. `status_chamado` é uma
+-- coluna nova e paralela, para o ciclo de vida do chamado em si.
+alter table ordens_servico
+  add column if not exists status_chamado text check (
+    status_chamado in (
+      'recebido', 'em_vistoria', 'programado', 'em_execucao',
+      'em_conferencia', 'concluido', 'cancelado', 'recusado', 'duplicado'
+    )
+  );
+
+-- data_prevista era not null porque toda ordem até aqui vinha de rotina
+-- (data da ocorrência) ou extraordinária (prazo definido na criação). Um
+-- chamado pode ser aberto sem prazo definido ainda, então a coluna deixa
+-- de ser obrigatória.
+alter table ordens_servico
+  alter column data_prevista drop not null;
+
+-- Aponta para outra ordem em ordens_servico — usado para marcar um
+-- chamado como duplicado de outro já existente (status_chamado =
+-- 'duplicado').
+alter table ordens_servico
+  add column if not exists chamado_pai_id uuid references ordens_servico (id);
+
+-- Texto livre justificando status_chamado = 'recusado', mesmo padrão de
+-- motivo_reprovacao para o fluxo de dupla checagem.
+alter table ordens_servico
+  add column if not exists motivo_recusa text;
+
+-- Quem abriu o chamado, quando aberto por um morador (nullable: chamados
+-- abertos pelo Administrador não têm morador de origem).
+alter table ordens_servico
+  add column if not exists aberto_por_morador_id uuid references moradores (id);
+
+-- SLA padrão por tipo de atividade (ex.: Hidráulica = 2 dias) — ainda sem
+-- nenhum cálculo de prazo em código, só a coluna.
+alter table tipos_atividade
+  add column if not exists prazo_padrao_dias integer;
+
 -- RLS permissiva para a fase de testes (mesma postura já usada em
 -- cadastros_teste): sem autenticação própria ainda, então libera a anon key.
 alter table tipos_atividade enable row level security;
