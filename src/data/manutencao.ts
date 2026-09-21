@@ -253,6 +253,39 @@ export async function criarAtividadeExtraordinaria(
   return (data as OrdemServico[])[0];
 }
 
+// Edição de atividade extraordinária: update direto em ordens_servico por
+// id — caminho paralelo ao de plano (handleSalvar/editingId), nunca se
+// mistura com planos_manutencao. Mesmos 6 campos do cadastro, sem tocar
+// status/plano_id/origem.
+export async function atualizarAtividadeExtraordinaria(
+  id: string,
+  dados: NovaAtividadeExtraordinaria,
+): Promise<OrdemServico> {
+  const { data, error } = await supabase
+    .from('ordens_servico')
+    .update({
+      titulo: dados.titulo.trim(),
+      tipo_id: dados.tipo_id,
+      local_id: dados.local_id,
+      prioridade: dados.prioridade,
+      data_prevista: dados.data_prevista,
+      observacao: dados.observacao?.trim() || null,
+    })
+    .eq('id', id)
+    .select('*, tipos_atividade(*), locais(*)');
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível atualizar a atividade extraordinária — nenhuma linha afetada. Verifique as permissões de escrita no Supabase.',
+  );
+
+  return (data as OrdemServico[])[0];
+}
+
 // Janela padrão (em dias) de geração de ordens_servico futuras a partir de
 // hoje ou de data_inicio, o que for maior.
 export const JANELA_DIAS = 90;

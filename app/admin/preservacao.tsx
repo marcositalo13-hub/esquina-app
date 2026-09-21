@@ -31,6 +31,7 @@ import { ValidacaoGuiada } from '../../src/components/ValidacaoGuiada';
 import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
 import {
   adicionarDiasChave,
+  atualizarAtividadeExtraordinaria,
   criarAtividadeExtraordinaria,
   formatarDataBR,
   formatarDuracao,
@@ -123,6 +124,10 @@ export default function AdminPreservacao() {
   const botaoCriarRef = useRef<View | null>(null);
 
   const [modalExtraVisivel, setModalExtraVisivel] = useState(false);
+  // Preenchido só em edição (abrirModalEditarExtraordinaria) — caminho
+  // paralelo ao editingId de plano, nunca se mistura com handleSalvar/
+  // planos_manutencao.
+  const [extraEditingId, setExtraEditingId] = useState<string | null>(null);
   const [extraTitulo, setExtraTitulo] = useState('');
   const [extraTipoId, setExtraTipoId] = useState<string | null>(null);
   const [extraLocalId, setExtraLocalId] = useState<string | null>(null);
@@ -160,6 +165,21 @@ export default function AdminPreservacao() {
   );
   const [menuAncora, setMenuAncora] = useState<AnchorPosition>({ x: 0, y: 0 });
   const menuIconRefs = useRef<Map<string, View>>(new Map());
+
+  // Menu de 3 pontos dos cards de extraordinária em "Todos os planos
+  // cadastrados" — estado próprio, separado de menuAbertoId (planos) e de
+  // menuAtividadeAbertaId ("Atividades do dia"): a mesma ordem pode
+  // aparecer nas duas listas ao mesmo tempo (prazo = hoje), então usar o
+  // mesmo estado nas duas arriscaria abrir dois CardMenu (Modal) ao mesmo
+  // tempo para o mesmo id — o projeto já evita empilhar dois Modal.
+  const [menuExtraAbertoId, setMenuExtraAbertoId] = useState<string | null>(
+    null,
+  );
+  const [menuExtraAncora, setMenuExtraAncora] = useState<AnchorPosition>({
+    x: 0,
+    y: 0,
+  });
+  const menuExtraIconRefs = useRef<Map<string, View>>(new Map());
 
   const [modalVisivel, setModalVisivel] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -794,6 +814,26 @@ export default function AdminPreservacao() {
     setMenuAtividadeEtapa('confirmarExclusao');
   }
 
+  // Menu de 3 pontos dos cards de extraordinária em "Todos os planos
+  // cadastrados" — mesmo padrão de handleAbrirMenu/handleAbrirMenuAtividade,
+  // com estado (menuExtraAbertoId) dedicado a esta lista.
+  function handleAbrirMenuExtra(id: string) {
+    if (menuExtraAbertoId === id) {
+      fecharMenuExtra();
+      return;
+    }
+
+    const ref = menuExtraIconRefs.current.get(id);
+    ref?.measureInWindow((x, y, _width, height) => {
+      setMenuExtraAncora({ x, y: y + height });
+      setMenuExtraAbertoId(id);
+    });
+  }
+
+  function fecharMenuExtra() {
+    setMenuExtraAbertoId(null);
+  }
+
   async function handleConcluirOrdem(ordemId: string) {
     setAtualizandoOrdemId(ordemId);
 
@@ -917,6 +957,7 @@ export default function AdminPreservacao() {
 
   function abrirModalExtraordinaria() {
     setMenuCriarVisivel(false);
+    setExtraEditingId(null);
     setExtraTitulo('');
     setExtraTipoId(null);
     setExtraLocalId(null);
@@ -929,8 +970,29 @@ export default function AdminPreservacao() {
     setModalExtraVisivel(true);
   }
 
+  // Reaproveita o MESMO modal da criação, só pré-preenchido e com
+  // extraEditingId setado — chamado tanto pelo menu de "Todos os planos
+  // cadastrados" quanto pelo de "Atividades do dia" (ver menuExtraAbertoId
+  // e menuAtividadeAbertaId), sem duplicar esta lógica entre as duas listas.
+  function abrirModalEditarExtraordinaria(ordem: OrdemServico) {
+    fecharMenuExtra();
+    fecharMenuAtividade();
+    setExtraEditingId(ordem.id);
+    setExtraTitulo(tituloOrdem(ordem));
+    setExtraTipoId(ordem.tipo_id);
+    setExtraLocalId(ordem.local_id);
+    setExtraPrioridade(ordem.prioridade);
+    setExtraPrazo(ordem.data_prevista);
+    setExtraObservacoes(ordem.observacao ?? '');
+    setErroModalExtra(null);
+    setExtraSeletorLocalVisivel(false);
+    setExtraCalendarioVisivel(false);
+    setModalExtraVisivel(true);
+  }
+
   function fecharModalExtraordinaria() {
     setModalExtraVisivel(false);
+    setExtraEditingId(null);
     setExtraSeletorLocalVisivel(false);
     setExtraCalendarioVisivel(false);
   }
@@ -956,23 +1018,36 @@ export default function AdminPreservacao() {
     setExtraSalvando(true);
     setErroModalExtra(null);
 
+    const dadosExtra = {
+      titulo: extraTitulo,
+      tipo_id: extraTipoId,
+      local_id: extraLocalId,
+      prioridade: extraPrioridade,
+      data_prevista: extraPrazo,
+      observacao: extraObservacoes,
+    };
+
     try {
-      await criarAtividadeExtraordinaria({
-        titulo: extraTitulo,
-        tipo_id: extraTipoId,
-        local_id: extraLocalId,
-        prioridade: extraPrioridade,
-        data_prevista: extraPrazo,
-        observacao: extraObservacoes,
-      });
+      if (extraEditingId) {
+        await atualizarAtividadeExtraordinaria(extraEditingId, dadosExtra);
+      } else {
+        await criarAtividadeExtraordinaria(dadosExtra);
+      }
 
       setModalExtraVisivel(false);
-      await carregarExtraordinarias();
+      setExtraEditingId(null);
+      // Recarrega extraordinarias (alimenta "Todos os planos cadastrados")
+      // E ordensHoje/ordens (alimenta "Atividades do dia") — mudar o prazo
+      // pode tirar/colocar a ordem na janela de hoje, então as duas listas
+      // precisam refletir o novo data_prevista, não só a primeira.
+      await Promise.all([carregarExtraordinarias(), recarregarOrdens()]);
     } catch (erro) {
       setErroModalExtra(
         erro instanceof Error
           ? erro.message
-          : 'Não foi possível criar a atividade extraordinária.',
+          : extraEditingId
+            ? 'Não foi possível atualizar a atividade extraordinária.'
+            : 'Não foi possível criar a atividade extraordinária.',
       );
     } finally {
       setExtraSalvando(false);
@@ -1634,7 +1709,11 @@ export default function AdminPreservacao() {
             <>
               <Pressable
                 style={styles.menuItem}
-                onPress={() => plano && handleMenuEditar(plano)}
+                onPress={() =>
+                  extraordinaria
+                    ? abrirModalEditarExtraordinaria(ordem)
+                    : plano && handleMenuEditar(plano)
+                }
               >
                 <Text style={styles.menuItemTexto}>Editar</Text>
               </Pressable>
@@ -2334,33 +2413,80 @@ export default function AdminPreservacao() {
                   então não entram no .map de planos (que espera
                   PlanoManutencao e oferece editar/duplicar/rota/massa). */}
               {extraordinariasFiltradas.map((ordem) => (
-                <View key={ordem.id} style={styles.extraCardAdmin}>
-                  <View style={styles.extraCabecalhoAdmin}>
-                    <Text style={styles.planoTitulo}>{tituloOrdem(ordem)}</Text>
-                    <View style={styles.seloExtra}>
-                      <Text style={styles.seloExtraTexto}>Extraordinária</Text>
+                <Fragment key={ordem.id}>
+                  <View style={styles.extraCardAdmin}>
+                    <View style={styles.extraCabecalhoAdmin}>
+                      <View style={styles.planoCabecalhoTitulos}>
+                        <Text style={styles.planoTitulo}>
+                          {tituloOrdem(ordem)}
+                        </Text>
+                        <View style={styles.seloExtra}>
+                          <Text style={styles.seloExtraTexto}>
+                            Extraordinária
+                          </Text>
+                        </View>
+                      </View>
+                      <Pressable
+                        ref={(el) => {
+                          if (el) {
+                            menuExtraIconRefs.current.set(ordem.id, el);
+                          }
+                        }}
+                        onPress={() => handleAbrirMenuExtra(ordem.id)}
+                        hitSlop={{
+                          top: 10,
+                          bottom: 10,
+                          left: 10,
+                          right: 10,
+                        }}
+                        style={({ pressed }) => [
+                          styles.planoMenuButton,
+                          pressed && styles.planoMenuButtonPressionado,
+                        ]}
+                      >
+                        <Ionicons
+                          name="ellipsis-horizontal"
+                          size={18}
+                          color={light.textSecondary}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <Text style={styles.planoTipo}>
+                      {ordem.tipos_atividade?.nome ?? 'Sem tipo'}
+                    </Text>
+                    {ordem.locais?.nome ? (
+                      <Text style={styles.planoDetalhe}>
+                        {ordem.locais.nome}
+                      </Text>
+                    ) : null}
+
+                    <View style={styles.planoRodape}>
+                      <Text style={styles.planoDetalhe}>
+                        Prazo · {formatarDataBR(ordem.data_prevista)}
+                      </Text>
+                      {ordem.prioridade ? (
+                        <Chip
+                          label={ordem.prioridade}
+                          color={getCorPrioridade(ordem.prioridade)}
+                        />
+                      ) : null}
                     </View>
                   </View>
 
-                  <Text style={styles.planoTipo}>
-                    {ordem.tipos_atividade?.nome ?? 'Sem tipo'}
-                  </Text>
-                  {ordem.locais?.nome ? (
-                    <Text style={styles.planoDetalhe}>{ordem.locais.nome}</Text>
-                  ) : null}
-
-                  <View style={styles.planoRodape}>
-                    <Text style={styles.planoDetalhe}>
-                      Prazo · {formatarDataBR(ordem.data_prevista)}
-                    </Text>
-                    {ordem.prioridade ? (
-                      <Chip
-                        label={ordem.prioridade}
-                        color={getCorPrioridade(ordem.prioridade)}
-                      />
-                    ) : null}
-                  </View>
-                </View>
+                  <CardMenu
+                    visible={menuExtraAbertoId === ordem.id}
+                    onClose={fecharMenuExtra}
+                    anchorPosition={menuExtraAncora}
+                  >
+                    <Pressable
+                      style={styles.menuItem}
+                      onPress={() => abrirModalEditarExtraordinaria(ordem)}
+                    >
+                      <Text style={styles.menuItemTexto}>Editar</Text>
+                    </Pressable>
+                  </CardMenu>
+                </Fragment>
               ))}
 
               {planosFiltrados.map((plano) => {
@@ -2845,7 +2971,11 @@ export default function AdminPreservacao() {
             ]}
           >
             <View style={styles.cabecalhoAtribuirBotao} />
-            <Text style={styles.tituloAtribuir}>Atividade extraordinária</Text>
+            <Text style={styles.tituloAtribuir}>
+              {extraEditingId
+                ? 'Editar atividade extraordinária'
+                : 'Atividade extraordinária'}
+            </Text>
             <Pressable
               style={styles.cabecalhoAtribuirBotao}
               onPress={fecharModalExtraordinaria}
