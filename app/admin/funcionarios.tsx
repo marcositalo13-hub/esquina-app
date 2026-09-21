@@ -13,11 +13,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../../src/components/Chip';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
-import {
-  ErroFuncionario,
-  type Funcionario,
-  listarFuncionarios,
-  type PapelFuncionario,
+import type {
+  Funcionario,
+  PapelFuncionario,
 } from '../../src/data/funcionarios';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
@@ -37,9 +35,6 @@ function papelLabel(papel: PapelFuncionario): string {
 }
 
 function mensagemDeErro(erro: unknown): string {
-  if (erro instanceof ErroFuncionario) {
-    return erro.message;
-  }
   if (erro instanceof Error) {
     return erro.message;
   }
@@ -66,8 +61,17 @@ export default function AdminFuncionarios() {
     setCarregando(true);
     setErroLista(null);
     try {
-      const lista = await listarFuncionarios();
-      setFuncionarios(lista);
+      const resposta = await fetch('/api/listar-funcionarios');
+      const dados = (await resposta.json().catch(() => null)) as {
+        funcionarios?: Funcionario[];
+        erro?: string;
+      } | null;
+
+      if (!resposta.ok) {
+        throw new Error(dados?.erro ?? 'Não foi possível carregar a lista.');
+      }
+
+      setFuncionarios(dados?.funcionarios ?? []);
     } catch (erro) {
       setErroLista(mensagemDeErro(erro));
     } finally {
