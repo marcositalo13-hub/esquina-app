@@ -35,7 +35,7 @@ function ehErroEmailDuplicado(
   if (!erro) {
     return false;
   }
-  return erro.code === 'email_exists' || erro.status === 422;
+  return erro.code === 'email_exists';
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -103,7 +103,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.status(400).json({ erro: 'CPF já cadastrado.' });
         return;
       }
-      throw erroAuth ?? new Error('Não foi possível criar o usuário.');
+      if (erroAuth) {
+        res.status(400).json({
+          erro:
+            erroAuth.message ??
+            'Não foi possível criar o usuário. Verifique os dados.',
+        });
+        return;
+      }
+      throw new Error('Não foi possível criar o usuário.');
     }
 
     const { error: erroInsert } = await supabaseAdmin.from('usuarios').insert({

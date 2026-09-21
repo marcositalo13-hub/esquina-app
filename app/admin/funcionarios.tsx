@@ -26,7 +26,7 @@ const PAPEIS: { valor: PapelFuncionario; label: string }[] = [
   { valor: 'zeladoria', label: 'Zeladoria' },
 ];
 
-const SENHA_MIN_LENGTH = 4;
+const SENHA_MIN_LENGTH = 6;
 
 function somenteDigitos(texto: string): string {
   return texto.replace(/\D/g, '');
@@ -280,6 +280,11 @@ export default function AdminFuncionarios() {
                 secureTextEntry
                 style={styles.input}
               />
+              {senha.length > 0 && senha.length < SENHA_MIN_LENGTH ? (
+                <Text style={styles.erro}>
+                  Senha deve ter no mínimo {SENHA_MIN_LENGTH} caracteres.
+                </Text>
+              ) : null}
             </View>
 
             {erroModal ? <Text style={styles.erro}>{erroModal}</Text> : null}
