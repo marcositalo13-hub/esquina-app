@@ -10,6 +10,7 @@ export type Unidade = {
   id: string;
   bloco: string | null;
   numero: string;
+  observacoes: string | null;
   created_at: string;
 };
 
@@ -18,12 +19,32 @@ export type Morador = {
   unidade_id: string;
   nome: string;
   telefone: string | null;
+  cpf: string | null;
+  data_nascimento: string | null;
   ativo: boolean;
+  created_at: string;
+};
+
+export type Pet = {
+  id: string;
+  unidade_id: string;
+  nome: string;
+  especie: string;
+  created_at: string;
+};
+
+export type Dependente = {
+  id: string;
+  unidade_id: string;
+  nome: string;
+  data_nascimento: string | null;
   created_at: string;
 };
 
 export type UnidadeComMoradores = Unidade & {
   moradores: Morador[];
+  pets: Pet[];
+  dependentes: Dependente[];
 };
 
 export type NovaUnidade = {
@@ -31,6 +52,14 @@ export type NovaUnidade = {
   numero: string;
 };
 
+export type AtualizacaoUnidade = {
+  bloco: string | null;
+  numero: string;
+  observacoes: string | null;
+};
+
+// Cadastro rápido ("Adicionar morador") só pede nome+telefone — cpf e
+// data de nascimento só entram depois, via "Editar" (atualizarMorador).
 export type NovoMorador = {
   unidade_id: string;
   nome: string;
@@ -40,6 +69,20 @@ export type NovoMorador = {
 export type AtualizacaoMorador = {
   nome: string;
   telefone: string | null;
+  cpf: string | null;
+  data_nascimento: string | null;
+};
+
+export type NovoPet = {
+  unidade_id: string;
+  nome: string;
+  especie: string;
+};
+
+export type NovoDependente = {
+  unidade_id: string;
+  nome: string;
+  data_nascimento: string | null;
 };
 
 export type ResultadoGeracaoEmMassa = {
@@ -77,12 +120,39 @@ function garantirLinhaAfetada<T extends { id: string }[] | null>(
   }
 }
 
+// Calcula a idade a partir de hoje, sem armazenar — nunca usa
+// toISOString() (retorna UTC) nem passa a string direto pro construtor
+// Date (também interpreta 'AAAA-MM-DD' como UTC meia-noite, o que pode
+// descolar um dia dependendo do fuso); separa os componentes manualmente,
+// mesmo padrão de paraData em src/data/manutencao.ts.
+export function calcularIdade(dataNascimento: string | null): number | null {
+  if (!dataNascimento) {
+    return null;
+  }
+
+  const [ano, mes, dia] = dataNascimento.split('-').map(Number);
+  const nascimento = new Date(ano, mes - 1, dia);
+  const hoje = new Date();
+
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aindaNaoFezAniversario =
+    hoje.getMonth() < nascimento.getMonth() ||
+    (hoje.getMonth() === nascimento.getMonth() &&
+      hoje.getDate() < nascimento.getDate());
+
+  if (aindaNaoFezAniversario) {
+    idade -= 1;
+  }
+
+  return idade;
+}
+
 export async function listarUnidadesComMoradores(): Promise<
   UnidadeComMoradores[]
 > {
   const { data, error } = await supabase
     .from('unidades')
-    .select('*, moradores(*)')
+    .select('*, moradores(*), pets(*), dependentes(*)')
     .order('bloco', { ascending: true })
     .order('numero', { ascending: true })
     .limit(1000);
@@ -111,6 +181,25 @@ export async function criarUnidade(payload: NovaUnidade): Promise<Unidade> {
   }
 
   return data as Unidade;
+}
+
+export async function atualizarUnidade(
+  id: string,
+  payload: AtualizacaoUnidade,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('unidades')
+    .update(payload)
+    .eq('id', id)
+    .select('id');
+
+  if (error) {
+    throw new ErroUnidade(error.message, error.code);
+  }
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível atualizar a unidade — nenhuma linha afetada.',
+  );
 }
 
 // Gera o produto cartesiano blocos×números e cria só as combinações que
@@ -189,6 +278,48 @@ export async function criarUnidadesEmMassa(
   };
 }
 
+// on delete cascade já existe no banco (unidades -> moradores/pets/
+// dependentes): excluir a unidade remove tudo vinculado junto, sem
+// violação de FK. A tela avisa disso na confirmação inline antes de
+// chamar esta função.
+export async function excluirUnidade(id: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('unidades')
+    .delete()
+    .eq('id', id)
+    .select('id');
+
+  if (error) {
+    throw new ErroUnidade(error.message, error.code);
+  }
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível excluir a unidade — nenhuma linha afetada.',
+  );
+}
+
+// Exclusão em massa (modo de seleção da lista) — mesmo cascade de
+// excluirUnidade, só que em lote por ids.
+export async function excluirUnidadesEmMassa(ids: string[]): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('unidades')
+    .delete()
+    .in('id', ids)
+    .select('id');
+
+  if (error) {
+    throw new ErroUnidade(error.message, error.code);
+  }
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível excluir as unidades selecionadas — nenhuma linha afetada.',
+  );
+}
+
 export async function criarMorador(payload: NovoMorador): Promise<Morador> {
   const { data, error } = await supabase
     .from('moradores')
@@ -264,12 +395,26 @@ export async function excluirMorador(id: string): Promise<void> {
   );
 }
 
-// on delete cascade já existe no banco (unidades -> moradores): excluir a
-// unidade remove os moradores vinculados junto, sem violação de FK. A tela
-// avisa disso na confirmação inline antes de chamar esta função.
-export async function excluirUnidade(id: string): Promise<void> {
+export async function criarPet(payload: NovoPet): Promise<Pet> {
   const { data, error } = await supabase
-    .from('unidades')
+    .from('pets')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw new ErroUnidade(error.message, error.code);
+  }
+  if (!data) {
+    throw new Error('Não foi possível criar o pet — nenhuma linha retornada.');
+  }
+
+  return data as Pet;
+}
+
+export async function excluirPet(id: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('pets')
     .delete()
     .eq('id', id)
     .select('id');
@@ -279,6 +424,43 @@ export async function excluirUnidade(id: string): Promise<void> {
   }
   garantirLinhaAfetada(
     data,
-    'Não foi possível excluir a unidade — nenhuma linha afetada.',
+    'Não foi possível excluir o pet — nenhuma linha afetada.',
+  );
+}
+
+export async function criarDependente(
+  payload: NovoDependente,
+): Promise<Dependente> {
+  const { data, error } = await supabase
+    .from('dependentes')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw new ErroUnidade(error.message, error.code);
+  }
+  if (!data) {
+    throw new Error(
+      'Não foi possível criar o dependente — nenhuma linha retornada.',
+    );
+  }
+
+  return data as Dependente;
+}
+
+export async function excluirDependente(id: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('dependentes')
+    .delete()
+    .eq('id', id)
+    .select('id');
+
+  if (error) {
+    throw new ErroUnidade(error.message, error.code);
+  }
+  garantirLinhaAfetada(
+    data,
+    'Não foi possível excluir o dependente — nenhuma linha afetada.',
   );
 }
