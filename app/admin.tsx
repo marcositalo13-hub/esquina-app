@@ -59,6 +59,13 @@ const cards: CardConfig[] = [
     href: '/admin/unidades',
   },
   {
+    key: 'funcionarios',
+    label: 'Funcionários',
+    icon: 'id-card-outline',
+    ativo: true,
+    href: '/admin/funcionarios',
+  },
+  {
     key: 'prestadores',
     label: 'Prestadores',
     icon: 'briefcase-outline',
