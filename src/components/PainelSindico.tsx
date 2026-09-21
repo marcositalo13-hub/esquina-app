@@ -7,28 +7,41 @@ import { fonts, light, radius, semantic, spacing } from '../theme';
 // Painel do Síndico: sempre visível (sem recolher), busca no mount e
 // resume o dia de hoje em 4 blocos — farol geral, progresso, rotas em
 // andamento e alertas. Sem alternador de escopo: é sempre "hoje".
+type RotaResponsavel = {
+  id: string;
+  funcionario_id: string | null;
+};
+
 export function PainelSindico() {
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
+  const [rotas, setRotas] = useState<RotaResponsavel[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelado = false;
 
-    supabase
-      .from('ordens_servico')
-      .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))')
-      .then(({ data, error }) => {
-        if (cancelado) {
-          return;
-        }
-        setCarregando(false);
-        if (error) {
-          setErro(error.message);
-          return;
-        }
-        setOrdens((data ?? []) as OrdemServico[]);
-      });
+    Promise.all([
+      supabase
+        .from('ordens_servico')
+        .select('*, planos_manutencao(*, tipos_atividade(*), rotas(*))'),
+      supabase.from('rotas').select('id, funcionario_id'),
+    ]).then(([ordensResultado, rotasResultado]) => {
+      if (cancelado) {
+        return;
+      }
+      setCarregando(false);
+      if (ordensResultado.error) {
+        setErro(ordensResultado.error.message);
+        return;
+      }
+      if (rotasResultado.error) {
+        setErro(rotasResultado.error.message);
+        return;
+      }
+      setOrdens((ordensResultado.data ?? []) as OrdemServico[]);
+      setRotas((rotasResultado.data ?? []) as RotaResponsavel[]);
+    });
 
     return () => {
       cancelado = true;
@@ -100,7 +113,41 @@ export function PainelSindico() {
     return { total, iniciadas };
   }, [ordensHoje]);
 
-  const totalAlertas = atrasadasHoje.length + reprovacoesPendentes.length;
+  // Toda rota com funcionario_id nulo — independente de estar ativa ou
+  // prevista para hoje, é uma pendência de responsabilidade, não de prazo.
+  const rotasSemResponsavel = useMemo(
+    () => rotas.filter((rota) => rota.funcionario_id === null),
+    [rotas],
+  );
+
+  const totalAlertas =
+    atrasadasHoje.length +
+    reprovacoesPendentes.length +
+    rotasSemResponsavel.length;
+
+  const legendaAlertas = useMemo(() => {
+    const partes: string[] = [];
+    if (atrasadasHoje.length > 0) {
+      partes.push(
+        `${atrasadasHoje.length} atraso${atrasadasHoje.length === 1 ? '' : 's'}`,
+      );
+    }
+    if (reprovacoesPendentes.length > 0) {
+      partes.push(
+        `${reprovacoesPendentes.length} reprovaç${
+          reprovacoesPendentes.length === 1 ? 'ão' : 'ões'
+        } pendente${reprovacoesPendentes.length === 1 ? '' : 's'}`,
+      );
+    }
+    if (rotasSemResponsavel.length > 0) {
+      partes.push(
+        `${rotasSemResponsavel.length} rota${
+          rotasSemResponsavel.length === 1 ? '' : 's'
+        } sem responsável`,
+      );
+    }
+    return partes.join(', ');
+  }, [atrasadasHoje, reprovacoesPendentes, rotasSemResponsavel]);
 
   return (
     <View style={styles.card}>
@@ -168,9 +215,7 @@ export function PainelSindico() {
             ) : (
               <>
                 <Text style={styles.alertaNumero}>{totalAlertas}</Text>
-                <Text style={styles.legenda}>
-                  atrasos e reprovações pendentes
-                </Text>
+                <Text style={styles.legenda}>{legendaAlertas}</Text>
               </>
             )}
           </View>
