@@ -8,6 +8,7 @@ import {
 } from '../src/components/BottomTabBar';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import condos from '../src/data/condos';
+import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, spacing } from '../src/theme';
 
 const condo = condos[0];
@@ -41,8 +42,13 @@ export default function Home() {
           <Text style={styles.condoName} numberOfLines={1}>
             {condo.nome}
           </Text>
-          <Pressable onPress={() => router.replace('/login')}>
-            <Text style={styles.trocarPerfil}>Trocar perfil</Text>
+          <Pressable
+            onPress={async () => {
+              await supabase.auth.signOut();
+              router.replace('/login');
+            }}
+          >
+            <Text style={styles.trocarPerfil}>Sair</Text>
           </Pressable>
         </View>
         <Text style={styles.welcome}>Bem-vindo</Text>

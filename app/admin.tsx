@@ -129,8 +129,13 @@ export default function Admin() {
 
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.title}>Administrador</Text>
-        <Pressable onPress={() => router.replace('/login')}>
-          <Text style={styles.trocarPerfil}>Trocar perfil</Text>
+        <Pressable
+          onPress={async () => {
+            await supabase.auth.signOut();
+            router.replace('/login');
+          }}
+        >
+          <Text style={styles.trocarPerfil}>Sair</Text>
         </Pressable>
       </View>
 

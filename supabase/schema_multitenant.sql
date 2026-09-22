@@ -91,3 +91,17 @@ alter table rotas
 -- 8. Funcionário (usuarios) responsável pela ordem de serviço — nullable.
 alter table ordens_servico
   add column if not exists funcionario_id uuid references usuarios (id);
+
+-- 9. Login real (Supabase Auth): depois de autenticar, a própria tela
+-- consulta `usuarios` pelo id da sessão (auth.uid()) pra descobrir o papel
+-- e decidir pra onde ir. `usuarios` tem RLS habilitada sem política nenhuma
+-- (ver contexto deste arquivo) — sem isto, essa consulta sempre volta
+-- vazia, silenciosamente, e todo login cai em "Módulo ainda não
+-- disponível" mesmo pra administrador/zeladoria válidos. Política mínima:
+-- cada usuário autenticado só lê a própria linha, nunca as dos outros.
+alter table usuarios enable row level security;
+
+create policy "usuarios select self" on usuarios
+  for select
+  to authenticated
+  using (auth.uid() = id);

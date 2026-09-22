@@ -1,6 +1,5 @@
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   Image,
@@ -14,32 +13,61 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { dark, fonts, radius, spacing } from '../src/theme';
+import { supabase } from '../src/lib/supabase';
+import { dark, fonts, radius, semantic, spacing } from '../src/theme';
 
-type Perfil = 'Administrador' | 'Zeladoria' | 'Morador';
+// Máscara de CPF (000.000.000-00) — mesmo padrão de "helper duplicado por
+// arquivo" já usado no projeto (normalizarTexto etc.), sem componente
+// compartilhado porque só este formulário precisa disso hoje.
+function aplicarMascaraCpf(valor: string): string {
+  return valor
+    .replace(/\D/g, '')
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+}
 
-const perfis: Perfil[] = ['Administrador', 'Zeladoria', 'Morador'];
+function somenteDigitos(texto: string): string {
+  return texto.replace(/\D/g, '');
+}
 
 export default function Login() {
   const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState('');
+  const [cpf, setCpf] = useState('');
   const [senha, setSenha] = useState('');
-  const [selectedProfile, setSelectedProfile] = useState<Perfil | null>(null);
+  const [entrando, setEntrando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
-  function handleEntrar() {
-    const perfil = selectedProfile ?? 'Morador';
+  const cpfDigitos = somenteDigitos(cpf);
+  const formularioValido = cpfDigitos.length === 11 && senha.length > 0;
 
-    if (perfil === 'Administrador') {
-      router.replace('/admin');
+  async function handleEntrar() {
+    if (!formularioValido || entrando) {
       return;
     }
 
-    if (perfil === 'Zeladoria') {
-      router.replace('/preservacao');
-      return;
-    }
+    setEntrando(true);
+    setErro(null);
+    try {
+      const email = `${cpfDigitos}@login.aegis.app`;
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: senha,
+      });
 
-    router.replace('/home');
+      if (error) {
+        setErro('CPF ou senha inválidos.');
+        return;
+      }
+
+      // Pra onde ir depois de autenticar (papel do usuário) é decidido em
+      // app/_layout.tsx, que reage à sessão mudando — não navega daqui.
+    } catch {
+      setErro('CPF ou senha inválidos.');
+    } finally {
+      setEntrando(false);
+    }
   }
 
   return (
@@ -78,43 +106,15 @@ export default function Login() {
             <View style={styles.cardOverlay} pointerEvents="none" />
 
             <View style={styles.cardContent}>
-              <Text style={styles.testarComo}>Testar como:</Text>
-              <View style={styles.chipRow}>
-                {perfis.map((perfil) => {
-                  const selecionado = selectedProfile === perfil;
-                  return (
-                    <Pressable
-                      key={perfil}
-                      style={[
-                        styles.chip,
-                        selecionado && styles.chipSelecionado,
-                      ]}
-                      onPress={() => setSelectedProfile(perfil)}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          selecionado && styles.chipTextSelecionado,
-                        ]}
-                      >
-                        {perfil}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
               <View style={styles.form}>
                 <View style={styles.field}>
-                  <Text style={styles.label}>Email</Text>
+                  <Text style={styles.label}>CPF</Text>
                   <TextInput
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="seu@email.com"
+                    value={cpf}
+                    onChangeText={(texto) => setCpf(aplicarMascaraCpf(texto))}
+                    placeholder="000.000.000-00"
                     placeholderTextColor={dark.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
+                    keyboardType="numeric"
                     style={styles.input}
                   />
                 </View>
@@ -131,8 +131,20 @@ export default function Login() {
                   />
                 </View>
 
-                <Pressable style={styles.button} onPress={handleEntrar}>
-                  <Text style={styles.buttonText}>Entrar</Text>
+                {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+                <Pressable
+                  style={[
+                    styles.button,
+                    (!formularioValido || entrando) &&
+                      styles.buttonDesabilitado,
+                  ]}
+                  onPress={handleEntrar}
+                  disabled={!formularioValido || entrando}
+                >
+                  <Text style={styles.buttonText}>
+                    {entrando ? 'Entrando…' : 'Entrar'}
+                  </Text>
                 </Pressable>
               </View>
             </View>
@@ -204,38 +216,6 @@ const styles = StyleSheet.create({
   cardContent: {
     padding: spacing.lg,
   },
-  testarComo: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: dark.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  chip: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: dark.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs,
-    alignItems: 'center',
-  },
-  chipSelecionado: {
-    backgroundColor: dark.elevated,
-    borderColor: dark.textPrimary,
-  },
-  chipText: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    color: dark.textSecondary,
-    textAlign: 'center',
-  },
-  chipTextSelecionado: {
-    color: dark.textPrimary,
-  },
   form: {
     gap: spacing.md,
   },
@@ -258,12 +238,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: dark.textPrimary,
   },
+  erro: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: semantic.overdue,
+  },
   button: {
     backgroundColor: dark.textPrimary,
     borderRadius: radius.md,
     paddingVertical: spacing.sm + 4,
     alignItems: 'center',
     marginTop: spacing.sm,
+  },
+  buttonDesabilitado: {
+    opacity: 0.5,
   },
   buttonText: {
     fontFamily: fonts.semiBold,
