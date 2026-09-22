@@ -29,6 +29,16 @@ function ehRotaProtegida(pathname: string): boolean {
 // undefined = ainda não checou a sessão inicial; null = checou, não tem.
 type SessaoEstado = Session | null | undefined;
 
+// Estado único pro papel do usuário, em vez de dois booleanos separados
+// (papel/papelChecado) que podiam ficar fora de sincronia entre si — a
+// causa raiz do bug diagnosticado: logout não resetava o papel antigo, e
+// duas consultas a `usuarios` em voo ao mesmo tempo (de sessões diferentes)
+// podiam sobrescrever uma à outra fora de ordem.
+type EstadoPapel =
+  | { status: 'carregando' }
+  | { status: 'deslogado' }
+  | { status: 'pronto'; papel: string | null };
+
 export default function RootLayout() {
   const router = useRouter();
   const pathname = usePathname();
@@ -42,8 +52,9 @@ export default function RootLayout() {
   });
 
   const [sessao, setSessao] = useState<SessaoEstado>(undefined);
-  const [papel, setPapel] = useState<string | null>(null);
-  const [papelChecado, setPapelChecado] = useState(false);
+  const [estadoPapel, setEstadoPapel] = useState<EstadoPapel>({
+    status: 'carregando',
+  });
 
   // Sessão inicial (persistida via AsyncStorage) + qualquer mudança depois
   // (login, logout, refresh de token).
@@ -64,54 +75,70 @@ export default function RootLayout() {
   }, []);
 
   // Papel do usuário autenticado — decide pra onde a Parte 3 manda depois
-  // do login. Sem sessão, não há o que buscar.
+  // do login. `cancelado` evita que uma consulta antiga (de uma sessão que
+  // já não é mais a atual) sobrescreva o resultado de uma mais nova.
   useEffect(() => {
+    let cancelado = false;
+
     if (sessao === undefined) {
-      return;
-    }
-    if (!sessao) {
-      setPapel(null);
-      setPapelChecado(true);
-      return;
+      setEstadoPapel({ status: 'carregando' });
+      return () => {
+        cancelado = true;
+      };
     }
 
-    setPapelChecado(false);
+    if (!sessao) {
+      setEstadoPapel({ status: 'deslogado' });
+      return () => {
+        cancelado = true;
+      };
+    }
+
+    setEstadoPapel({ status: 'carregando' });
     supabase
       .from('usuarios')
       .select('papel')
       .eq('id', sessao.user.id)
       .single()
       .then(({ data }) => {
-        setPapel(data?.papel ?? null);
-        setPapelChecado(true);
+        if (cancelado) {
+          return;
+        }
+        setEstadoPapel({ status: 'pronto', papel: data?.papel ?? null });
       });
+
+    return () => {
+      cancelado = true;
+    };
   }, [sessao]);
 
-  // Proteção de rota + destino pós-login, reativos a sessão/papel/rota
-  // atual — cobre tanto "acabei de logar" quanto "abri o app com sessão já
-  // persistida" (Parte 1) parado em /login ou /.
+  // Proteção de rota + destino pós-login, decidido só a partir de
+  // estadoPapel — cobre tanto "acabei de logar" quanto "abri o app com
+  // sessão já persistida" (Parte 1) parado em /login ou /.
   useEffect(() => {
-    if (sessao === undefined || !papelChecado) {
+    if (estadoPapel.status === 'carregando') {
       return;
     }
 
-    if (!sessao && ehRotaProtegida(pathname)) {
-      router.replace('/login');
+    if (estadoPapel.status === 'deslogado') {
+      if (ehRotaProtegida(pathname)) {
+        router.replace('/login');
+      }
       return;
     }
 
-    if (sessao && pathname === '/login') {
-      if (papel === 'administrador') {
+    if (pathname === '/login') {
+      if (estadoPapel.papel === 'administrador') {
         router.replace('/admin');
-      } else if (papel === 'zeladoria') {
+      } else if (estadoPapel.papel === 'zeladoria') {
         router.replace('/preservacao');
       } else {
         router.replace('/modulo-indisponivel');
       }
     }
-  }, [sessao, papel, papelChecado, pathname, router]);
+  }, [estadoPapel, pathname, router]);
 
-  const pronto = fontsLoaded && sessao !== undefined && papelChecado;
+  const pronto = fontsLoaded && estadoPapel.status !== 'carregando';
 
   useEffect(() => {
     if (pronto) {
