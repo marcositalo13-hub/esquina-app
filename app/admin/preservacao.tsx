@@ -234,6 +234,14 @@ export default function AdminPreservacao() {
   const [erroModalEditarRota, setErroModalEditarRota] = useState<string | null>(
     null,
   );
+
+  // Nome do responsável por rota, pra exibir no card de "Atividades do
+  // dia" — carregado uma vez no mount (mesmo padrão de carregarRotas/
+  // carregarAmbientes), separado de funcionariosZeladoria (esse é sob
+  // demanda, só ao abrir "Editar rota", e já filtrado por papel/ativo).
+  const [funcionariosPorId, setFuncionariosPorId] = useState<
+    Record<string, string>
+  >({});
   // Qual fluxo abriu "Nova rota" — decide onde a rota recém-criada deve ser
   // selecionada automaticamente ao ser criada (ver handleCriarRota).
   const [origemNovaRota, setOrigemNovaRota] = useState<'plano' | 'atribuir'>(
@@ -369,6 +377,31 @@ export default function AdminPreservacao() {
     }
   }, []);
 
+  // Nome do responsável por rota — via api/listar-funcionarios.ts porque
+  // `usuarios` tem RLS habilitada sem política ainda (a anon key usada por
+  // `supabase` aqui não consegue ler nada lá).
+  const carregarFuncionariosNomes = useCallback(async () => {
+    try {
+      const resposta = await fetch('/api/listar-funcionarios');
+      const dados = (await resposta.json().catch(() => null)) as {
+        funcionarios?: { id: string; nome: string }[];
+      } | null;
+
+      if (!resposta.ok) {
+        return;
+      }
+
+      const mapa: Record<string, string> = {};
+      for (const item of dados?.funcionarios ?? []) {
+        mapa[item.id] = item.nome;
+      }
+      setFuncionariosPorId(mapa);
+    } catch {
+      // Falha aqui não trava a tela — o card só mostra "Sem responsável"
+      // mesmo quando funcionario_id está preenchido, em vez do nome.
+    }
+  }, []);
+
   // Catálogo de Ambientes usado pelo seletor de "Local" do formulário de
   // plano — só os ativos, mesmo padrão de app/admin/ambientes.tsx.
   const carregarAmbientes = useCallback(async () => {
@@ -414,6 +447,7 @@ export default function AdminPreservacao() {
       carregarRotas(),
       carregarAmbientes(),
       carregarExtraordinarias(),
+      carregarFuncionariosNomes(),
     ]).finally(() => {
       setCarregando(false);
       // Top-up silencioso: roda depois do primeiro carregamento, sem
@@ -429,6 +463,7 @@ export default function AdminPreservacao() {
     carregarRotas,
     carregarAmbientes,
     carregarExtraordinarias,
+    carregarFuncionariosNomes,
   ]);
 
   // Realtime: qualquer INSERT/UPDATE/DELETE em ordens_servico (feito por
@@ -2483,6 +2518,20 @@ export default function AdminPreservacao() {
                         {itens.length} atividades programadas para o dia
                       </Text>
 
+                      {rota.funcionario_id ? (
+                        <Text style={styles.grupoRotaResponsavelTexto}>
+                          Responsável:{' '}
+                          {funcionariosPorId[rota.funcionario_id] ??
+                            'Funcionário'}
+                        </Text>
+                      ) : (
+                        <View style={styles.seloSemResponsavel}>
+                          <Text style={styles.seloSemResponsavelTexto}>
+                            Sem responsável
+                          </Text>
+                        </View>
+                      )}
+
                       <View style={styles.grupoRotaProgressoRow}>
                         <View style={styles.grupoRotaProgressoTrilho}>
                           <View
@@ -3887,6 +3936,25 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 12,
     color: light.textSecondary,
+  },
+  grupoRotaResponsavelTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  seloSemResponsavel: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: semantic.overdue,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 2,
+    backgroundColor: `${semantic.overdue}1A`,
+  },
+  seloSemResponsavelTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: semantic.overdue,
   },
   grupoRotaProgressoRow: {
     flexDirection: 'row',

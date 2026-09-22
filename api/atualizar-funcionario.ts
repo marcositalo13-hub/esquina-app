@@ -17,9 +17,22 @@ export type Pendencias = {
   ordens: PendenciaOrdem[];
 };
 
+const PAPEIS_PERMITIDOS = ['administrador', 'zeladoria'] as const;
+type PapelPermitido = (typeof PAPEIS_PERMITIDOS)[number];
+
+function ehPapelPermitido(valor: unknown): valor is PapelPermitido {
+  return (
+    typeof valor === 'string' &&
+    (PAPEIS_PERMITIDOS as readonly string[]).includes(valor)
+  );
+}
+
 type CorpoRequisicao = {
   id?: string;
   ativo?: boolean;
+  nome?: string;
+  funcao?: string;
+  papel?: string;
 };
 
 function criarClienteAdmin(): SupabaseClient {
@@ -96,6 +109,21 @@ export async function aplicarAtivoFuncionario(
   }
 }
 
+async function aplicarEdicaoFuncionario(
+  supabaseAdmin: SupabaseClient,
+  id: string,
+  dados: { nome: string; funcao: string | null; papel: PapelPermitido },
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('usuarios')
+    .update(dados)
+    .eq('id', id);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'PATCH') {
     res.status(405).json({ erro: 'Método não permitido.' });
@@ -103,9 +131,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const corpo = (req.body ?? {}) as CorpoRequisicao;
-  const { id, ativo } = corpo;
+  const { id } = corpo;
 
-  if (!id || typeof ativo !== 'boolean') {
+  if (!id) {
     res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
     return;
   }
@@ -113,16 +141,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabaseAdmin = criarClienteAdmin();
 
   try {
-    if (ativo === false) {
-      const pendencias = await buscarPendenciasFuncionario(supabaseAdmin, id);
-      if (pendencias.rotas.length > 0 || pendencias.ordens.length > 0) {
-        res.status(409).json({ pendencias });
-        return;
+    // Duas formas de chamar este endpoint: alternar `ativo` (com checagem
+    // de pendências) ou editar nome/função/papel — a tela nunca manda os
+    // dois de uma vez, então o payload decide qual caminho seguir.
+    if (typeof corpo.ativo === 'boolean') {
+      if (corpo.ativo === false) {
+        const pendencias = await buscarPendenciasFuncionario(supabaseAdmin, id);
+        if (pendencias.rotas.length > 0 || pendencias.ordens.length > 0) {
+          res.status(409).json({ pendencias });
+          return;
+        }
       }
+
+      await aplicarAtivoFuncionario(supabaseAdmin, id, corpo.ativo);
+      res.status(200).json({ ok: true });
+      return;
     }
 
-    await aplicarAtivoFuncionario(supabaseAdmin, id, ativo);
-    res.status(200).json({ ok: true });
+    if (typeof corpo.nome === 'string') {
+      const nome = corpo.nome.trim();
+      const funcao = corpo.funcao?.trim();
+
+      if (!nome) {
+        res.status(400).json({ erro: 'Informe o nome.' });
+        return;
+      }
+      if (!ehPapelPermitido(corpo.papel)) {
+        res.status(400).json({ erro: 'Papel inválido.' });
+        return;
+      }
+
+      await aplicarEdicaoFuncionario(supabaseAdmin, id, {
+        nome,
+        funcao: funcao || null,
+        papel: corpo.papel,
+      });
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    res.status(400).json({ erro: 'Campos obrigatórios ausentes.' });
   } catch (error) {
     console.error('atualizar-funcionario: erro ao atualizar', error);
     res.status(500).json({ erro: 'Não foi possível atualizar o funcionário.' });

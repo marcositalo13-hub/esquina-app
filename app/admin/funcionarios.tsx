@@ -78,6 +78,17 @@ export default function AdminFuncionarios() {
   const [erroModal, setErroModal] = useState<string | null>(null);
 
   const [inativandoId, setInativandoId] = useState<string | null>(null);
+  const [inativosExpandidos, setInativosExpandidos] = useState(false);
+
+  const [modalEditarVisivel, setModalEditarVisivel] = useState(false);
+  const [funcionarioEditandoId, setFuncionarioEditandoId] = useState<
+    string | null
+  >(null);
+  const [nomeEditar, setNomeEditar] = useState('');
+  const [funcaoEditar, setFuncaoEditar] = useState('');
+  const [papelEditar, setPapelEditar] = useState<PapelFuncionario | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [erroModalEditar, setErroModalEditar] = useState<string | null>(null);
 
   // Menu de 3 pontos por funcionário — mesmo componente (CardMenu, um Modal
   // transparente ancorado) e mesmo padrão de estado/handlers já usados nos
@@ -163,6 +174,64 @@ export default function AdminFuncionarios() {
 
   function fecharMenuFuncionario() {
     setMenuFuncionarioAbertoId(null);
+  }
+
+  function abrirModalEditar(funcionario: Funcionario) {
+    fecharMenuFuncionario();
+    setFuncionarioEditandoId(funcionario.id);
+    setNomeEditar(funcionario.nome);
+    setFuncaoEditar(funcionario.funcao ?? '');
+    setPapelEditar(funcionario.papel);
+    setErroModalEditar(null);
+    setModalEditarVisivel(true);
+  }
+
+  function fecharModalEditar() {
+    setModalEditarVisivel(false);
+    setFuncionarioEditandoId(null);
+  }
+
+  const formularioEdicaoValido =
+    nomeEditar.trim().length > 0 && papelEditar !== null;
+
+  async function handleSalvarEdicao() {
+    if (!funcionarioEditandoId || !formularioEdicaoValido || salvandoEdicao) {
+      return;
+    }
+
+    setSalvandoEdicao(true);
+    setErroModalEditar(null);
+    try {
+      const resposta = await fetch('/api/atualizar-funcionario', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: funcionarioEditandoId,
+          nome: nomeEditar.trim(),
+          funcao: funcaoEditar.trim() || undefined,
+          papel: papelEditar,
+        }),
+      });
+
+      const dados = (await resposta.json().catch(() => null)) as {
+        ok?: boolean;
+        erro?: string;
+      } | null;
+
+      if (!resposta.ok || !dados?.ok) {
+        throw new Error(
+          dados?.erro ?? 'Não foi possível salvar o funcionário.',
+        );
+      }
+
+      setModalEditarVisivel(false);
+      setFuncionarioEditandoId(null);
+      await carregar();
+    } catch (erro) {
+      setErroModalEditar(mensagemDeErro(erro));
+    } finally {
+      setSalvandoEdicao(false);
+    }
   }
 
   const cpfDigitos = somenteDigitos(cpf);
@@ -418,6 +487,88 @@ export default function AdminFuncionarios() {
     );
   }
 
+  const funcionariosAtivos = funcionarios.filter(
+    (funcionario) => funcionario.ativo,
+  );
+  const funcionariosInativos = funcionarios.filter(
+    (funcionario) => !funcionario.ativo,
+  );
+
+  function renderFuncionarioCard(funcionario: Funcionario) {
+    return (
+      <Fragment key={funcionario.id}>
+        <View style={styles.funcionarioCard}>
+          <View style={styles.funcionarioCardTextos}>
+            <View style={styles.funcionarioNomeRow}>
+              <Text
+                style={[
+                  styles.funcionarioNome,
+                  !funcionario.ativo && styles.funcionarioNomeInativo,
+                ]}
+              >
+                {funcionario.nome}
+              </Text>
+              {!funcionario.ativo ? (
+                <View style={styles.seloInativo}>
+                  <Text style={styles.seloInativoTexto}>Inativo</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.funcionarioFuncao}>
+              {funcionario.funcao || 'Sem função definida'}
+            </Text>
+          </View>
+          <View style={styles.funcionarioCardDireita}>
+            <Chip label={papelLabel(funcionario.papel)} selected />
+            <Pressable
+              ref={(el) => {
+                if (el) {
+                  menuFuncionarioIconRefs.current.set(funcionario.id, el);
+                }
+              }}
+              onPress={() => handleAbrirMenuFuncionario(funcionario.id)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              disabled={inativandoId === funcionario.id}
+              style={({ pressed }) => [
+                styles.funcionarioMenuButton,
+                pressed && styles.funcionarioMenuButtonPressionado,
+              ]}
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={18}
+                color={light.textSecondary}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        <CardMenu
+          visible={menuFuncionarioAbertoId === funcionario.id}
+          onClose={fecharMenuFuncionario}
+          anchorPosition={menuFuncionarioAncora}
+        >
+          <Pressable
+            style={styles.menuItem}
+            onPress={() => abrirModalEditar(funcionario)}
+          >
+            <Text style={styles.menuItemTexto}>Editar</Text>
+          </Pressable>
+          {funcionario.ativo ? (
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => handleInativar(funcionario)}
+            >
+              <Text style={[styles.menuItemTexto, styles.menuItemExcluirTexto]}>
+                {inativandoId === funcionario.id ? 'Verificando…' : 'Inativar'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </CardMenu>
+      </Fragment>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScreenBackground />
@@ -453,86 +604,31 @@ export default function AdminFuncionarios() {
           <Text style={styles.vazio}>Nenhum funcionário cadastrado ainda.</Text>
         ) : null}
 
-        {!carregando
-          ? funcionarios.map((funcionario) => (
-              <Fragment key={funcionario.id}>
-                <View style={styles.funcionarioCard}>
-                  <View style={styles.funcionarioCardTextos}>
-                    <View style={styles.funcionarioNomeRow}>
-                      <Text
-                        style={[
-                          styles.funcionarioNome,
-                          !funcionario.ativo && styles.funcionarioNomeInativo,
-                        ]}
-                      >
-                        {funcionario.nome}
-                      </Text>
-                      {!funcionario.ativo ? (
-                        <View style={styles.seloInativo}>
-                          <Text style={styles.seloInativoTexto}>Inativo</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <Text style={styles.funcionarioFuncao}>
-                      {funcionario.funcao || 'Sem função definida'}
-                    </Text>
-                  </View>
-                  <View style={styles.funcionarioCardDireita}>
-                    <Chip label={papelLabel(funcionario.papel)} selected />
-                    {funcionario.ativo ? (
-                      <Pressable
-                        ref={(el) => {
-                          if (el) {
-                            menuFuncionarioIconRefs.current.set(
-                              funcionario.id,
-                              el,
-                            );
-                          }
-                        }}
-                        onPress={() =>
-                          handleAbrirMenuFuncionario(funcionario.id)
-                        }
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        disabled={inativandoId === funcionario.id}
-                        style={({ pressed }) => [
-                          styles.funcionarioMenuButton,
-                          pressed && styles.funcionarioMenuButtonPressionado,
-                        ]}
-                      >
-                        <Ionicons
-                          name="ellipsis-horizontal"
-                          size={18}
-                          color={light.textSecondary}
-                        />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </View>
+        {!carregando ? funcionariosAtivos.map(renderFuncionarioCard) : null}
 
-                <CardMenu
-                  visible={menuFuncionarioAbertoId === funcionario.id}
-                  onClose={fecharMenuFuncionario}
-                  anchorPosition={menuFuncionarioAncora}
-                >
-                  <Pressable
-                    style={styles.menuItem}
-                    onPress={() => handleInativar(funcionario)}
-                  >
-                    <Text
-                      style={[
-                        styles.menuItemTexto,
-                        styles.menuItemExcluirTexto,
-                      ]}
-                    >
-                      {inativandoId === funcionario.id
-                        ? 'Verificando…'
-                        : 'Inativar'}
-                    </Text>
-                  </Pressable>
-                </CardMenu>
-              </Fragment>
-            ))
-          : null}
+        {!carregando && funcionariosInativos.length > 0 ? (
+          <View style={styles.secaoInativos}>
+            <Pressable
+              style={styles.secaoInativosCabecalho}
+              onPress={() => setInativosExpandidos((atual) => !atual)}
+            >
+              <Text style={styles.secaoInativosCabecalhoTexto}>
+                Inativos ({funcionariosInativos.length})
+              </Text>
+              <Ionicons
+                name={inativosExpandidos ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={light.inkAction}
+              />
+            </Pressable>
+
+            {inativosExpandidos ? (
+              <View style={styles.listaInativos}>
+                {funcionariosInativos.map(renderFuncionarioCard)}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
 
       <Modal
@@ -652,6 +748,102 @@ export default function AdminFuncionarios() {
             >
               <Text style={styles.botaoSalvarTexto}>
                 {salvando ? 'Salvando…' : 'Salvar'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalEditarVisivel}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={fecharModalEditar}
+      >
+        <View style={styles.telaModal}>
+          <View
+            style={[
+              styles.cabecalhoModal,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <View style={styles.cabecalhoModalBotao} />
+            <Text style={styles.tituloModal}>Editar funcionário</Text>
+            <Pressable
+              style={styles.cabecalhoModalBotao}
+              onPress={fecharModalEditar}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.corpoModal}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.field}>
+              <Text style={styles.label}>Nome</Text>
+              <TextInput
+                value={nomeEditar}
+                onChangeText={setNomeEditar}
+                placeholder="Nome completo"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Função/Cargo</Text>
+              <TextInput
+                value={funcaoEditar}
+                onChangeText={setFuncaoEditar}
+                placeholder="Ex: Zelador, Porteiro (opcional)"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Papel</Text>
+              <View style={styles.chipWrap}>
+                {PAPEIS.map((item) => (
+                  <Chip
+                    key={item.valor}
+                    label={item.label}
+                    selected={papelEditar === item.valor}
+                    onPress={() => setPapelEditar(item.valor)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            {erroModalEditar ? (
+              <Text style={styles.erro}>{erroModalEditar}</Text>
+            ) : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.rodapeModal,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={[
+                styles.botaoSalvar,
+                (!formularioEdicaoValido || salvandoEdicao) &&
+                  styles.botaoSalvarDesabilitado,
+              ]}
+              onPress={handleSalvarEdicao}
+              disabled={!formularioEdicaoValido || salvandoEdicao}
+            >
+              <Text style={styles.botaoSalvarTexto}>
+                {salvandoEdicao ? 'Salvando…' : 'Salvar'}
               </Text>
             </Pressable>
           </View>
@@ -799,6 +991,29 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: spacing.lg,
     paddingBottom: 40,
+    gap: spacing.sm,
+  },
+  // Seção recolhível dos inativos — mesmo padrão de cabeçalho
+  // expande/recolhe de grupoRotaExpandirRow em app/admin/preservacao.tsx.
+  secaoInativos: {
+    gap: spacing.sm,
+  },
+  secaoInativosCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: light.border,
+  },
+  secaoInativosCabecalhoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.inkAction,
+  },
+  listaInativos: {
     gap: spacing.sm,
   },
   erro: {
