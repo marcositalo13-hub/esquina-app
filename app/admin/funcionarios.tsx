@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { type AnchorPosition, CardMenu } from '../../src/components/CardMenu';
 import { Chip } from '../../src/components/Chip';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import type {
@@ -78,6 +79,16 @@ export default function AdminFuncionarios() {
 
   const [inativandoId, setInativandoId] = useState<string | null>(null);
 
+  // Menu de 3 pontos por funcionário — mesmo componente (CardMenu, um Modal
+  // transparente ancorado) e mesmo padrão de estado/handlers já usados nos
+  // cards de atividade em app/admin/preservacao.tsx.
+  const [menuFuncionarioAbertoId, setMenuFuncionarioAbertoId] = useState<
+    string | null
+  >(null);
+  const [menuFuncionarioAncora, setMenuFuncionarioAncora] =
+    useState<AnchorPosition>({ x: 0, y: 0 });
+  const menuFuncionarioIconRefs = useRef<Map<string, View>>(new Map());
+
   const [pendenciasVisivel, setPendenciasVisivel] = useState(false);
   const [funcionarioInativandoId, setFuncionarioInativandoId] = useState<
     string | null
@@ -137,6 +148,23 @@ export default function AdminFuncionarios() {
     setModalVisivel(false);
   }
 
+  function handleAbrirMenuFuncionario(id: string) {
+    if (menuFuncionarioAbertoId === id) {
+      fecharMenuFuncionario();
+      return;
+    }
+
+    const ref = menuFuncionarioIconRefs.current.get(id);
+    ref?.measureInWindow((x, y, _width, height) => {
+      setMenuFuncionarioAncora({ x, y: y + height });
+      setMenuFuncionarioAbertoId(id);
+    });
+  }
+
+  function fecharMenuFuncionario() {
+    setMenuFuncionarioAbertoId(null);
+  }
+
   const cpfDigitos = somenteDigitos(cpf);
   const formularioValido =
     nome.trim().length > 0 &&
@@ -187,6 +215,7 @@ export default function AdminFuncionarios() {
       return;
     }
 
+    fecharMenuFuncionario();
     setInativandoId(funcionario.id);
     setErroLista(null);
     try {
@@ -426,43 +455,82 @@ export default function AdminFuncionarios() {
 
         {!carregando
           ? funcionarios.map((funcionario) => (
-              <View key={funcionario.id} style={styles.funcionarioCard}>
-                <View style={styles.funcionarioCardTextos}>
-                  <View style={styles.funcionarioNomeRow}>
-                    <Text
-                      style={[
-                        styles.funcionarioNome,
-                        !funcionario.ativo && styles.funcionarioNomeInativo,
-                      ]}
-                    >
-                      {funcionario.nome}
+              <Fragment key={funcionario.id}>
+                <View style={styles.funcionarioCard}>
+                  <View style={styles.funcionarioCardTextos}>
+                    <View style={styles.funcionarioNomeRow}>
+                      <Text
+                        style={[
+                          styles.funcionarioNome,
+                          !funcionario.ativo && styles.funcionarioNomeInativo,
+                        ]}
+                      >
+                        {funcionario.nome}
+                      </Text>
+                      {!funcionario.ativo ? (
+                        <View style={styles.seloInativo}>
+                          <Text style={styles.seloInativoTexto}>Inativo</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.funcionarioFuncao}>
+                      {funcionario.funcao || 'Sem função definida'}
                     </Text>
-                    {!funcionario.ativo ? (
-                      <View style={styles.seloInativo}>
-                        <Text style={styles.seloInativoTexto}>Inativo</Text>
-                      </View>
+                  </View>
+                  <View style={styles.funcionarioCardDireita}>
+                    <Chip label={papelLabel(funcionario.papel)} selected />
+                    {funcionario.ativo ? (
+                      <Pressable
+                        ref={(el) => {
+                          if (el) {
+                            menuFuncionarioIconRefs.current.set(
+                              funcionario.id,
+                              el,
+                            );
+                          }
+                        }}
+                        onPress={() =>
+                          handleAbrirMenuFuncionario(funcionario.id)
+                        }
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        disabled={inativandoId === funcionario.id}
+                        style={({ pressed }) => [
+                          styles.funcionarioMenuButton,
+                          pressed && styles.funcionarioMenuButtonPressionado,
+                        ]}
+                      >
+                        <Ionicons
+                          name="ellipsis-horizontal"
+                          size={18}
+                          color={light.textSecondary}
+                        />
+                      </Pressable>
                     ) : null}
                   </View>
-                  <Text style={styles.funcionarioFuncao}>
-                    {funcionario.funcao || 'Sem função definida'}
-                  </Text>
                 </View>
-                <View style={styles.funcionarioCardDireita}>
-                  <Chip label={papelLabel(funcionario.papel)} selected />
-                  {funcionario.ativo ? (
-                    <Pressable
-                      onPress={() => handleInativar(funcionario)}
-                      disabled={inativandoId === funcionario.id}
+
+                <CardMenu
+                  visible={menuFuncionarioAbertoId === funcionario.id}
+                  onClose={fecharMenuFuncionario}
+                  anchorPosition={menuFuncionarioAncora}
+                >
+                  <Pressable
+                    style={styles.menuItem}
+                    onPress={() => handleInativar(funcionario)}
+                  >
+                    <Text
+                      style={[
+                        styles.menuItemTexto,
+                        styles.menuItemExcluirTexto,
+                      ]}
                     >
-                      <Text style={styles.acaoItemExcluirTexto}>
-                        {inativandoId === funcionario.id
-                          ? 'Verificando…'
-                          : 'Inativar'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              </View>
+                      {inativandoId === funcionario.id
+                        ? 'Verificando…'
+                        : 'Inativar'}
+                    </Text>
+                  </Pressable>
+                </CardMenu>
+              </Fragment>
             ))
           : null}
       </ScrollView>
@@ -875,6 +943,25 @@ const styles = StyleSheet.create({
   acaoItemExcluirTexto: {
     fontFamily: fonts.medium,
     fontSize: 12,
+    color: semantic.overdue,
+  },
+  funcionarioMenuButton: {
+    padding: 6,
+    borderRadius: radius.sm,
+  },
+  funcionarioMenuButtonPressionado: {
+    backgroundColor: light.sunken,
+  },
+  menuItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  menuItemTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  menuItemExcluirTexto: {
     color: semantic.overdue,
   },
   pendenciasIntro: {

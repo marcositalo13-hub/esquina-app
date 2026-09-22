@@ -90,6 +90,7 @@ export type Rota = {
   id: string;
   nome: string;
   ativo: boolean;
+  funcionario_id: string | null;
 };
 
 export type PlanoManutencao = {

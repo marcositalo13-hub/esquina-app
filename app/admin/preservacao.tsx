@@ -207,6 +207,33 @@ export default function AdminPreservacao() {
   const [nomeNovaRota, setNomeNovaRota] = useState('');
   const [criandoRota, setCriandoRota] = useState(false);
   const [erroModalRota, setErroModalRota] = useState<string | null>(null);
+
+  // Menu de 3 pontos do card de rota em "Atividades do dia" — estado
+  // próprio, mesmo motivo de menuExtraAbertoId (listas diferentes não
+  // compartilham estado de menu, pra nunca arriscar dois CardMenu abertos
+  // ao mesmo tempo para ids que colidem entre listas).
+  const [menuRotaAbertaId, setMenuRotaAbertaId] = useState<string | null>(null);
+  const [menuRotaAncora, setMenuRotaAncora] = useState<AnchorPosition>({
+    x: 0,
+    y: 0,
+  });
+  const menuRotaIconRefs = useRef<Map<string, View>>(new Map());
+
+  const [modalEditarRotaVisivel, setModalEditarRotaVisivel] = useState(false);
+  const [rotaEditandoId, setRotaEditandoId] = useState<string | null>(null);
+  const [nomeEditarRota, setNomeEditarRota] = useState('');
+  const [responsavelEditarRotaId, setResponsavelEditarRotaId] = useState<
+    string | null
+  >(null);
+  const [funcionariosZeladoria, setFuncionariosZeladoria] = useState<
+    { id: string; nome: string }[]
+  >([]);
+  const [carregandoFuncionariosZeladoria, setCarregandoFuncionariosZeladoria] =
+    useState(false);
+  const [salvandoEditarRota, setSalvandoEditarRota] = useState(false);
+  const [erroModalEditarRota, setErroModalEditarRota] = useState<string | null>(
+    null,
+  );
   // Qual fluxo abriu "Nova rota" — decide onde a rota recém-criada deve ser
   // selecionada automaticamente ao ser criada (ver handleCriarRota).
   const [origemNovaRota, setOrigemNovaRota] = useState<'plano' | 'atribuir'>(
@@ -832,6 +859,115 @@ export default function AdminPreservacao() {
 
   function fecharMenuExtra() {
     setMenuExtraAbertoId(null);
+  }
+
+  // Menu de 3 pontos do card de rota em "Atividades do dia" — mesmo padrão
+  // de handleAbrirMenuExtra/handleAbrirMenuAtividade.
+  function handleAbrirMenuRota(id: string) {
+    if (menuRotaAbertaId === id) {
+      fecharMenuRota();
+      return;
+    }
+
+    const ref = menuRotaIconRefs.current.get(id);
+    ref?.measureInWindow((x, y, _width, height) => {
+      setMenuRotaAncora({ x, y: y + height });
+      setMenuRotaAbertaId(id);
+    });
+  }
+
+  function fecharMenuRota() {
+    setMenuRotaAbertaId(null);
+  }
+
+  // Não existia tela/modal de edição de rota antes disto — só criação
+  // ("Nova rota") e atribuição de plano a uma rota. Carrega os funcionários
+  // de zeladoria ativos sob demanda (só quando o modal abre), mesma fonte
+  // de api/listar-funcionarios.ts usada em app/admin/funcionarios.tsx.
+  async function abrirModalEditarRota(rota: Rota) {
+    fecharMenuRota();
+    setRotaEditandoId(rota.id);
+    setNomeEditarRota(rota.nome);
+    setResponsavelEditarRotaId(rota.funcionario_id);
+    setErroModalEditarRota(null);
+    setModalEditarRotaVisivel(true);
+
+    setCarregandoFuncionariosZeladoria(true);
+    try {
+      const resposta = await fetch('/api/listar-funcionarios');
+      const dados = (await resposta.json().catch(() => null)) as {
+        funcionarios?: {
+          id: string;
+          nome: string;
+          papel: string;
+          ativo: boolean;
+        }[];
+        erro?: string;
+      } | null;
+
+      if (!resposta.ok) {
+        throw new Error(
+          dados?.erro ?? 'Não foi possível carregar os funcionários.',
+        );
+      }
+
+      const zeladoriaAtiva = (dados?.funcionarios ?? []).filter(
+        (item) => item.papel === 'zeladoria' && item.ativo,
+      );
+      setFuncionariosZeladoria(zeladoriaAtiva);
+    } catch (erro) {
+      setErroModalEditarRota(
+        erro instanceof Error
+          ? erro.message
+          : 'Não foi possível carregar os funcionários.',
+      );
+    } finally {
+      setCarregandoFuncionariosZeladoria(false);
+    }
+  }
+
+  function fecharModalEditarRota() {
+    setModalEditarRotaVisivel(false);
+    setRotaEditandoId(null);
+  }
+
+  async function handleSalvarEditarRota() {
+    if (!rotaEditandoId || salvandoEditarRota) {
+      return;
+    }
+    if (!nomeEditarRota.trim()) {
+      setErroModalEditarRota('Informe o nome da rota.');
+      return;
+    }
+
+    setSalvandoEditarRota(true);
+    setErroModalEditarRota(null);
+
+    const { data, error } = await supabase
+      .from('rotas')
+      .update({
+        nome: nomeEditarRota.trim(),
+        funcionario_id: responsavelEditarRotaId,
+      })
+      .eq('id', rotaEditandoId)
+      .select()
+      .single();
+
+    setSalvandoEditarRota(false);
+
+    if (error || !data) {
+      setErroModalEditarRota(
+        error?.message ?? 'Não foi possível salvar a rota.',
+      );
+      return;
+    }
+
+    const rotaAtualizada = data as Rota;
+    setRotas((atual) =>
+      atual.map((item) => (item.id === rotaEditandoId ? rotaAtualizada : item)),
+    );
+    setModalEditarRotaVisivel(false);
+    setRotaEditandoId(null);
   }
 
   async function handleConcluirOrdem(ordemId: string) {
@@ -2316,52 +2452,88 @@ export default function AdminPreservacao() {
               const expandida = rotasExpandidas.has(rota.id);
 
               return (
-                <View key={rota.id} style={styles.grupoRota}>
-                  <View style={styles.grupoRotaResumoCard}>
-                    <Text style={styles.grupoRotaResumoTitulo}>
-                      {rota.nome}
-                    </Text>
-                    <Text style={styles.grupoRotaResumoSubtitulo}>
-                      {itens.length} atividades programadas para o dia
-                    </Text>
-
-                    <View style={styles.grupoRotaProgressoRow}>
-                      <View style={styles.grupoRotaProgressoTrilho}>
-                        <View
-                          style={[
-                            styles.grupoRotaProgressoPreenchimento,
-                            { width: `${percentual}%` },
+                <Fragment key={rota.id}>
+                  <View style={styles.grupoRota}>
+                    <View style={styles.grupoRotaResumoCard}>
+                      <View style={styles.grupoRotaResumoCabecalho}>
+                        <Text style={styles.grupoRotaResumoTitulo}>
+                          {rota.nome}
+                        </Text>
+                        <Pressable
+                          ref={(el) => {
+                            if (el) {
+                              menuRotaIconRefs.current.set(rota.id, el);
+                            }
+                          }}
+                          onPress={() => handleAbrirMenuRota(rota.id)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={({ pressed }) => [
+                            styles.planoMenuButton,
+                            pressed && styles.planoMenuButtonPressionado,
                           ]}
-                        />
+                        >
+                          <Ionicons
+                            name="ellipsis-horizontal"
+                            size={18}
+                            color={light.textSecondary}
+                          />
+                        </Pressable>
                       </View>
-                      <Text style={styles.grupoRotaProgressoTexto}>
-                        {percentual}%
+                      <Text style={styles.grupoRotaResumoSubtitulo}>
+                        {itens.length} atividades programadas para o dia
                       </Text>
+
+                      <View style={styles.grupoRotaProgressoRow}>
+                        <View style={styles.grupoRotaProgressoTrilho}>
+                          <View
+                            style={[
+                              styles.grupoRotaProgressoPreenchimento,
+                              { width: `${percentual}%` },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.grupoRotaProgressoTexto}>
+                          {percentual}%
+                        </Text>
+                      </View>
+
+                      <Pressable
+                        style={styles.grupoRotaExpandirRow}
+                        onPress={() => toggleRotaExpandida(rota.id)}
+                      >
+                        <Text style={styles.grupoRotaExpandirTexto}>
+                          {expandida
+                            ? 'Recolher atividades'
+                            : 'Expandir atividades'}
+                        </Text>
+                        <Ionicons
+                          name={expandida ? 'chevron-up' : 'chevron-down'}
+                          size={16}
+                          color={light.inkAction}
+                        />
+                      </Pressable>
                     </View>
 
-                    <Pressable
-                      style={styles.grupoRotaExpandirRow}
-                      onPress={() => toggleRotaExpandida(rota.id)}
-                    >
-                      <Text style={styles.grupoRotaExpandirTexto}>
-                        {expandida
-                          ? 'Recolher atividades'
-                          : 'Expandir atividades'}
-                      </Text>
-                      <Ionicons
-                        name={expandida ? 'chevron-up' : 'chevron-down'}
-                        size={16}
-                        color={light.inkAction}
-                      />
-                    </Pressable>
+                    {expandida ? (
+                      <View style={styles.atividadesRotaContainer}>
+                        {itens.map((ordem) => renderAtividadeCard(ordem, true))}
+                      </View>
+                    ) : null}
                   </View>
 
-                  {expandida ? (
-                    <View style={styles.atividadesRotaContainer}>
-                      {itens.map((ordem) => renderAtividadeCard(ordem, true))}
-                    </View>
-                  ) : null}
-                </View>
+                  <CardMenu
+                    visible={menuRotaAbertaId === rota.id}
+                    onClose={fecharMenuRota}
+                    anchorPosition={menuRotaAncora}
+                  >
+                    <Pressable
+                      style={styles.menuItem}
+                      onPress={() => abrirModalEditarRota(rota)}
+                    >
+                      <Text style={styles.menuItemTexto}>Editar rota</Text>
+                    </Pressable>
+                  </CardMenu>
+                </Fragment>
               );
             })}
 
@@ -2954,6 +3126,100 @@ export default function AdminPreservacao() {
           {novaRotaOverlay}
           {calendarioDataInicioOverlay}
           {seletorLocalOverlay}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalEditarRotaVisivel}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={fecharModalEditarRota}
+      >
+        <View style={styles.telaAtribuir}>
+          <View
+            style={[
+              styles.cabecalhoAtribuir,
+              { paddingTop: insets.top + spacing.md },
+            ]}
+          >
+            <View style={styles.cabecalhoAtribuirBotao} />
+            <Text style={styles.tituloAtribuir}>Editar rota</Text>
+            <Pressable
+              style={styles.cabecalhoAtribuirBotao}
+              onPress={fecharModalEditarRota}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-outline"
+                size={26}
+                color={light.textPrimary}
+              />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.corpoPlano}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.field}>
+              <Text style={styles.label}>Nome da rota</Text>
+              <TextInput
+                value={nomeEditarRota}
+                onChangeText={setNomeEditarRota}
+                placeholder="Nome da rota"
+                placeholderTextColor={light.textSecondary}
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Responsável</Text>
+              {carregandoFuncionariosZeladoria ? (
+                <Text style={styles.vazio}>Carregando…</Text>
+              ) : (
+                <View style={styles.chipWrap}>
+                  <Chip
+                    label="Nenhum"
+                    selected={responsavelEditarRotaId === null}
+                    onPress={() => setResponsavelEditarRotaId(null)}
+                  />
+                  {funcionariosZeladoria.map((funcionario) => (
+                    <Chip
+                      key={funcionario.id}
+                      label={funcionario.nome}
+                      selected={responsavelEditarRotaId === funcionario.id}
+                      onPress={() => setResponsavelEditarRotaId(funcionario.id)}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {erroModalEditarRota ? (
+              <Text style={styles.erro}>{erroModalEditarRota}</Text>
+            ) : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.rodapeAtribuir,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+          >
+            <Pressable
+              style={[
+                styles.botaoConfirmarAtribuir,
+                (salvandoEditarRota || !nomeEditarRota.trim()) &&
+                  styles.botaoConfirmarAtribuirDesabilitado,
+              ]}
+              onPress={handleSalvarEditarRota}
+              disabled={salvandoEditarRota || !nomeEditarRota.trim()}
+            >
+              <Text style={styles.botaoConfirmarAtribuirTexto}>
+                {salvandoEditarRota ? 'Salvando…' : 'Salvar'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </Modal>
 
@@ -3606,6 +3872,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs,
+  },
+  grupoRotaResumoCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   grupoRotaResumoTitulo: {
     fontFamily: fonts.semiBold,
