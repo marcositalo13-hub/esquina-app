@@ -1,5 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Image,
@@ -13,8 +14,14 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { emailSinteticoDoCpf } from '../src/lib/cpfAuth';
 import { supabase } from '../src/lib/supabase';
 import { dark, fonts, radius, semantic, spacing } from '../src/theme';
+
+// Link "Perfis de teste" só existe enquanto o piloto está em construção —
+// removido/desativado (variável apagada do ambiente) antes de operação real
+// com moradores. Ver app/perfis-teste.tsx.
+const modoTeste = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
 
 // Máscara de CPF (000.000.000-00) — mesmo padrão de "helper duplicado por
 // arquivo" já usado no projeto (normalizarTexto etc.), sem componente
@@ -34,6 +41,7 @@ function somenteDigitos(texto: string): string {
 
 export default function Login() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [cpf, setCpf] = useState('');
   const [senha, setSenha] = useState('');
   const [entrando, setEntrando] = useState(false);
@@ -50,7 +58,7 @@ export default function Login() {
     setEntrando(true);
     setErro(null);
     try {
-      const email = `${cpfDigitos}@login.aegis.app`;
+      const email = emailSinteticoDoCpf(cpfDigitos);
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password: senha,
@@ -154,6 +162,15 @@ export default function Login() {
             <Text style={styles.link}>Esqueci minha senha</Text>
             <Text style={styles.link}>Criar conta</Text>
           </View>
+
+          {modoTeste ? (
+            <Pressable
+              style={styles.linkTeste}
+              onPress={() => router.push('/perfis-teste')}
+            >
+              <Text style={styles.linkTesteTexto}>Perfis de teste</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -267,5 +284,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     color: dark.textSecondary,
+  },
+  linkTeste: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+  },
+  linkTesteTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: dark.textSecondary,
+    opacity: 0.6,
   },
 });

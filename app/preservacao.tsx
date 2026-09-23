@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../src/components/Chip';
+import { ConfirmacaoConcluida } from '../src/components/ConfirmacaoConcluida';
 import {
   ExecucaoGuiada,
   type ExecucaoOrdemItem,
@@ -181,6 +182,12 @@ export default function Preservacao() {
   );
   const [erroLinhaId, setErroLinhaId] = useState<string | null>(null);
   const [erroLinhaTexto, setErroLinhaTexto] = useState<string | null>(null);
+  // Linha mostrando a animação de confirmação (pulso verde + check) antes
+  // de assentar no estado esmaecido/concluído — não muda esse estado
+  // final, só a transição até ele.
+  const [linhaConfirmandoId, setLinhaConfirmandoId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     return () => {
@@ -507,6 +514,7 @@ export default function Preservacao() {
       return;
     }
     await carregar();
+    setLinhaConfirmandoId(ordemId);
   }
 
   function mostrarAvisoRota(rotaId: string, texto: string, erro: boolean) {
@@ -838,6 +846,16 @@ export default function Preservacao() {
                         </Pressable>
                       )}
                     </View>
+
+                    {linhaConfirmandoId === ordem.id ? (
+                      <ConfirmacaoConcluida
+                        onFim={() =>
+                          setLinhaConfirmandoId((atual) =>
+                            atual === ordem.id ? null : atual,
+                          )
+                        }
+                      />
+                    ) : null}
                   </View>
                 );
               })}
@@ -1162,6 +1180,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
+    position: 'relative',
+    overflow: 'hidden',
   },
   linhaChecklistConcluida: {
     opacity: 0.55,

@@ -19,6 +19,7 @@ import {
   retomarOrdem,
 } from '../lib/execucaoOrdens';
 import { fonts, light, motion, radius, semantic, spacing } from '../theme';
+import { ConfirmacaoConcluida } from './ConfirmacaoConcluida';
 
 export type ExecucaoOrdemItem = {
   id: string;
@@ -82,6 +83,7 @@ export function ExecucaoGuiada({
   const [checkEpi, setCheckEpi] = useState(false);
   const [checkFerramentas, setCheckFerramentas] = useState(false);
   const [concluindo, setConcluindo] = useState(false);
+  const [mostrarConfirmacao, setMostrarConfirmacao] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   // Ordem cujo UPDATE de início (status/iniciado_em) falhou, e a mensagem
   // do erro — exibidos na etapa correspondente em vez de falhar em
@@ -242,6 +244,14 @@ export function ExecucaoGuiada({
 
     setConcluindo(true);
     await concluirOrdem(ordemAtual.id);
+    // Fica "concluindo" (rodapé desabilitado) até a animação de
+    // confirmação terminar — só então avança de etapa. Ver
+    // mostrarConfirmacao/handleFimConfirmacao.
+    setMostrarConfirmacao(true);
+  }
+
+  function handleFimConfirmacao() {
+    setMostrarConfirmacao(false);
     setConcluindo(false);
     setEtapaAtual((atual) => atual + 1);
   }
@@ -439,7 +449,7 @@ export function ExecucaoGuiada({
                     ) : null}
                   </View>
                 ) : (
-                  <>
+                  <View style={styles.ordemContainer}>
                     <Text style={styles.etapaContador}>
                       Atividade {etapaAtual} de {totalEtapas}
                     </Text>
@@ -473,7 +483,11 @@ export function ExecucaoGuiada({
                     {erroPausa ? (
                       <Text style={styles.erro}>{erroPausa}</Text>
                     ) : null}
-                  </>
+
+                    {mostrarConfirmacao ? (
+                      <ConfirmacaoConcluida onFim={handleFimConfirmacao} />
+                    ) : null}
+                  </View>
                 )
               ) : null}
             </ScrollView>
@@ -530,10 +544,10 @@ export function ExecucaoGuiada({
                 <Pressable
                   style={[
                     styles.botaoSecundario,
-                    pausando && styles.botaoDesabilitado,
+                    (pausando || concluindo) && styles.botaoDesabilitado,
                   ]}
                   onPress={handlePausar}
-                  disabled={pausando}
+                  disabled={pausando || concluindo}
                 >
                   <Text style={styles.botaoSecundarioTexto}>
                     {pausando ? 'Pausando…' : 'Pausar'}
@@ -593,6 +607,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
+  },
+  ordemContainer: {
+    position: 'relative',
+    gap: spacing.md,
   },
   pausadoTitulo: {
     fontFamily: fonts.semiBold,
