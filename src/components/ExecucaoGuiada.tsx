@@ -12,7 +12,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StatusOrdemServico } from '../data/manutencao';
-import { supabase } from '../lib/supabase';
+import {
+  concluirOrdem,
+  iniciarOrdem,
+  pausarOrdem,
+  retomarOrdem,
+} from '../lib/execucaoOrdens';
 import { fonts, light, motion, radius, semantic, spacing } from '../theme';
 
 export type ExecucaoOrdemItem = {
@@ -219,19 +224,12 @@ export function ExecucaoGuiada({
     }
 
     const ordemId = ordemAtual.id;
-    supabase
-      .from('ordens_servico')
-      .update({
-        status: 'em_andamento',
-        iniciado_em: new Date().toISOString(),
-      })
-      .eq('id', ordemId)
-      .then(({ error }) => {
-        if (error) {
-          setErroInicioId(ordemId);
-          setErroInicioTexto(error.message);
-        }
-      });
+    iniciarOrdem(ordemId).then(({ error }) => {
+      if (error) {
+        setErroInicioId(ordemId);
+        setErroInicioTexto(error);
+      }
+    });
   }, [ordemAtual]);
 
   async function handleConcluir() {
@@ -240,16 +238,7 @@ export function ExecucaoGuiada({
     }
 
     setConcluindo(true);
-
-    await supabase
-      .from('ordens_servico')
-      .update({
-        status: 'concluida',
-        concluida_em: new Date().toISOString(),
-        concluida_por: 'Teste Preservação',
-      })
-      .eq('id', ordemAtual.id);
-
+    await concluirOrdem(ordemAtual.id);
     setConcluindo(false);
     setEtapaAtual((atual) => atual + 1);
   }
@@ -262,22 +251,17 @@ export function ExecucaoGuiada({
     setPausando(true);
     setErroPausa(null);
 
-    const agora = new Date().toISOString();
     const ordemId = ordemAtual.id;
-
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({ pausado_em: agora })
-      .eq('id', ordemId);
+    const { error, pausadoEm } = await pausarOrdem(ordemId);
 
     setPausando(false);
 
-    if (error) {
-      setErroPausa(error.message);
+    if (error || !pausadoEm) {
+      setErroPausa(error);
       return;
     }
 
-    setPausaOverrides((atual) => ({ ...atual, [ordemId]: agora }));
+    setPausaOverrides((atual) => ({ ...atual, [ordemId]: pausadoEm }));
   }
 
   async function handleRetomar() {
@@ -288,25 +272,17 @@ export function ExecucaoGuiada({
     setRetomando(true);
     setErroPausa(null);
 
-    const segundosPausado = Math.max(
-      0,
-      Math.round((Date.now() - new Date(pausadoEmEfetivo).getTime()) / 1000),
-    );
     const ordemId = ordemAtual.id;
-    const tempoPausadoNovo = tempoPausadoEfetivo + segundosPausado;
-
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({
-        tempo_pausado_segundos: tempoPausadoNovo,
-        pausado_em: null,
-      })
-      .eq('id', ordemId);
+    const { error, tempoPausadoNovo } = await retomarOrdem(
+      ordemId,
+      pausadoEmEfetivo,
+      tempoPausadoEfetivo,
+    );
 
     setRetomando(false);
 
-    if (error) {
-      setErroPausa(error.message);
+    if (error || tempoPausadoNovo === null) {
+      setErroPausa(error);
       return;
     }
 
@@ -322,10 +298,7 @@ export function ExecucaoGuiada({
   // transição; no checklist não há ordem ativa, então não pausa nada.
   async function handleSair() {
     if (ordemAtual && ordemAtual.status !== 'concluida' && !pausadoAgora) {
-      await supabase
-        .from('ordens_servico')
-        .update({ pausado_em: new Date().toISOString() })
-        .eq('id', ordemAtual.id);
+      await pausarOrdem(ordemAtual.id);
     }
     onFinish();
   }

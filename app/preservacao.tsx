@@ -20,6 +20,7 @@ import { StatusBadge } from '../src/components/StatusBadge';
 import {
   corIndicadorGrupo,
   formatarDataBR,
+  formatarDuracao,
   getCorPrioridade,
   hojeLocal,
   localNomeOrdem,
@@ -30,6 +31,13 @@ import {
   tipoNomeOrdem,
   tituloOrdem,
 } from '../src/data/manutencao';
+import {
+  calcularSegundosDecorridos,
+  concluirOrdem,
+  iniciarOrdem,
+  pausarOrdem,
+  retomarOrdem,
+} from '../src/lib/execucaoOrdens';
 import { supabase } from '../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
@@ -100,6 +108,38 @@ function fraseResumoRota(total: number): string {
   return `${total} atividades programadas para hoje. Vamos começar?`;
 }
 
+// Timer ao vivo de uma linha do modo Lista — só reagenda a si mesmo, nunca
+// acumula segundos em estado local: cada tick recalcula do zero a partir
+// de iniciadoEm/pausadoEm/tempoPausadoSegundos (calcularSegundosDecorridos,
+// mesma conta usada por admin/preservacao.tsx pra ordens já concluídas).
+// É por isso que trocar de modo (Lista ⇄ Guiada) nunca reseta a contagem:
+// não existe cronômetro guardado só na memória deste componente — ele é só
+// uma reformatação, a cada segundo, do que já está persistido no banco.
+function TimerAtividade({
+  iniciadoEm,
+  tempoPausadoSegundos,
+}: {
+  iniciadoEm: string;
+  tempoPausadoSegundos: number;
+}) {
+  const [, forcarAtualizacao] = useState(0);
+
+  useEffect(() => {
+    const intervalo = setInterval(() => forcarAtualizacao((n) => n + 1), 1000);
+    return () => clearInterval(intervalo);
+  }, []);
+
+  const segundos = calcularSegundosDecorridos(
+    iniciadoEm,
+    null,
+    tempoPausadoSegundos,
+  );
+
+  return (
+    <Text style={styles.listaTimerTexto}>{formatarDuracao(segundos)}</Text>
+  );
+}
+
 export default function Preservacao() {
   const insets = useSafeAreaInsets();
 
@@ -130,6 +170,16 @@ export default function Preservacao() {
   const [reprovacoes, setReprovacoes] = useState<OrdemServico[]>([]);
   const [processandoReprovacao, setProcessandoReprovacao] = useState(false);
   const [modalReprovacaoVisivel, setModalReprovacaoVisivel] = useState(false);
+
+  // Modo Lista (checklist compacto, ações inline) vs. Modo Guiada (tela
+  // cheia atual, uma atividade por vez) — dois jeitos de olhar/agir sobre
+  // as MESMAS ordens de hoje, nunca dois estados de execução diferentes.
+  const [modoExibicao, setModoExibicao] = useState<'lista' | 'guiada'>('lista');
+  const [processandoOrdemId, setProcessandoOrdemId] = useState<string | null>(
+    null,
+  );
+  const [erroLinhaId, setErroLinhaId] = useState<string | null>(null);
+  const [erroLinhaTexto, setErroLinhaTexto] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -375,6 +425,89 @@ export default function Preservacao() {
     );
   }, [concluidas]);
 
+  // Modo Lista: todas as ordens de hoje deste zelador, achatadas — mesma
+  // fonte de dados já usada pelo modo Guiada (extraordinariasOrdenadas +
+  // resumoRotas), só apresentada como checklist único em vez de cards por
+  // rota/extraordinária.
+  const ordensListaHoje = useMemo(() => {
+    return [
+      ...extraordinariasOrdenadas,
+      ...resumoRotas.flatMap((grupo) => grupo.itens),
+    ];
+  }, [extraordinariasOrdenadas, resumoRotas]);
+
+  async function handleIniciarLinha(ordemId: string) {
+    if (processandoOrdemId) {
+      return;
+    }
+    setProcessandoOrdemId(ordemId);
+    setErroLinhaId(null);
+    const { error } = await iniciarOrdem(ordemId);
+    setProcessandoOrdemId(null);
+    if (error) {
+      setErroLinhaId(ordemId);
+      setErroLinhaTexto(error);
+      return;
+    }
+    await carregar();
+  }
+
+  async function handlePausarLinha(ordemId: string) {
+    if (processandoOrdemId) {
+      return;
+    }
+    setProcessandoOrdemId(ordemId);
+    setErroLinhaId(null);
+    const { error } = await pausarOrdem(ordemId);
+    setProcessandoOrdemId(null);
+    if (error) {
+      setErroLinhaId(ordemId);
+      setErroLinhaTexto(error);
+      return;
+    }
+    await carregar();
+  }
+
+  async function handleRetomarLinha(
+    ordemId: string,
+    pausadoEm: string,
+    tempoPausadoSegundos: number,
+  ) {
+    if (processandoOrdemId) {
+      return;
+    }
+    setProcessandoOrdemId(ordemId);
+    setErroLinhaId(null);
+    const { error } = await retomarOrdem(
+      ordemId,
+      pausadoEm,
+      tempoPausadoSegundos,
+    );
+    setProcessandoOrdemId(null);
+    if (error) {
+      setErroLinhaId(ordemId);
+      setErroLinhaTexto(error);
+      return;
+    }
+    await carregar();
+  }
+
+  async function handleConcluirLinha(ordemId: string) {
+    if (processandoOrdemId) {
+      return;
+    }
+    setProcessandoOrdemId(ordemId);
+    setErroLinhaId(null);
+    const { error } = await concluirOrdem(ordemId);
+    setProcessandoOrdemId(null);
+    if (error) {
+      setErroLinhaId(ordemId);
+      setErroLinhaTexto(error);
+      return;
+    }
+    await carregar();
+  }
+
   function mostrarAvisoRota(rotaId: string, texto: string, erro: boolean) {
     if (avisoRotaTimeout.current) {
       clearTimeout(avisoRotaTimeout.current);
@@ -556,27 +689,351 @@ export default function Preservacao() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body}>
-        {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+      <View style={styles.toggleModoRow}>
+        <Pressable
+          style={[
+            styles.toggleModoBotao,
+            modoExibicao === 'lista' && styles.toggleModoBotaoAtivo,
+          ]}
+          onPress={() => setModoExibicao('lista')}
+        >
+          <Text
+            style={[
+              styles.toggleModoTexto,
+              modoExibicao === 'lista' && styles.toggleModoTextoAtivo,
+            ]}
+          >
+            Lista
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.toggleModoBotao,
+            modoExibicao === 'guiada' && styles.toggleModoBotaoAtivo,
+          ]}
+          onPress={() => setModoExibicao('guiada')}
+        >
+          <Text
+            style={[
+              styles.toggleModoTexto,
+              modoExibicao === 'guiada' && styles.toggleModoTextoAtivo,
+            ]}
+          >
+            Guiada
+          </Text>
+        </Pressable>
+      </View>
 
-        {/* Sem extraordinária em aberto, a seção inteira some — nada de
-            título órfão nem card vazio. */}
-        {extraordinariasOrdenadas.length > 0 ? (
-          <>
-            <Text style={styles.secaoTitulo}>Extraordinárias</Text>
-            <View style={styles.lista}>
-              {extraordinariasOrdenadas.map((ordem) => {
-                const prioridade = prioridadeOrdem(ordem);
+      {modoExibicao === 'lista' ? (
+        <ScrollView contentContainerStyle={styles.body}>
+          {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+          {ordensListaHoje.length === 0 ? (
+            <Text style={styles.vazio}>
+              Nenhuma atividade prevista para hoje.
+            </Text>
+          ) : (
+            <View style={styles.listaChecklist}>
+              {ordensListaHoje.map((ordem) => {
+                const pausadaLinha =
+                  ordem.status === 'em_andamento' && ordem.pausado_em !== null;
+                const emAndamentoLinha =
+                  ordem.status === 'em_andamento' && ordem.pausado_em === null;
+                const concluidaLinha = ordem.status === 'concluida';
                 const local = localNomeOrdem(ordem);
-                const emAndamento = ordem.status === 'em_andamento';
+                const processandoLinha = processandoOrdemId === ordem.id;
 
                 return (
-                  <View key={ordem.id} style={styles.extraCard}>
-                    <View style={styles.extraCabecalho}>
-                      <View style={styles.seloExtra}>
-                        <Text style={styles.seloExtraTexto}>
-                          Extraordinária
+                  <View
+                    key={ordem.id}
+                    style={[
+                      styles.linhaChecklist,
+                      concluidaLinha && styles.linhaChecklistConcluida,
+                    ]}
+                  >
+                    <View style={styles.linhaChecklistTextos}>
+                      <Text
+                        style={[
+                          styles.linhaChecklistTitulo,
+                          concluidaLinha &&
+                            styles.linhaChecklistTituloConcluido,
+                        ]}
+                      >
+                        {tituloOrdem(ordem)}
+                      </Text>
+                      {local ? (
+                        <Text style={styles.linhaChecklistLocal}>{local}</Text>
+                      ) : null}
+                      {emAndamentoLinha && ordem.iniciado_em ? (
+                        <TimerAtividade
+                          iniciadoEm={ordem.iniciado_em}
+                          tempoPausadoSegundos={ordem.tempo_pausado_segundos}
+                        />
+                      ) : null}
+                      {erroLinhaId === ordem.id && erroLinhaTexto ? (
+                        <Text style={styles.erro}>{erroLinhaTexto}</Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.linhaChecklistAcoes}>
+                      {concluidaLinha ? (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={22}
+                          color={semantic.ok}
+                        />
+                      ) : pausadaLinha ? (
+                        <Pressable
+                          style={styles.botaoLinhaSecundario}
+                          onPress={() =>
+                            handleRetomarLinha(
+                              ordem.id,
+                              ordem.pausado_em as string,
+                              ordem.tempo_pausado_segundos,
+                            )
+                          }
+                          disabled={processandoLinha}
+                        >
+                          <Text style={styles.botaoLinhaSecundarioTexto}>
+                            {processandoLinha ? 'Retomando…' : 'Retomar'}
+                          </Text>
+                        </Pressable>
+                      ) : emAndamentoLinha ? (
+                        <>
+                          <Pressable
+                            style={styles.botaoLinhaSecundario}
+                            onPress={() => handlePausarLinha(ordem.id)}
+                            disabled={processandoLinha}
+                          >
+                            <Text style={styles.botaoLinhaSecundarioTexto}>
+                              {processandoLinha ? 'Pausando…' : 'Pausar'}
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            style={styles.botaoLinhaPrimario}
+                            onPress={() => handleConcluirLinha(ordem.id)}
+                            disabled={processandoLinha}
+                          >
+                            <Text style={styles.botaoLinhaPrimarioTexto}>
+                              {processandoLinha ? 'Salvando…' : 'Concluir'}
+                            </Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <Pressable
+                          style={styles.botaoLinhaPrimario}
+                          onPress={() => handleIniciarLinha(ordem.id)}
+                          disabled={processandoLinha}
+                        >
+                          <Text style={styles.botaoLinhaPrimarioTexto}>
+                            {processandoLinha ? 'Iniciando…' : 'Iniciar'}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      ) : (
+        <ScrollView contentContainerStyle={styles.body}>
+          {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+          {/* Sem extraordinária em aberto, a seção inteira some — nada de
+            título órfão nem card vazio. */}
+          {extraordinariasOrdenadas.length > 0 ? (
+            <>
+              <Text style={styles.secaoTitulo}>Extraordinárias</Text>
+              <View style={styles.lista}>
+                {extraordinariasOrdenadas.map((ordem) => {
+                  const prioridade = prioridadeOrdem(ordem);
+                  const local = localNomeOrdem(ordem);
+                  const emAndamento = ordem.status === 'em_andamento';
+
+                  return (
+                    <View key={ordem.id} style={styles.extraCard}>
+                      <View style={styles.extraCabecalho}>
+                        <View style={styles.seloExtra}>
+                          <Text style={styles.seloExtraTexto}>
+                            Extraordinária
+                          </Text>
+                        </View>
+                        {prioridade ? (
+                          <Chip
+                            label={prioridade}
+                            color={getCorPrioridade(prioridade)}
+                          />
+                        ) : null}
+                      </View>
+
+                      <Text style={styles.extraTitulo}>
+                        {tituloOrdem(ordem)}
+                      </Text>
+                      <Text style={styles.extraDetalhe}>
+                        {tipoNomeOrdem(ordem)}
+                      </Text>
+                      {local ? (
+                        <Text style={styles.extraDetalhe}>{local}</Text>
+                      ) : null}
+                      <Text style={styles.extraDetalhe}>
+                        Prazo · {formatarDataBR(ordem.data_prevista)}
+                      </Text>
+
+                      <Pressable
+                        style={styles.botaoIniciarRota}
+                        onPress={() => handleIniciarExtraordinaria(ordem)}
+                      >
+                        <Text style={styles.botaoIniciarRotaTexto}>
+                          {emAndamento ? 'Continuar' : 'Iniciar'}
                         </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
+
+          {resumoRotas.length > 0 ? (
+            <>
+              <Text style={styles.secaoTitulo}>Resumo do dia</Text>
+              <View style={styles.lista}>
+                {resumoRotas.map((grupo) => {
+                  const concluidasCount = grupo.itens.filter(
+                    (o) => o.status === 'concluida',
+                  ).length;
+                  const iniciadasCount = grupo.itens.filter(
+                    (o) => o.status !== 'pendente',
+                  ).length;
+                  // Mostra o botão quando existe ao menos uma ordem de hoje,
+                  // nesta rota, ainda 'pendente' OU 'em_andamento' (uma
+                  // 'em_andamento' sem tudo mais concluído é uma rota pausada
+                  // no meio — precisa continuar aparecendo acionável).
+                  const temPendente = grupo.itens.some(
+                    (o) => o.status === 'pendente',
+                  );
+                  const temAcao =
+                    temPendente ||
+                    grupo.itens.some((o) => o.status === 'em_andamento');
+                  // Continuação: ao menos uma ordem já foi iniciada — o botão
+                  // vira "Continuar" e o fluxo pula transição/checklist.
+                  const continuacao = ehContinuacao(grupo.itens);
+                  // 100% concluída: todas as ordens de hoje da rota estão
+                  // 'concluida' (logo, nenhuma pendente nem em_andamento).
+                  const todasConcluidas =
+                    grupo.itens.length > 0 &&
+                    concluidasCount === grupo.itens.length;
+                  const cor = corIndicadorGrupo(
+                    grupo.itens.length,
+                    concluidasCount,
+                    iniciadasCount,
+                  );
+
+                  return (
+                    <View key={grupo.rota.id} style={styles.resumoRotaCard}>
+                      <View style={styles.resumoRotaCabecalho}>
+                        <View
+                          style={[
+                            styles.resumoRotaIndicador,
+                            { backgroundColor: cor },
+                          ]}
+                        />
+                        <View style={styles.resumoRotaInfo}>
+                          <Text style={styles.resumoRotaTitulo}>
+                            {grupo.rota.nome}
+                          </Text>
+                          <Text style={styles.resumoRotaContagem}>
+                            {fraseResumoRota(grupo.itens.length)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {temAcao ? (
+                        <Pressable
+                          style={styles.botaoIniciarRota}
+                          onPress={() => handleIniciarRota(grupo)}
+                          disabled={verificandoId === grupo.rota.id}
+                        >
+                          <Text style={styles.botaoIniciarRotaTexto}>
+                            {verificandoId === grupo.rota.id
+                              ? 'Verificando…'
+                              : continuacao
+                                ? 'Continuar'
+                                : 'Iniciar Rota'}
+                          </Text>
+                        </Pressable>
+                      ) : todasConcluidas ? (
+                        <View style={styles.rotaConcluidaIndicador}>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={18}
+                            color={semantic.ok}
+                          />
+                          <Text style={styles.rotaConcluidaTexto}>
+                            Todas as atividades concluídas
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {avisoRota?.id === grupo.rota.id ? (
+                        <Text
+                          style={avisoRota.erro ? styles.erro : styles.aviso}
+                        >
+                          {avisoRota.texto}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
+
+          <Text style={styles.secaoTitulo}>Concluídas</Text>
+          {concluidasExibidas.length === 0 ? (
+            <Text style={styles.vazio}>Nenhuma ordem concluída.</Text>
+          ) : (
+            <View style={styles.listaConcluidas}>
+              {concluidasExibidas.map((ordem, indice) => {
+                // Rotina lê do plano; extraordinária, das colunas da própria
+                // ordem — os helpers cobrem os dois casos.
+                const local = localNomeOrdem(ordem);
+                const prioridade = prioridadeOrdem(ordem);
+
+                return (
+                  <View
+                    key={ordem.id}
+                    style={[
+                      styles.linhaConcluida,
+                      indice === 0 && styles.linhaConcluidaPrimeira,
+                    ]}
+                  >
+                    <Text style={styles.linhaConcluidaTitulo}>
+                      {tituloOrdem(ordem)}
+                    </Text>
+                    <Text style={styles.linhaConcluidaTipo}>
+                      {tipoNomeOrdem(ordem)}
+                    </Text>
+                    {local ? (
+                      <Text style={styles.linhaConcluidaDetalhe}>{local}</Text>
+                    ) : null}
+
+                    <View style={styles.linhaConcluidaRodape}>
+                      <View style={styles.linhaConcluidaRodapeEsquerda}>
+                        <Text style={styles.linhaConcluidaDetalhe}>
+                          Concluída em{' '}
+                          {ordem.concluida_em
+                            ? `${formatarDataBR(ordem.concluida_em.slice(0, 10))} às ${new Date(
+                                ordem.concluida_em,
+                              ).toLocaleTimeString('pt-BR', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}`
+                            : '—'}
+                        </Text>
+                        <StatusBadge ordem={ordem} />
                       </View>
                       {prioridade ? (
                         <Chip
@@ -585,183 +1042,13 @@ export default function Preservacao() {
                         />
                       ) : null}
                     </View>
-
-                    <Text style={styles.extraTitulo}>{tituloOrdem(ordem)}</Text>
-                    <Text style={styles.extraDetalhe}>
-                      {tipoNomeOrdem(ordem)}
-                    </Text>
-                    {local ? (
-                      <Text style={styles.extraDetalhe}>{local}</Text>
-                    ) : null}
-                    <Text style={styles.extraDetalhe}>
-                      Prazo · {formatarDataBR(ordem.data_prevista)}
-                    </Text>
-
-                    <Pressable
-                      style={styles.botaoIniciarRota}
-                      onPress={() => handleIniciarExtraordinaria(ordem)}
-                    >
-                      <Text style={styles.botaoIniciarRotaTexto}>
-                        {emAndamento ? 'Continuar' : 'Iniciar'}
-                      </Text>
-                    </Pressable>
                   </View>
                 );
               })}
             </View>
-          </>
-        ) : null}
-
-        {resumoRotas.length > 0 ? (
-          <>
-            <Text style={styles.secaoTitulo}>Resumo do dia</Text>
-            <View style={styles.lista}>
-              {resumoRotas.map((grupo) => {
-                const concluidasCount = grupo.itens.filter(
-                  (o) => o.status === 'concluida',
-                ).length;
-                const iniciadasCount = grupo.itens.filter(
-                  (o) => o.status !== 'pendente',
-                ).length;
-                // Mostra o botão quando existe ao menos uma ordem de hoje,
-                // nesta rota, ainda 'pendente' OU 'em_andamento' (uma
-                // 'em_andamento' sem tudo mais concluído é uma rota pausada
-                // no meio — precisa continuar aparecendo acionável).
-                const temPendente = grupo.itens.some(
-                  (o) => o.status === 'pendente',
-                );
-                const temAcao =
-                  temPendente ||
-                  grupo.itens.some((o) => o.status === 'em_andamento');
-                // Continuação: ao menos uma ordem já foi iniciada — o botão
-                // vira "Continuar" e o fluxo pula transição/checklist.
-                const continuacao = ehContinuacao(grupo.itens);
-                // 100% concluída: todas as ordens de hoje da rota estão
-                // 'concluida' (logo, nenhuma pendente nem em_andamento).
-                const todasConcluidas =
-                  grupo.itens.length > 0 &&
-                  concluidasCount === grupo.itens.length;
-                const cor = corIndicadorGrupo(
-                  grupo.itens.length,
-                  concluidasCount,
-                  iniciadasCount,
-                );
-
-                return (
-                  <View key={grupo.rota.id} style={styles.resumoRotaCard}>
-                    <View style={styles.resumoRotaCabecalho}>
-                      <View
-                        style={[
-                          styles.resumoRotaIndicador,
-                          { backgroundColor: cor },
-                        ]}
-                      />
-                      <View style={styles.resumoRotaInfo}>
-                        <Text style={styles.resumoRotaTitulo}>
-                          {grupo.rota.nome}
-                        </Text>
-                        <Text style={styles.resumoRotaContagem}>
-                          {fraseResumoRota(grupo.itens.length)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {temAcao ? (
-                      <Pressable
-                        style={styles.botaoIniciarRota}
-                        onPress={() => handleIniciarRota(grupo)}
-                        disabled={verificandoId === grupo.rota.id}
-                      >
-                        <Text style={styles.botaoIniciarRotaTexto}>
-                          {verificandoId === grupo.rota.id
-                            ? 'Verificando…'
-                            : continuacao
-                              ? 'Continuar'
-                              : 'Iniciar Rota'}
-                        </Text>
-                      </Pressable>
-                    ) : todasConcluidas ? (
-                      <View style={styles.rotaConcluidaIndicador}>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={18}
-                          color={semantic.ok}
-                        />
-                        <Text style={styles.rotaConcluidaTexto}>
-                          Todas as atividades concluídas
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {avisoRota?.id === grupo.rota.id ? (
-                      <Text style={avisoRota.erro ? styles.erro : styles.aviso}>
-                        {avisoRota.texto}
-                      </Text>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
-          </>
-        ) : null}
-
-        <Text style={styles.secaoTitulo}>Concluídas</Text>
-        {concluidasExibidas.length === 0 ? (
-          <Text style={styles.vazio}>Nenhuma ordem concluída.</Text>
-        ) : (
-          <View style={styles.listaConcluidas}>
-            {concluidasExibidas.map((ordem, indice) => {
-              // Rotina lê do plano; extraordinária, das colunas da própria
-              // ordem — os helpers cobrem os dois casos.
-              const local = localNomeOrdem(ordem);
-              const prioridade = prioridadeOrdem(ordem);
-
-              return (
-                <View
-                  key={ordem.id}
-                  style={[
-                    styles.linhaConcluida,
-                    indice === 0 && styles.linhaConcluidaPrimeira,
-                  ]}
-                >
-                  <Text style={styles.linhaConcluidaTitulo}>
-                    {tituloOrdem(ordem)}
-                  </Text>
-                  <Text style={styles.linhaConcluidaTipo}>
-                    {tipoNomeOrdem(ordem)}
-                  </Text>
-                  {local ? (
-                    <Text style={styles.linhaConcluidaDetalhe}>{local}</Text>
-                  ) : null}
-
-                  <View style={styles.linhaConcluidaRodape}>
-                    <View style={styles.linhaConcluidaRodapeEsquerda}>
-                      <Text style={styles.linhaConcluidaDetalhe}>
-                        Concluída em{' '}
-                        {ordem.concluida_em
-                          ? `${formatarDataBR(ordem.concluida_em.slice(0, 10))} às ${new Date(
-                              ordem.concluida_em,
-                            ).toLocaleTimeString('pt-BR', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}`
-                          : '—'}
-                      </Text>
-                      <StatusBadge ordem={ordem} />
-                    </View>
-                    {prioridade ? (
-                      <Chip
-                        label={prioridade}
-                        color={getCorPrioridade(prioridade)}
-                      />
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      )}
 
       {execucao ? (
         <ExecucaoGuiada
@@ -826,6 +1113,101 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
     gap: spacing.sm,
+  },
+  toggleModoRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  toggleModoBotao: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: light.border,
+    backgroundColor: light.card,
+  },
+  toggleModoBotaoAtivo: {
+    backgroundColor: light.inkAction,
+    borderColor: light.inkAction,
+  },
+  toggleModoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textSecondary,
+  },
+  toggleModoTextoAtivo: {
+    color: '#FFFFFF',
+  },
+  listaChecklist: {
+    gap: spacing.xs,
+  },
+  linhaChecklist: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  linhaChecklistConcluida: {
+    opacity: 0.55,
+  },
+  linhaChecklistTextos: {
+    flex: 1,
+    gap: 2,
+  },
+  linhaChecklistTitulo: {
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    color: light.textPrimary,
+  },
+  linhaChecklistTituloConcluido: {
+    textDecorationLine: 'line-through',
+  },
+  linhaChecklistLocal: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  linhaChecklistAcoes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  listaTimerTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: light.inkAction,
+  },
+  botaoLinhaPrimario: {
+    backgroundColor: light.inkAction,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+  },
+  botaoLinhaPrimarioTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  botaoLinhaSecundario: {
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+  },
+  botaoLinhaSecundarioTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textSecondary,
   },
   erro: {
     fontFamily: fonts.regular,
