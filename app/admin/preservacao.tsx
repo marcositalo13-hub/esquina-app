@@ -314,6 +314,12 @@ export default function AdminPreservacao() {
       { tipo: 'qualidade'; valor: Qualidade } | { tipo: 'reprovada' }
     >
   >({});
+  // Grupos (por rota) recolhidos por padrão — estado próprio, separado de
+  // rotasExpandidas ("Atividades do dia"), pra não acoplar expandir/
+  // recolher de uma seção com a outra.
+  const [validacaoGruposExpandidos, setValidacaoGruposExpandidos] = useState<
+    Set<string>
+  >(() => new Set());
 
   const carregarPlanos = useCallback(async () => {
     const { data, error } = await supabase
@@ -558,6 +564,47 @@ export default function AdminPreservacao() {
       return o.status === 'concluida' && !o.validada;
     });
   }, [ordensHoje, validacaoOverrides]);
+
+  // Pendentes de validação agrupadas por rota — extraordinária (sem plano,
+  // logo sem rota) cai num grupo "Avulsas" próprio, mesma convenção de
+  // atividadesAgrupadas logo abaixo. Um grupo só aparece enquanto tiver
+  // pelo menos uma atividade sem override (genuinamente pendente); quando
+  // a última é validada/reprovada, o grupo inteiro (cabeçalho incluído)
+  // some da lista, mesmo que outras já mostrem selo.
+  const gruposValidacao = useMemo(() => {
+    const mapa = new Map<
+      string,
+      { chave: string; nome: string; itens: OrdemServico[] }
+    >();
+
+    for (const ordem of pendentesValidacao) {
+      const rota = ordem.planos_manutencao?.rotas;
+      const chave = rota?.id ?? 'sem-rota';
+      const nome = rota?.nome ?? 'Avulsas';
+      const grupo = mapa.get(chave);
+      if (grupo) {
+        grupo.itens.push(ordem);
+      } else {
+        mapa.set(chave, { chave, nome, itens: [ordem] });
+      }
+    }
+
+    return Array.from(mapa.values()).filter((grupo) =>
+      grupo.itens.some((ordem) => !(ordem.id in validacaoOverrides)),
+    );
+  }, [pendentesValidacao, validacaoOverrides]);
+
+  function toggleValidacaoGrupoExpandido(chave: string) {
+    setValidacaoGruposExpandidos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(chave)) {
+        novo.delete(chave);
+      } else {
+        novo.add(chave);
+      }
+      return novo;
+    });
+  }
 
   // Agrupa as atividades de hoje por rota (ordenadas por ordem_na_rota).
   // Extraordinárias (sem plano, logo sem rota) vão para um grupo próprio,
@@ -1857,6 +1904,145 @@ export default function AdminPreservacao() {
     }
   }
 
+  // Extraída do antigo .map() plano de "Pendentes de validação" — mesma
+  // lógica de exibição (selo vs. botões), agora reaproveitada dentro de
+  // cada grupo por rota. Nenhuma mudança na lógica de validação em si.
+  function renderLinhaValidacao(ordem: OrdemServico) {
+    const override = validacaoOverrides[ordem.id];
+    const local = localNomeOrdem(ordem);
+    const processandoLinha = processandoValidacaoId === ordem.id;
+    const reprovandoEstaLinha = reprovandoLinhaId === ordem.id;
+
+    return (
+      <View key={ordem.id} style={styles.linhaValidacao}>
+        <View style={styles.linhaValidacaoTextos}>
+          <Text style={styles.linhaValidacaoTitulo}>{tituloOrdem(ordem)}</Text>
+          <Text style={styles.linhaValidacaoDetalhe}>
+            {local ? `${local} · ` : ''}Concluído por:{' '}
+            {ordem.concluida_por ?? '—'}
+          </Text>
+          {erroValidacaoLinhaId === ordem.id && erroValidacaoLinhaTexto ? (
+            <Text style={styles.erro}>{erroValidacaoLinhaTexto}</Text>
+          ) : null}
+
+          {reprovandoEstaLinha ? (
+            <View style={styles.reprovarLinhaForm}>
+              <TextInput
+                value={motivoReprovacaoLinha}
+                onChangeText={setMotivoReprovacaoLinha}
+                placeholder="Descreva o motivo"
+                placeholderTextColor={light.textSecondary}
+                multiline
+                numberOfLines={3}
+                style={[styles.input, styles.inputMultiline]}
+              />
+              <View style={styles.reprovarLinhaBotoes}>
+                <Pressable
+                  style={styles.botaoLinhaSecundario}
+                  onPress={handleCancelarReprovarLinha}
+                  disabled={processandoLinha}
+                >
+                  <Text style={styles.botaoLinhaSecundarioTexto}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.botaoLinhaPerigo}
+                  onPress={() => handleConfirmarReprovarLinha(ordem.id)}
+                  disabled={processandoLinha}
+                >
+                  <Text style={styles.botaoLinhaPerigoTexto}>
+                    {processandoLinha ? 'Reprovando…' : 'Confirmar reprovação'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        {!reprovandoEstaLinha ? (
+          <View style={styles.linhaValidacaoAcoes}>
+            {override ? (
+              override.tipo === 'qualidade' ? (
+                <View
+                  style={[
+                    styles.seloValidacao,
+                    {
+                      borderColor: getQualidadeInfo(override.valor).color,
+                      backgroundColor: `${getQualidadeInfo(override.valor).color}0D`,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.seloValidacaoTexto,
+                      { color: getQualidadeInfo(override.valor).color },
+                    ]}
+                  >
+                    ✓ {getQualidadeInfo(override.valor).label}
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.seloValidacao,
+                    {
+                      borderColor: semantic.overdue,
+                      backgroundColor: `${semantic.overdue}0D`,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.seloValidacaoTexto,
+                      { color: semantic.overdue },
+                    ]}
+                  >
+                    ✕ Reprovada
+                  </Text>
+                </View>
+              )
+            ) : (
+              <>
+                {(['bom', 'medio', 'ruim'] as Qualidade[]).map((opcao) => {
+                  const info = getQualidadeInfo(opcao);
+                  return (
+                    <Pressable
+                      key={opcao}
+                      style={[
+                        styles.botaoQualidadeLinha,
+                        {
+                          borderColor: info.color,
+                          backgroundColor: `${info.color}0D`,
+                        },
+                      ]}
+                      onPress={() => handleValidarLinha(ordem.id, opcao)}
+                      disabled={processandoLinha}
+                    >
+                      <Text
+                        style={[
+                          styles.botaoQualidadeLinhaTexto,
+                          { color: info.color },
+                        ]}
+                      >
+                        {info.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  style={styles.botaoLinhaSecundario}
+                  onPress={() => handleAbrirReprovarLinha(ordem.id)}
+                  disabled={processandoLinha}
+                >
+                  <Text style={styles.botaoLinhaSecundarioTexto}>Reprovar</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   function renderAtividadeCard(ordem: OrdemServico, compacto = false) {
     const plano = ordem.planos_manutencao;
     // União de fonte: rotina lê do plano; extraordinária (e futuramente
@@ -2562,160 +2748,37 @@ export default function AdminPreservacao() {
           ) : null}
         </View>
 
-        {pendentesValidacao.length > 0 ? (
+        {gruposValidacao.length > 0 ? (
           <>
             <Text style={styles.secaoTitulo}>Pendentes de validação</Text>
             <View style={styles.listaValidacao}>
-              {pendentesValidacao.map((ordem) => {
-                const override = validacaoOverrides[ordem.id];
-                const local = localNomeOrdem(ordem);
-                const processandoLinha = processandoValidacaoId === ordem.id;
-                const reprovandoEstaLinha = reprovandoLinhaId === ordem.id;
+              {gruposValidacao.map((grupo) => {
+                const pendentesCount = grupo.itens.filter(
+                  (ordem) => !(ordem.id in validacaoOverrides),
+                ).length;
+                const expandido = validacaoGruposExpandidos.has(grupo.chave);
 
                 return (
-                  <View key={ordem.id} style={styles.linhaValidacao}>
-                    <View style={styles.linhaValidacaoTextos}>
-                      <Text style={styles.linhaValidacaoTitulo}>
-                        {tituloOrdem(ordem)}
+                  <View key={grupo.chave} style={styles.grupoValidacao}>
+                    <Pressable
+                      style={styles.grupoValidacaoCabecalho}
+                      onPress={() => toggleValidacaoGrupoExpandido(grupo.chave)}
+                    >
+                      <Text style={styles.grupoValidacaoCabecalhoTexto}>
+                        {grupo.nome} ({pendentesCount} pendente
+                        {pendentesCount === 1 ? '' : 's'})
                       </Text>
-                      <Text style={styles.linhaValidacaoDetalhe}>
-                        {local ? `${local} · ` : ''}Concluído por:{' '}
-                        {ordem.concluida_por ?? '—'}
-                      </Text>
-                      {erroValidacaoLinhaId === ordem.id &&
-                      erroValidacaoLinhaTexto ? (
-                        <Text style={styles.erro}>
-                          {erroValidacaoLinhaTexto}
-                        </Text>
-                      ) : null}
+                      <Ionicons
+                        name={expandido ? 'chevron-up' : 'chevron-down'}
+                        size={16}
+                        color={light.inkAction}
+                      />
+                    </Pressable>
 
-                      {reprovandoEstaLinha ? (
-                        <View style={styles.reprovarLinhaForm}>
-                          <TextInput
-                            value={motivoReprovacaoLinha}
-                            onChangeText={setMotivoReprovacaoLinha}
-                            placeholder="Descreva o motivo"
-                            placeholderTextColor={light.textSecondary}
-                            multiline
-                            numberOfLines={3}
-                            style={[styles.input, styles.inputMultiline]}
-                          />
-                          <View style={styles.reprovarLinhaBotoes}>
-                            <Pressable
-                              style={styles.botaoLinhaSecundario}
-                              onPress={handleCancelarReprovarLinha}
-                              disabled={processandoLinha}
-                            >
-                              <Text style={styles.botaoLinhaSecundarioTexto}>
-                                Cancelar
-                              </Text>
-                            </Pressable>
-                            <Pressable
-                              style={styles.botaoLinhaPerigo}
-                              onPress={() =>
-                                handleConfirmarReprovarLinha(ordem.id)
-                              }
-                              disabled={processandoLinha}
-                            >
-                              <Text style={styles.botaoLinhaPerigoTexto}>
-                                {processandoLinha
-                                  ? 'Reprovando…'
-                                  : 'Confirmar reprovação'}
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    {!reprovandoEstaLinha ? (
-                      <View style={styles.linhaValidacaoAcoes}>
-                        {override ? (
-                          override.tipo === 'qualidade' ? (
-                            <View
-                              style={[
-                                styles.seloValidacao,
-                                {
-                                  borderColor: getQualidadeInfo(override.valor)
-                                    .color,
-                                  backgroundColor: `${getQualidadeInfo(override.valor).color}0D`,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.seloValidacaoTexto,
-                                  {
-                                    color: getQualidadeInfo(override.valor)
-                                      .color,
-                                  },
-                                ]}
-                              >
-                                ✓ {getQualidadeInfo(override.valor).label}
-                              </Text>
-                            </View>
-                          ) : (
-                            <View
-                              style={[
-                                styles.seloValidacao,
-                                {
-                                  borderColor: semantic.overdue,
-                                  backgroundColor: `${semantic.overdue}0D`,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.seloValidacaoTexto,
-                                  { color: semantic.overdue },
-                                ]}
-                              >
-                                ✕ Reprovada
-                              </Text>
-                            </View>
-                          )
-                        ) : (
-                          <>
-                            {(['bom', 'medio', 'ruim'] as Qualidade[]).map(
-                              (opcao) => {
-                                const info = getQualidadeInfo(opcao);
-                                return (
-                                  <Pressable
-                                    key={opcao}
-                                    style={[
-                                      styles.botaoQualidadeLinha,
-                                      {
-                                        borderColor: info.color,
-                                        backgroundColor: `${info.color}0D`,
-                                      },
-                                    ]}
-                                    onPress={() =>
-                                      handleValidarLinha(ordem.id, opcao)
-                                    }
-                                    disabled={processandoLinha}
-                                  >
-                                    <Text
-                                      style={[
-                                        styles.botaoQualidadeLinhaTexto,
-                                        { color: info.color },
-                                      ]}
-                                    >
-                                      {info.label}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              },
-                            )}
-                            <Pressable
-                              style={styles.botaoLinhaSecundario}
-                              onPress={() => handleAbrirReprovarLinha(ordem.id)}
-                              disabled={processandoLinha}
-                            >
-                              <Text style={styles.botaoLinhaSecundarioTexto}>
-                                Reprovar
-                              </Text>
-                            </Pressable>
-                          </>
+                    {expandido ? (
+                      <View style={styles.grupoValidacaoItens}>
+                        {grupo.itens.map((ordem) =>
+                          renderLinhaValidacao(ordem),
                         )}
                       </View>
                     ) : null}
@@ -4038,6 +4101,27 @@ const styles = StyleSheet.create({
   listaValidacao: {
     gap: spacing.xs,
     marginTop: spacing.xs,
+  },
+  grupoValidacao: {
+    backgroundColor: light.card,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  grupoValidacaoCabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  grupoValidacaoCabecalhoTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  grupoValidacaoItens: {
+    gap: spacing.xs,
   },
   linhaValidacao: {
     backgroundColor: light.card,
