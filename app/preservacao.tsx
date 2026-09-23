@@ -83,6 +83,7 @@ function paraItemExecucao(ordem: OrdemServico): ExecucaoOrdemItem {
     titulo: tituloOrdem(ordem),
     tipo: tipoNomeOrdem(ordem),
     local: localNomeOrdem(ordem),
+    rota: plano?.rotas?.nome ?? null,
     descricao: plano?.descricao ?? null,
     observacoes: plano ? plano.observacoes : ordem.observacao,
     status: ordem.status,
@@ -741,6 +742,7 @@ export default function Preservacao() {
                   ordem.status === 'em_andamento' && ordem.pausado_em === null;
                 const concluidaLinha = ordem.status === 'concluida';
                 const local = localNomeOrdem(ordem);
+                const rotaNome = ordem.planos_manutencao?.rotas?.nome ?? null;
                 const processandoLinha = processandoOrdemId === ordem.id;
 
                 return (
@@ -763,6 +765,11 @@ export default function Preservacao() {
                       </Text>
                       {local ? (
                         <Text style={styles.linhaChecklistLocal}>{local}</Text>
+                      ) : null}
+                      {rotaNome ? (
+                        <Text style={styles.linhaChecklistLocal}>
+                          Rota: {rotaNome}
+                        </Text>
                       ) : null}
                       {emAndamentoLinha && ordem.iniciado_em ? (
                         <TimerAtividade

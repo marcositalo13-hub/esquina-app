@@ -25,6 +25,9 @@ export type ExecucaoOrdemItem = {
   titulo: string;
   tipo: string;
   local: string | null;
+  // Nome da rota a que a atividade pertence — null para extraordinária
+  // (avulsa, sem rota por definição).
+  rota: string | null;
   descricao: string | null;
   observacoes: string | null;
   status: StatusOrdemServico;
@@ -446,6 +449,11 @@ export function ExecucaoGuiada({
                     <Text style={styles.tipoAtividade}>{ordemAtual.tipo}</Text>
                     {ordemAtual.local ? (
                       <Text style={styles.detalhe}>{ordemAtual.local}</Text>
+                    ) : null}
+                    {ordemAtual.rota ? (
+                      <Text style={styles.detalhe}>
+                        Rota: {ordemAtual.rota}
+                      </Text>
                     ) : null}
                     {ordemAtual.descricao ? (
                       <Text style={styles.paragrafo}>
