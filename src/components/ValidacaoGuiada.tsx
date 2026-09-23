@@ -20,6 +20,7 @@ import {
   type Qualidade,
 } from '../data/manutencao';
 import { supabase } from '../lib/supabase';
+import { reprovarOrdem, validarOrdem } from '../lib/validacaoOrdens';
 import { fonts, light, motion, radius, semantic, spacing } from '../theme';
 
 type Etapa = 'pergunta' | 'qualidade' | 'reprovar';
@@ -194,23 +195,12 @@ export function ValidacaoGuiada({
     setProcessando(true);
     setErroAcao(null);
 
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({
-        status: 'pendente',
-        concluida_em: null,
-        concluida_por: null,
-        iniciado_em: null,
-        motivo_reprovacao: motivoReprovacao.trim() || null,
-        reprovacao_pendente: true,
-        reprovada_em: new Date().toISOString(),
-      })
-      .eq('id', ordemAtual.id);
+    const { error } = await reprovarOrdem(ordemAtual.id, motivoReprovacao);
 
     setProcessando(false);
 
     if (error) {
-      setErroAcao(error.message);
+      setErroAcao(error);
       return;
     }
 
@@ -225,20 +215,12 @@ export function ValidacaoGuiada({
     setProcessando(true);
     setErroAcao(null);
 
-    const { error } = await supabase
-      .from('ordens_servico')
-      .update({
-        validada: true,
-        qualidade: qualidadeSelecionada,
-        validada_em: new Date().toISOString(),
-        validada_por: 'Teste Administrador',
-      })
-      .eq('id', ordemAtual.id);
+    const { error } = await validarOrdem(ordemAtual.id, qualidadeSelecionada);
 
     setProcessando(false);
 
     if (error) {
-      setErroAcao(error.message);
+      setErroAcao(error);
       return;
     }
 
