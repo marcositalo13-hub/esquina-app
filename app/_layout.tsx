@@ -19,6 +19,12 @@ import { light } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// Modo teste: sem login real, sem Supabase Auth. Toda a lógica de
+// sessão/papel/redirecionamento abaixo é ignorada — o app abre no seletor
+// de perfis restaurado do git (ver app/seletor-teste.tsx e app/index.tsx) e
+// navega livremente entre /admin e /preservacao sem proteção de rota.
+const modoTeste = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
+
 // Rotas que exigem sessão ativa — Admin (tudo sob /admin) e a execução da
 // Zeladoria (/preservacao, tela raiz). Sem sessão nelas, sempre volta pro
 // login (ver o useEffect de proteção abaixo).
@@ -59,6 +65,10 @@ export default function RootLayout() {
   // Sessão inicial (persistida via AsyncStorage) + qualquer mudança depois
   // (login, logout, refresh de token).
   useEffect(() => {
+    if (modoTeste) {
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setSessao(data.session ?? null);
     });
@@ -79,6 +89,10 @@ export default function RootLayout() {
   // já não é mais a atual) sobrescreva o resultado de uma mais nova.
   useEffect(() => {
     let cancelado = false;
+
+    if (modoTeste) {
+      return;
+    }
 
     if (sessao === undefined) {
       setEstadoPapel({ status: 'carregando' });
@@ -116,6 +130,10 @@ export default function RootLayout() {
   // estadoPapel — cobre tanto "acabei de logar" quanto "abri o app com
   // sessão já persistida" (Parte 1) parado em /login ou /.
   useEffect(() => {
+    if (modoTeste) {
+      return;
+    }
+
     if (estadoPapel.status === 'carregando') {
       return;
     }
@@ -138,7 +156,9 @@ export default function RootLayout() {
     }
   }, [estadoPapel, pathname, router]);
 
-  const pronto = fontsLoaded && estadoPapel.status !== 'carregando';
+  const pronto = modoTeste
+    ? fontsLoaded
+    : fontsLoaded && estadoPapel.status !== 'carregando';
 
   useEffect(() => {
     if (pronto) {

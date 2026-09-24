@@ -14,6 +14,10 @@ import { hojeLocal } from '../src/data/manutencao';
 import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
+// Em modo teste, "Sair" só volta pro seletor de perfis — sem sessão real
+// pra encerrar (ver app/_layout.tsx e app/seletor-teste.tsx).
+const modoTeste = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
+
 type CardConfig = {
   key: string;
   label: string;
@@ -131,6 +135,10 @@ export default function Admin() {
         <Text style={styles.title}>Administrador</Text>
         <Pressable
           onPress={async () => {
+            if (modoTeste) {
+              router.replace('/seletor-teste');
+              return;
+            }
             await supabase.auth.signOut();
             router.replace('/login');
           }}

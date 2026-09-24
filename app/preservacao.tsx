@@ -43,6 +43,10 @@ import { supabase } from '../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
+// Em modo teste, "Sair" só volta pro seletor de perfis — sem sessão real
+// pra encerrar (ver app/_layout.tsx e app/seletor-teste.tsx).
+const modoTeste = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
+
 const hoje = hojeLocal;
 
 type GrupoRota = { rota: Rota; itens: OrdemServico[] };
@@ -689,6 +693,10 @@ export default function Preservacao() {
           </Pressable>
           <Pressable
             onPress={async () => {
+              if (modoTeste) {
+                router.replace('/seletor-teste');
+                return;
+              }
               await supabase.auth.signOut();
               router.replace('/login');
             }}

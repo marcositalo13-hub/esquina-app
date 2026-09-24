@@ -56,8 +56,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // process.env aqui é o ambiente do servidor (Vercel), não o do bundle do
+  // cliente — precisa ser configurado separadamente lá, ver instruções de
+  // deploy. Sem token só é aceito com a flag ligada; nunca o contrário.
+  const modoTesteServidor = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
   const tokenSessao = extrairTokenSessao(req);
-  if (!tokenSessao) {
+  if (!tokenSessao && !modoTesteServidor) {
     res.status(401).json({ erro: 'Sessão ausente ou expirada.' });
     return;
   }
@@ -99,30 +103,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   );
 
   try {
-    // Quem está criando decide o condomínio do novo funcionário — nunca
-    // "o primeiro condomínio que existir" (bug de `limit(1)` que misturava
-    // dados entre condomínios assim que houvesse mais de um).
-    const { data: chamador, error: erroChamador } =
-      await supabaseAdmin.auth.getUser(tokenSessao);
+    let condominioId: string;
 
-    if (erroChamador || !chamador?.user) {
-      res.status(401).json({ erro: 'Sessão inválida.' });
-      return;
-    }
+    if (tokenSessao) {
+      // Quem está criando decide o condomínio do novo funcionário — nunca
+      // "o primeiro condomínio que existir" (bug de `limit(1)` que
+      // misturava dados entre condomínios assim que houvesse mais de um).
+      const { data: chamador, error: erroChamador } =
+        await supabaseAdmin.auth.getUser(tokenSessao);
 
-    const { data: usuarioChamador, error: erroUsuarioChamador } =
-      await supabaseAdmin
-        .from('usuarios')
-        .select('condominio_id')
-        .eq('id', chamador.user.id)
+      if (erroChamador || !chamador?.user) {
+        res.status(401).json({ erro: 'Sessão inválida.' });
+        return;
+      }
+
+      const { data: usuarioChamador, error: erroUsuarioChamador } =
+        await supabaseAdmin
+          .from('usuarios')
+          .select('condominio_id')
+          .eq('id', chamador.user.id)
+          .single();
+
+      if (erroUsuarioChamador || !usuarioChamador) {
+        res
+          .status(403)
+          .json({ erro: 'Usuário não vinculado a um condomínio.' });
+        return;
+      }
+
+      condominioId = usuarioChamador.condominio_id;
+    } else {
+      // Sem token, só chega aqui com modoTesteServidor === true (guarda lá
+      // em cima). Sem sessão real pra resolver o chamador, volta ao
+      // comportamento antigo: único condomínio existente.
+      const { data: condominio, error: erroCondominio } = await supabaseAdmin
+        .from('condominios')
+        .select('id')
+        .limit(1)
         .single();
 
-    if (erroUsuarioChamador || !usuarioChamador) {
-      res.status(403).json({ erro: 'Usuário não vinculado a um condomínio.' });
-      return;
-    }
+      if (erroCondominio || !condominio) {
+        throw erroCondominio ?? new Error('Nenhum condomínio cadastrado.');
+      }
 
-    const condominioId = usuarioChamador.condominio_id;
+      condominioId = condominio.id;
+    }
 
     const { data: usuarioCriado, error: erroAuth } =
       await supabaseAdmin.auth.admin.createUser({
