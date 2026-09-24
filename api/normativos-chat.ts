@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabase } from '../src/lib/supabase';
+import { supabase } from '../src/lib/supabase-server';
 
 type HistoricoMensagem = {
   role: 'user' | 'assistant';
