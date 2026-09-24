@@ -38,9 +38,27 @@ function ehErroEmailDuplicado(
   return erro.code === 'email_exists';
 }
 
+// Token de sessão de quem está chamando (enviado por app/admin/funcionarios.tsx
+// via `Authorization: Bearer <access_token>`) — usado só pra descobrir o
+// `condominio_id` de quem criou, nunca pra decidir se a criação é permitida
+// (isso continua responsabilidade da tela/rota protegida em app/_layout.tsx).
+function extrairTokenSessao(req: VercelRequest): string | null {
+  const cabecalho = req.headers.authorization;
+  if (!cabecalho?.startsWith('Bearer ')) {
+    return null;
+  }
+  return cabecalho.slice('Bearer '.length).trim() || null;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ erro: 'Método não permitido.' });
+    return;
+  }
+
+  const tokenSessao = extrairTokenSessao(req);
+  if (!tokenSessao) {
+    res.status(401).json({ erro: 'Sessão ausente ou expirada.' });
     return;
   }
 
@@ -81,15 +99,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   );
 
   try {
-    const { data: condominio, error: erroCondominio } = await supabaseAdmin
-      .from('condominios')
-      .select('id')
-      .limit(1)
-      .single();
+    // Quem está criando decide o condomínio do novo funcionário — nunca
+    // "o primeiro condomínio que existir" (bug de `limit(1)` que misturava
+    // dados entre condomínios assim que houvesse mais de um).
+    const { data: chamador, error: erroChamador } =
+      await supabaseAdmin.auth.getUser(tokenSessao);
 
-    if (erroCondominio || !condominio) {
-      throw erroCondominio ?? new Error('Nenhum condomínio cadastrado.');
+    if (erroChamador || !chamador?.user) {
+      res.status(401).json({ erro: 'Sessão inválida.' });
+      return;
     }
+
+    const { data: usuarioChamador, error: erroUsuarioChamador } =
+      await supabaseAdmin
+        .from('usuarios')
+        .select('condominio_id')
+        .eq('id', chamador.user.id)
+        .single();
+
+    if (erroUsuarioChamador || !usuarioChamador) {
+      res.status(403).json({ erro: 'Usuário não vinculado a um condomínio.' });
+      return;
+    }
+
+    const condominioId = usuarioChamador.condominio_id;
 
     const { data: usuarioCriado, error: erroAuth } =
       await supabaseAdmin.auth.admin.createUser({
@@ -116,7 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { error: erroInsert } = await supabaseAdmin.from('usuarios').insert({
       id: usuarioCriado.user.id,
-      condominio_id: condominio.id,
+      condominio_id: condominioId,
       papel,
       nome,
       cpf,

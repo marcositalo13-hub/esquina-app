@@ -18,6 +18,7 @@ import type {
   Funcionario,
   PapelFuncionario,
 } from '../../src/data/funcionarios';
+import { supabase } from '../../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const PAPEIS: { valor: PapelFuncionario; label: string }[] = [
@@ -249,9 +250,18 @@ export default function AdminFuncionarios() {
     setSalvando(true);
     setErroModal(null);
     try {
+      // Backend usa o token pra descobrir de qual condomínio é quem está
+      // criando (ver api/criar-funcionario.ts) — sem ele, a criação nem
+      // chega a rodar (401).
+      const { data: sessaoAtual } = await supabase.auth.getSession();
+      const tokenSessao = sessaoAtual.session?.access_token;
+
       const resposta = await fetch('/api/criar-funcionario', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tokenSessao ? { Authorization: `Bearer ${tokenSessao}` } : {}),
+        },
         body: JSON.stringify({
           nome: nome.trim(),
           cpf: cpfDigitos,
