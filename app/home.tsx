@@ -11,6 +11,10 @@ import condos from '../src/data/condos';
 import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, spacing } from '../src/theme';
 
+// Em modo teste, "Sair" só volta pro seletor de perfis — sem sessão real
+// pra encerrar (ver app/_layout.tsx e app/seletor-teste.tsx).
+const modoTeste = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
+
 const condo = condos[0];
 
 const menuItems: BottomTabItem[] = [
@@ -44,6 +48,10 @@ export default function Home() {
           </Text>
           <Pressable
             onPress={async () => {
+              if (modoTeste) {
+                router.replace('/seletor-teste');
+                return;
+              }
               await supabase.auth.signOut();
               router.replace('/login');
             }}
