@@ -9,13 +9,137 @@ import {
   SourceSerif4_600SemiBold,
 } from '@expo-google-fonts/source-serif-4';
 import type { Session } from '@supabase/supabase-js';
-import { Stack, usePathname, useRouter } from 'expo-router';
+import {
+  type ErrorBoundaryProps,
+  Stack,
+  usePathname,
+  useRouter,
+} from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../src/lib/supabase';
-import { light } from '../src/theme';
+import { fonts, light, radius, semantic, spacing } from '../src/theme';
+
+// Sem ErrorBoundary em nenhuma tela/layout do projeto até aqui: um erro de
+// render em qualquer rota (ex.: app/admin/preservacao.tsx) desmontava a
+// árvore inteira sem nenhuma mensagem — tela em branco. Exportado aqui
+// porque este é o único _layout.tsx do projeto (raiz), então cobre toda
+// rota. Deliberadamente sem nada de Supabase/sessão/contexto/dado — o
+// fallback não pode depender do que pode ter sido a causa do erro.
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  console.error('[ErrorBoundary]', error);
+
+  const caminho = Platform.OS === 'web' ? window.location.pathname : null;
+
+  function handleRecarregar() {
+    if (Platform.OS === 'web') {
+      window.location.reload();
+      return;
+    }
+    retry();
+  }
+
+  return (
+    <View style={errorBoundaryStyles.container}>
+      <ScrollView contentContainerStyle={errorBoundaryStyles.conteudo}>
+        <Text style={errorBoundaryStyles.titulo}>
+          Não foi possível abrir esta tela
+        </Text>
+        <Text selectable style={errorBoundaryStyles.detalhe}>
+          {error.name}: {error.message}
+        </Text>
+        {caminho ? (
+          <Text selectable style={errorBoundaryStyles.detalhe}>
+            {caminho}
+          </Text>
+        ) : null}
+        <View style={errorBoundaryStyles.botoes}>
+          <Pressable
+            style={errorBoundaryStyles.botaoSecundario}
+            onPress={() => {
+              retry();
+            }}
+          >
+            <Text style={errorBoundaryStyles.botaoSecundarioTexto}>
+              Tentar novamente
+            </Text>
+          </Pressable>
+          <Pressable
+            style={errorBoundaryStyles.botaoPrimario}
+            onPress={handleRecarregar}
+          >
+            <Text style={errorBoundaryStyles.botaoPrimarioTexto}>
+              Recarregar o app
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const errorBoundaryStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: light.bg,
+  },
+  conteudo: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  titulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 20,
+    color: light.textPrimary,
+  },
+  detalhe: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: semantic.overdue,
+  },
+  botoes: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  botaoSecundario: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: light.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + 4,
+    alignItems: 'center',
+  },
+  botaoSecundarioTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textPrimary,
+  },
+  botaoPrimario: {
+    flex: 1,
+    backgroundColor: light.inkAction,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + 4,
+    alignItems: 'center',
+  },
+  botaoPrimarioTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.card,
+  },
+});
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
