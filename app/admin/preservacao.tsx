@@ -130,6 +130,11 @@ export default function AdminPreservacao() {
 
   const [calendarioFiltrosAberto, setCalendarioFiltrosAberto] = useState(false);
   const [planosAbertos, setPlanosAbertos] = useState(false);
+  // Seção "Rotas" (antigo título "Atividades do dia") — aberta por padrão,
+  // já que é o conteúdo principal da tela; ganhou recolher/expandir na
+  // Fase 1 do redesenho (porta de entrada única), mas continua visível
+  // sem rolar nem tocar em nada na primeira renderização.
+  const [rotasSecaoAberta, setRotasSecaoAberta] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilter>('hoje');
   const [atrasadasFiltro, setAtrasadasFiltro] = useState(false);
@@ -2578,14 +2583,19 @@ export default function AdminPreservacao() {
           ref={botaoCriarRef}
           onPress={abrirMenuCriar}
           style={({ pressed }) => [
-            styles.addButton,
+            styles.novoBotaoPrincipal,
             pressed && styles.addButtonPressed,
           ]}
         >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
+          <Ionicons name="add" size={18} color="#FFFFFF" />
+          <Text style={styles.novoBotaoPrincipalTexto}>Novo</Text>
         </Pressable>
       </View>
 
+      {/* Porta de entrada única de criação — Fase 1 do redesenho: as três
+          formas de criar algo nesta aba (rota, atividade/plano, extraordinária)
+          partem só daqui. Cada opção abre o formulário existente
+          correspondente, sem alterá-lo. */}
       <CardMenu
         visible={menuCriarVisivel}
         onClose={() => setMenuCriarVisivel(false)}
@@ -2595,15 +2605,49 @@ export default function AdminPreservacao() {
           style={styles.menuItem}
           onPress={() => {
             setMenuCriarVisivel(false);
+            abrirModalRota();
+          }}
+        >
+          <Text style={styles.menuItemTexto}>Nova rota</Text>
+          <Text style={styles.menuItemDescricao}>
+            Conjunto de atividades com um responsável.
+          </Text>
+        </Pressable>
+        <Pressable
+          style={styles.menuItem}
+          onPress={() => {
+            setMenuCriarVisivel(false);
             abrirModalNovo();
           }}
         >
-          <Text style={styles.menuItemTexto}>Plano de rotina</Text>
+          <Text style={styles.menuItemTexto}>Nova atividade</Text>
+          <Text style={styles.menuItemDescricao}>
+            Tarefa planejada, dentro de uma rota.
+          </Text>
         </Pressable>
         <Pressable style={styles.menuItem} onPress={abrirModalExtraordinaria}>
           <Text style={styles.menuItemTexto}>Atividade extraordinária</Text>
+          <Text style={styles.menuItemDescricao}>
+            Tarefa imprevista, fora das rotas.
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.menuConfirmacaoBotaoCancelar,
+            styles.menuCriarBotaoCancelar,
+          ]}
+          onPress={() => setMenuCriarVisivel(false)}
+        >
+          <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>Cancelar</Text>
         </Pressable>
       </CardMenu>
+
+      {/* Mesmo overlay usado dentro dos modais de plano/atribuir rota (ver
+          novaRotaOverlay) — aqui, fora de qualquer <Modal>, pra funcionar
+          quando acionado direto pelo menu "+ Novo" acima, sem nenhum outro
+          modal aberto por trás. Não é um <Modal> próprio (nunca foi), então
+          não há risco de empilhar dois Modals simultâneos. */}
+      {novaRotaOverlay}
 
       <ScrollView contentContainerStyle={styles.body}>
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
@@ -2868,146 +2912,160 @@ export default function AdminPreservacao() {
           </>
         ) : null}
 
-        <View style={styles.secaoTituloRow}>
-          <Text style={styles.secaoTitulo}>Atividades do dia</Text>
-          <Pressable onPress={() => abrirModalRota()}>
-            <Text style={styles.novaRotaLink}>+ Nova rota</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={styles.secaoTituloRow}
+          onPress={() => setRotasSecaoAberta((v) => !v)}
+        >
+          <Text style={styles.secaoTitulo}>Rotas</Text>
+          <Ionicons
+            name={rotasSecaoAberta ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={light.textSecondary}
+          />
+        </Pressable>
 
-        {atividadesDoDia.length === 0 ? (
-          <Text style={styles.vazio}>
-            Nenhuma atividade prevista para hoje.
-          </Text>
-        ) : (
-          <View style={styles.listaGrupos}>
-            {atividadesAgrupadas.extraordinarias.length > 0 ? (
-              <View style={styles.lista}>
-                {atividadesAgrupadas.extraordinarias.map((ordem) =>
-                  renderAtividadeCard(ordem),
-                )}
-              </View>
-            ) : null}
+        {rotasSecaoAberta ? (
+          atividadesDoDia.length === 0 ? (
+            <Text style={styles.vazio}>
+              Nenhuma atividade prevista para hoje.
+            </Text>
+          ) : (
+            <View style={styles.listaGrupos}>
+              {atividadesAgrupadas.extraordinarias.length > 0 ? (
+                <View style={styles.lista}>
+                  {atividadesAgrupadas.extraordinarias.map((ordem) =>
+                    renderAtividadeCard(ordem),
+                  )}
+                </View>
+              ) : null}
 
-            {atividadesAgrupadas.grupos.map(({ rota, itens }) => {
-              const concluidas = itens.filter(
-                (o) => o.status === 'concluida',
-              ).length;
-              const percentual =
-                itens.length > 0
-                  ? Math.round((concluidas / itens.length) * 100)
-                  : 0;
-              const expandida = rotasExpandidas.has(rota.id);
+              {atividadesAgrupadas.grupos.map(({ rota, itens }) => {
+                const concluidas = itens.filter(
+                  (o) => o.status === 'concluida',
+                ).length;
+                const percentual =
+                  itens.length > 0
+                    ? Math.round((concluidas / itens.length) * 100)
+                    : 0;
+                const expandida = rotasExpandidas.has(rota.id);
 
-              return (
-                <Fragment key={rota.id}>
-                  <View style={styles.grupoRota}>
-                    <View style={styles.grupoRotaResumoCard}>
-                      <View style={styles.grupoRotaResumoCabecalho}>
-                        <Text style={styles.grupoRotaResumoTitulo}>
-                          {rota.nome}
+                return (
+                  <Fragment key={rota.id}>
+                    <View style={styles.grupoRota}>
+                      <View style={styles.grupoRotaResumoCard}>
+                        <View style={styles.grupoRotaResumoCabecalho}>
+                          <Text style={styles.grupoRotaResumoTitulo}>
+                            {rota.nome}
+                          </Text>
+                          <Pressable
+                            ref={(el) => {
+                              if (el) {
+                                menuRotaIconRefs.current.set(rota.id, el);
+                              }
+                            }}
+                            onPress={() => handleAbrirMenuRota(rota.id)}
+                            hitSlop={{
+                              top: 10,
+                              bottom: 10,
+                              left: 10,
+                              right: 10,
+                            }}
+                            style={({ pressed }) => [
+                              styles.planoMenuButton,
+                              pressed && styles.planoMenuButtonPressionado,
+                            ]}
+                          >
+                            <Ionicons
+                              name="ellipsis-horizontal"
+                              size={18}
+                              color={light.textSecondary}
+                            />
+                          </Pressable>
+                        </View>
+                        <Text style={styles.grupoRotaResumoSubtitulo}>
+                          {itens.length} atividades programadas para o dia
                         </Text>
+
+                        {rota.funcionario_id ? (
+                          <Text style={styles.grupoRotaResponsavelTexto}>
+                            Responsável:{' '}
+                            {funcionariosPorId[rota.funcionario_id] ??
+                              'Funcionário'}
+                          </Text>
+                        ) : (
+                          <View style={styles.seloSemResponsavel}>
+                            <Text style={styles.seloSemResponsavelTexto}>
+                              Sem responsável
+                            </Text>
+                          </View>
+                        )}
+
+                        <View style={styles.grupoRotaProgressoRow}>
+                          <View style={styles.grupoRotaProgressoTrilho}>
+                            <View
+                              style={[
+                                styles.grupoRotaProgressoPreenchimento,
+                                { width: `${percentual}%` },
+                              ]}
+                            />
+                          </View>
+                          <Text style={styles.grupoRotaProgressoTexto}>
+                            {percentual}%
+                          </Text>
+                        </View>
+
                         <Pressable
-                          ref={(el) => {
-                            if (el) {
-                              menuRotaIconRefs.current.set(rota.id, el);
-                            }
-                          }}
-                          onPress={() => handleAbrirMenuRota(rota.id)}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          style={({ pressed }) => [
-                            styles.planoMenuButton,
-                            pressed && styles.planoMenuButtonPressionado,
-                          ]}
+                          style={styles.grupoRotaExpandirRow}
+                          onPress={() => toggleRotaExpandida(rota.id)}
                         >
+                          <Text style={styles.grupoRotaExpandirTexto}>
+                            {expandida
+                              ? 'Recolher atividades'
+                              : 'Expandir atividades'}
+                          </Text>
                           <Ionicons
-                            name="ellipsis-horizontal"
-                            size={18}
-                            color={light.textSecondary}
+                            name={expandida ? 'chevron-up' : 'chevron-down'}
+                            size={16}
+                            color={light.inkAction}
                           />
                         </Pressable>
                       </View>
-                      <Text style={styles.grupoRotaResumoSubtitulo}>
-                        {itens.length} atividades programadas para o dia
-                      </Text>
 
-                      {rota.funcionario_id ? (
-                        <Text style={styles.grupoRotaResponsavelTexto}>
-                          Responsável:{' '}
-                          {funcionariosPorId[rota.funcionario_id] ??
-                            'Funcionário'}
-                        </Text>
-                      ) : (
-                        <View style={styles.seloSemResponsavel}>
-                          <Text style={styles.seloSemResponsavelTexto}>
-                            Sem responsável
-                          </Text>
+                      {expandida ? (
+                        <View style={styles.atividadesRotaContainer}>
+                          {itens.map((ordem) =>
+                            renderAtividadeCard(ordem, true),
+                          )}
                         </View>
-                      )}
-
-                      <View style={styles.grupoRotaProgressoRow}>
-                        <View style={styles.grupoRotaProgressoTrilho}>
-                          <View
-                            style={[
-                              styles.grupoRotaProgressoPreenchimento,
-                              { width: `${percentual}%` },
-                            ]}
-                          />
-                        </View>
-                        <Text style={styles.grupoRotaProgressoTexto}>
-                          {percentual}%
-                        </Text>
-                      </View>
-
-                      <Pressable
-                        style={styles.grupoRotaExpandirRow}
-                        onPress={() => toggleRotaExpandida(rota.id)}
-                      >
-                        <Text style={styles.grupoRotaExpandirTexto}>
-                          {expandida
-                            ? 'Recolher atividades'
-                            : 'Expandir atividades'}
-                        </Text>
-                        <Ionicons
-                          name={expandida ? 'chevron-up' : 'chevron-down'}
-                          size={16}
-                          color={light.inkAction}
-                        />
-                      </Pressable>
+                      ) : null}
                     </View>
 
-                    {expandida ? (
-                      <View style={styles.atividadesRotaContainer}>
-                        {itens.map((ordem) => renderAtividadeCard(ordem, true))}
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <CardMenu
-                    visible={menuRotaAbertaId === rota.id}
-                    onClose={fecharMenuRota}
-                    anchorPosition={menuRotaAncora}
-                  >
-                    <Pressable
-                      style={styles.menuItem}
-                      onPress={() => abrirModalEditarRota(rota)}
+                    <CardMenu
+                      visible={menuRotaAbertaId === rota.id}
+                      onClose={fecharMenuRota}
+                      anchorPosition={menuRotaAncora}
                     >
-                      <Text style={styles.menuItemTexto}>Editar rota</Text>
-                    </Pressable>
-                  </CardMenu>
-                </Fragment>
-              );
-            })}
+                      <Pressable
+                        style={styles.menuItem}
+                        onPress={() => abrirModalEditarRota(rota)}
+                      >
+                        <Text style={styles.menuItemTexto}>Editar rota</Text>
+                      </Pressable>
+                    </CardMenu>
+                  </Fragment>
+                );
+              })}
 
-            {atividadesAgrupadas.semRota.length > 0 ? (
-              <View style={styles.lista}>
-                {atividadesAgrupadas.semRota.map((ordem) =>
-                  renderAtividadeCard(ordem),
-                )}
-              </View>
-            ) : null}
-          </View>
-        )}
+              {atividadesAgrupadas.semRota.length > 0 ? (
+                <View style={styles.lista}>
+                  {atividadesAgrupadas.semRota.map((ordem) =>
+                    renderAtividadeCard(ordem),
+                  )}
+                </View>
+              ) : null}
+            </View>
+          )
+        ) : null}
 
         <View style={styles.painelCard}>
           <View style={styles.calendarioCabecalho}>
@@ -4134,13 +4192,19 @@ const styles = StyleSheet.create({
     width: 32,
     alignItems: 'center',
   },
-  addButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: light.inkAction,
+  novoBotaoPrincipal: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    height: 32,
+    borderRadius: radius.md,
+    backgroundColor: light.inkAction,
+  },
+  novoBotaoPrincipalTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   addButtonPressed: {
     backgroundColor: light.inkActionPressed,
@@ -4171,11 +4235,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 16,
     color: light.textPrimary,
-  },
-  novaRotaLink: {
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    color: light.inkAction,
   },
   listaValidacao: {
     gap: spacing.xs,
@@ -4586,6 +4645,17 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     color: light.textPrimary,
+  },
+  menuItemDescricao: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
+    marginTop: 2,
+  },
+  menuCriarBotaoCancelar: {
+    marginHorizontal: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
   },
   menuItemTextoDesabilitado: {
     color: light.textMuted,
