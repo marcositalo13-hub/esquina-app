@@ -500,18 +500,38 @@ export default function AdminPreservacao() {
     carregarFuncionariosNomes,
   ]);
 
+  // Guarda a versão mais atual de recarregarOrdens sem entrar nas
+  // dependências do efeito de Realtime abaixo — o efeito de baixo roda só
+  // uma vez por montagem, e o callback sempre chama a versão corrente via
+  // ref, nunca uma versão presa (stale) da primeira montagem.
+  const recarregarOrdensRef = useRef(recarregarOrdens);
+  useEffect(() => {
+    recarregarOrdensRef.current = recarregarOrdens;
+  }, [recarregarOrdens]);
+
   // Realtime: qualquer INSERT/UPDATE/DELETE em ordens_servico (feito por
   // este admin, pela execução, ou por outra sessão) refaz o mesmo refetch
   // já usado para atualizar "Atividades do dia"/agrupamentos por rota —
   // sem duplicar a lógica de busca.
+  //
+  // Nome do canal com sufixo aleatório gerado a cada montagem: o
+  // unsubscribe de RealtimeClient é assíncrono (só some da lista interna
+  // quando o servidor confirma o close), então remontar rápido podia
+  // reaproveitar um canal com remoção ainda pendente — já inscrito — e
+  // `.on()` estourava "cannot add `postgres_changes` callbacks ... after
+  // `subscribe()`", derrubando a tela inteira por falta de ErrorBoundary
+  // (agora existe em app/_layout.tsx, mas a causa continua sendo esta).
+  // Deps vazias: sem isso o efeito nunca precisa rodar de novo na mesma
+  // montagem.
   useEffect(() => {
+    const sufixo = Math.random().toString(36).slice(2, 8);
     const canal = supabase
-      .channel('admin-preservacao-ordens-servico')
+      .channel(`admin-preservacao-ordens-servico-${sufixo}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ordens_servico' },
         () => {
-          recarregarOrdens();
+          recarregarOrdensRef.current();
         },
       )
       .subscribe();
@@ -519,7 +539,7 @@ export default function AdminPreservacao() {
     return () => {
       supabase.removeChannel(canal);
     };
-  }, [recarregarOrdens]);
+  }, []);
 
   // Calendário: marca TODAS as ordens, sem aplicar nenhum filtro ativo.
   const markedDates = useMemo(() => {
