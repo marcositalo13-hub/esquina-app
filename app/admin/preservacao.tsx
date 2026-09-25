@@ -55,6 +55,7 @@ import {
   tipoNomeOrdem,
   tituloOrdem,
 } from '../../src/data/manutencao';
+import { resolverCondominioId } from '../../src/lib/resolverCondominioId';
 import { supabase } from '../../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
 import { reprovarOrdem, validarOrdem } from '../../src/lib/validacaoOrdens';
@@ -80,35 +81,6 @@ function nomeLocal(plano: {
   locais?: { nome: string } | null;
 }): string | null {
   return plano.locais?.nome ?? plano.local ?? null;
-}
-
-// Mesmo padrão de dupla resolução usado em api/criar-funcionario.ts (agora
-// também em api/resolver-condominio.ts): em modo teste (sem sessão real),
-// resolve pelo único condomínio existente; com login real, resolve pela
-// sessão autenticada. O cliente não consegue ler `usuarios`/`condominios`
-// direto (RLS sem política pra esse papel) — por isso passa pelo backend.
-// Usada nos dois pontos de insert desta tela que precisam de
-// `condominio_id` (rota, plano) — não em tipos_atividade, que não tem
-// nenhuma UI de criação hoje.
-async function resolverCondominioId(): Promise<string> {
-  const { data: sessaoAtual } = await supabase.auth.getSession();
-  const tokenSessao = sessaoAtual.session?.access_token;
-
-  const resposta = await fetch('/api/resolver-condominio', {
-    headers: tokenSessao ? { Authorization: `Bearer ${tokenSessao}` } : {},
-  });
-  const dados = (await resposta.json().catch(() => null)) as {
-    condominioId?: string;
-    erro?: string;
-  } | null;
-
-  if (!resposta.ok || !dados?.condominioId) {
-    throw new Error(
-      dados?.erro ?? 'Não foi possível identificar o condomínio.',
-    );
-  }
-
-  return dados.condominioId;
 }
 
 type DateFilter = 'hoje' | 'todas';
@@ -1820,7 +1792,7 @@ export default function AdminPreservacao() {
         // atrás dela nem reage a mudança de periodicidade.
         const { data: planoAtual, error: erroPlanoAtual } = await supabase
           .from('planos_manutencao')
-          .select('data_inicio, periodicidade')
+          .select('data_inicio, periodicidade, condominio_id')
           .eq('id', editingId)
           .single();
 
@@ -1878,6 +1850,9 @@ export default function AdminPreservacao() {
                   plano_id: editingId,
                   data_prevista: data,
                   status: 'pendente',
+                  // Herda do próprio plano (já buscado acima) — nunca
+                  // resolve de novo pela sessão.
+                  condominio_id: planoAtual.condominio_id,
                 })),
               );
 
@@ -1970,6 +1945,10 @@ export default function AdminPreservacao() {
               plano_id: plano.id,
               data_prevista: data,
               status: 'pendente',
+              // Herda do plano recém-criado (não resolve de novo) — a
+              // ordem nasce sempre no mesmo condomínio do plano que a
+              // gerou.
+              condominio_id: plano.condominio_id,
             })),
           );
 

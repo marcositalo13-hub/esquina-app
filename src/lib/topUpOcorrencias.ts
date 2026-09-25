@@ -16,7 +16,7 @@ export async function preencherOcorrenciasFaltantes(): Promise<void> {
   try {
     const { data: planos, error: erroPlanos } = await supabase
       .from('planos_manutencao')
-      .select('id, data_inicio, periodicidade')
+      .select('id, data_inicio, periodicidade, condominio_id')
       .neq('periodicidade', 'Única');
 
     if (erroPlanos || !planos || planos.length === 0) {
@@ -55,6 +55,8 @@ export async function preencherOcorrenciasFaltantes(): Promise<void> {
           plano_id: plano.id,
           data_prevista: data,
           status: 'pendente',
+          // Herda do próprio plano — nunca resolve de novo pela sessão.
+          condominio_id: plano.condominio_id,
         })),
       );
     }

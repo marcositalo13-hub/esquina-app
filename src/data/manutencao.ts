@@ -1,3 +1,4 @@
+import { resolverCondominioId } from '../lib/resolverCondominioId';
 import { supabase } from '../lib/supabase';
 import { light, semantic } from '../theme';
 import type { Ambiente } from './ambientes';
@@ -107,6 +108,10 @@ export type PlanoManutencao = {
   rota_id: string | null;
   ordem_na_rota: number | null;
   created_at: string;
+  // Sempre presente no banco (not null), mas nem toda consulta a busca
+  // explicitamente — nullable aqui só pra não quebrar chamadas antigas que
+  // não incluíam a coluna no select.
+  condominio_id?: string;
   tipos_atividade?: TipoAtividade | null;
   rotas?: Rota | null;
   locais?: Ambiente | null;
@@ -227,6 +232,10 @@ function garantirLinhaAfetada<T extends { id: string }[] | null>(
 export async function criarAtividadeExtraordinaria(
   dados: NovaAtividadeExtraordinaria,
 ): Promise<OrdemServico> {
+  // Sem plano por trás pra herdar condominio_id — resolve pelo mesmo padrão
+  // de dupla resolução usado em rotas/planos/tipos_atividade.
+  const condominioId = await resolverCondominioId();
+
   const { data, error } = await supabase
     .from('ordens_servico')
     .insert({
@@ -239,6 +248,7 @@ export async function criarAtividadeExtraordinaria(
       prioridade: dados.prioridade,
       data_prevista: dados.data_prevista,
       observacao: dados.observacao?.trim() || null,
+      condominio_id: condominioId,
     })
     .select('*, tipos_atividade(*), locais(*)');
 
