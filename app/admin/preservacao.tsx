@@ -82,6 +82,35 @@ function nomeLocal(plano: {
   return plano.locais?.nome ?? plano.local ?? null;
 }
 
+// Mesmo padrão de dupla resolução usado em api/criar-funcionario.ts (agora
+// também em api/resolver-condominio.ts): em modo teste (sem sessão real),
+// resolve pelo único condomínio existente; com login real, resolve pela
+// sessão autenticada. O cliente não consegue ler `usuarios`/`condominios`
+// direto (RLS sem política pra esse papel) — por isso passa pelo backend.
+// Usada nos dois pontos de insert desta tela que precisam de
+// `condominio_id` (rota, plano) — não em tipos_atividade, que não tem
+// nenhuma UI de criação hoje.
+async function resolverCondominioId(): Promise<string> {
+  const { data: sessaoAtual } = await supabase.auth.getSession();
+  const tokenSessao = sessaoAtual.session?.access_token;
+
+  const resposta = await fetch('/api/resolver-condominio', {
+    headers: tokenSessao ? { Authorization: `Bearer ${tokenSessao}` } : {},
+  });
+  const dados = (await resposta.json().catch(() => null)) as {
+    condominioId?: string;
+    erro?: string;
+  } | null;
+
+  if (!resposta.ok || !dados?.condominioId) {
+    throw new Error(
+      dados?.erro ?? 'Não foi possível identificar o condomínio.',
+    );
+  }
+
+  return dados.condominioId;
+}
+
 type DateFilter = 'hoje' | 'todas';
 
 export default function AdminPreservacao() {
@@ -1453,9 +1482,26 @@ export default function AdminPreservacao() {
     setCriandoRota(true);
     setErroModalRota(null);
 
+    let condominioId: string;
+    try {
+      condominioId = await resolverCondominioId();
+    } catch (erro) {
+      setCriandoRota(false);
+      setErroModalRota(
+        erro instanceof Error
+          ? erro.message
+          : 'Não foi possível identificar o condomínio.',
+      );
+      return;
+    }
+
     const { data, error } = await supabase
       .from('rotas')
-      .insert({ nome: nomeNovaRota.trim(), ativo: true })
+      .insert({
+        nome: nomeNovaRota.trim(),
+        ativo: true,
+        condominio_id: condominioId,
+      })
       .select()
       .single();
 
@@ -1866,6 +1912,18 @@ export default function AdminPreservacao() {
           return;
         }
       } else {
+        let condominioId: string;
+        try {
+          condominioId = await resolverCondominioId();
+        } catch (erro) {
+          setErroModal(
+            erro instanceof Error
+              ? erro.message
+              : 'Não foi possível identificar o condomínio.',
+          );
+          return;
+        }
+
         const { data: plano, error: erroPlano } = await supabase
           .from('planos_manutencao')
           .insert({
@@ -1879,6 +1937,7 @@ export default function AdminPreservacao() {
             observacoes: observacoes || null,
             rota_id: rotaId,
             ordem_na_rota: ordemNaRotaNumero,
+            condominio_id: condominioId,
           })
           .select()
           .single();
