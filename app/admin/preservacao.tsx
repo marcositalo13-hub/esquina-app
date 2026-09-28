@@ -1122,6 +1122,13 @@ export default function AdminPreservacao() {
     setRotas((atual) =>
       atual.map((item) => (item.id === rotaEditandoId ? rotaAtualizada : item)),
     );
+    // "Rotas" (atividadesAgrupadas) lê nome/responsável da rota através do
+    // join embutido em ordensHoje/ordens (ordem.planos_manutencao.rotas) —
+    // uma cópia própria, independente do estado `rotas` acima. Sem
+    // recarregar aqui, esse join fica com o nome/responsável antigos até a
+    // próxima montagem da tela (reload), mesmo com a gravação já ok no
+    // banco e `rotas` já atualizado.
+    await recarregarOrdens();
     setModalEditarRotaVisivel(false);
     setRotaEditandoId(null);
   }
