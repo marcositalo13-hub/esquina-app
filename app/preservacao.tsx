@@ -318,19 +318,40 @@ export default function Preservacao() {
     }, [verificarReprovacoes]),
   );
 
+  // Guarda a versão mais atual de carregar/verificarReprovacoes sem entrar
+  // nas dependências do efeito de Realtime abaixo — o efeito de baixo roda
+  // só uma vez por montagem, e o callback sempre chama a versão corrente
+  // via ref, nunca uma versão presa (stale) da primeira montagem.
+  const carregarRef = useRef(carregar);
+  const verificarReprovacoesRef = useRef(verificarReprovacoes);
+  useEffect(() => {
+    carregarRef.current = carregar;
+    verificarReprovacoesRef.current = verificarReprovacoes;
+  }, [carregar, verificarReprovacoes]);
+
   // Realtime: qualquer mudança em ordens_servico (concluída em outro
   // dispositivo, reprovada pelo admin, nova ocorrência gerada, etc.)
   // refaz os mesmos refetches já usados para atualizar a tela — sem
   // duplicar a lógica de busca.
+  //
+  // Nome do canal com sufixo aleatório gerado a cada montagem: o
+  // unsubscribe de RealtimeClient é assíncrono (só some da lista interna
+  // quando o servidor confirma o close), então remontar rápido podia
+  // reaproveitar um canal com remoção ainda pendente — já inscrito — e
+  // `.on()` estourava "cannot add `postgres_changes` callbacks ... after
+  // `subscribe()`". Mesma correção já aplicada em
+  // app/admin/preservacao.tsx:507-538. Deps vazias: sem isso o efeito
+  // nunca precisa rodar de novo na mesma montagem.
   useEffect(() => {
+    const sufixo = Math.random().toString(36).slice(2, 8);
     const canal = supabase
-      .channel('preservacao-execucao-ordens-servico')
+      .channel(`preservacao-execucao-ordens-servico-${sufixo}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ordens_servico' },
         () => {
-          carregar();
-          verificarReprovacoes();
+          carregarRef.current();
+          verificarReprovacoesRef.current();
         },
       )
       .subscribe();
@@ -338,7 +359,7 @@ export default function Preservacao() {
     return () => {
       supabase.removeChannel(canal);
     };
-  }, [carregar, verificarReprovacoes]);
+  }, []);
 
   const reprovacaoAtual = reprovacoes[0] ?? null;
 
