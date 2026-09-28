@@ -1,6 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -38,10 +38,17 @@ type Colaborador = {
 
 export default function SeletorTeste() {
   const insets = useSafeAreaInsets();
-  const { definirIdentidadeTeste } = useIdentidade();
+  const { usuarioId, carregando, definirIdentidadeTeste } = useIdentidade();
+  const params = useLocalSearchParams<{ perfil?: string }>();
+  // "Trocar" (app/preservacao.tsx) navega pra cá com ?perfil=zeladoria —
+  // abre direto na lista de colaboradores em vez do começo do seletor. Sem
+  // o parâmetro, comportamento idêntico a antes (nenhum perfil selecionado).
+  const abrirDiretoEmZeladoria = params.perfil?.toLowerCase() === 'zeladoria';
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
-  const [selectedProfile, setSelectedProfile] = useState<Perfil | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<Perfil | null>(
+    abrirDiretoEmZeladoria ? 'Zeladoria' : null,
+  );
   const [entrando, setEntrando] = useState(false);
 
   // Lista de colaboradores da Zeladoria — só buscada quando esse perfil é
@@ -56,6 +63,17 @@ export default function SeletorTeste() {
     string | null
   >(null);
   const [colaboradoresCarregados, setColaboradoresCarregados] = useState(false);
+
+  // Destaca o colaborador atual quando "Trocar" abre o seletor já em
+  // Zeladoria — usuarioId só fica disponível depois que a identidade
+  // termina de carregar (restaurada do AsyncStorage), daí o efeito em vez
+  // de um useState inicial.
+  useEffect(() => {
+    if (!abrirDiretoEmZeladoria || carregando || !usuarioId) {
+      return;
+    }
+    setColaboradorSelecionadoId((atual) => atual ?? usuarioId);
+  }, [abrirDiretoEmZeladoria, carregando, usuarioId]);
 
   useEffect(() => {
     if (selectedProfile !== 'Zeladoria' || colaboradoresCarregados) {

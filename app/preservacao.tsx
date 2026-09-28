@@ -748,9 +748,14 @@ export default function Preservacao() {
             Teste: entrando como {identidade.nome}
           </Text>
           <Pressable
-            onPress={async () => {
-              await identidade.limparIdentidadeTeste();
-              router.replace('/seletor-teste');
+            onPress={() => {
+              // Não limpa a identidade atual — só é substituída quando
+              // outra pessoa for escolhida (definirIdentidadeTeste, em
+              // app/seletor-teste.tsx). Parâmetro leva o seletor direto
+              // pra lista de colaboradores da Zeladoria, com o atual já
+              // destacado, em vez do início do seletor (mesmo comportamento
+              // de "Sair").
+              router.replace('/seletor-teste?perfil=zeladoria');
             }}
           >
             <Text style={styles.avisoTesteTrocar}>Trocar</Text>
