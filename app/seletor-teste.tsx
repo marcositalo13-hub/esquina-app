@@ -1,8 +1,9 @@
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIdentidade } from '../src/lib/identidade';
 import { dark, fonts, radius, spacing } from '../src/theme';
 
 // Seletor manual de perfil restaurado do git (era app/login.tsx antes do
@@ -26,13 +28,86 @@ type Perfil = 'Administrador' | 'Zeladoria' | 'Morador';
 
 const perfis: Perfil[] = ['Administrador', 'Zeladoria', 'Morador'];
 
+type Colaborador = {
+  id: string;
+  nome: string;
+  funcao: string | null;
+  papel: string;
+  ativo: boolean;
+};
+
 export default function SeletorTeste() {
   const insets = useSafeAreaInsets();
+  const { definirIdentidadeTeste } = useIdentidade();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<Perfil | null>(null);
+  const [entrando, setEntrando] = useState(false);
 
-  function handleEntrar() {
+  // Lista de colaboradores da Zeladoria — só buscada quando esse perfil é
+  // escolhido (não no mount), e só uma vez (não recarrega ao trocar de
+  // perfil e voltar).
+  const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
+  const [carregandoColaboradores, setCarregandoColaboradores] = useState(false);
+  const [erroColaboradores, setErroColaboradores] = useState<string | null>(
+    null,
+  );
+  const [colaboradorSelecionadoId, setColaboradorSelecionadoId] = useState<
+    string | null
+  >(null);
+  const [colaboradoresCarregados, setColaboradoresCarregados] = useState(false);
+
+  useEffect(() => {
+    if (selectedProfile !== 'Zeladoria' || colaboradoresCarregados) {
+      return;
+    }
+
+    let montado = true;
+    setCarregandoColaboradores(true);
+    setErroColaboradores(null);
+
+    fetch('/api/listar-funcionarios')
+      .then((resposta) => resposta.json())
+      .then((dados) => {
+        if (!montado) {
+          return;
+        }
+        const lista = ((dados?.funcionarios ?? []) as Colaborador[]).filter(
+          (item) => item.papel === 'zeladoria' && item.ativo,
+        );
+        setColaboradores(lista);
+        setColaboradoresCarregados(true);
+      })
+      .catch(() => {
+        if (montado) {
+          setErroColaboradores('Não foi possível carregar os colaboradores.');
+        }
+      })
+      .finally(() => {
+        if (montado) {
+          setCarregandoColaboradores(false);
+        }
+      });
+
+    return () => {
+      montado = false;
+    };
+  }, [selectedProfile, colaboradoresCarregados]);
+
+  function handleSelecionarPerfil(perfil: Perfil) {
+    setSelectedProfile(perfil);
+    setColaboradorSelecionadoId(null);
+  }
+
+  const entrarHabilitado =
+    selectedProfile !== 'Zeladoria' ||
+    (colaboradorSelecionadoId !== null && !entrando);
+
+  async function handleEntrar() {
+    if (entrando) {
+      return;
+    }
+
     const perfil = selectedProfile ?? 'Morador';
 
     if (perfil === 'Administrador') {
@@ -41,6 +116,20 @@ export default function SeletorTeste() {
     }
 
     if (perfil === 'Zeladoria') {
+      const colaborador = colaboradores.find(
+        (item) => item.id === colaboradorSelecionadoId,
+      );
+      if (!colaborador) {
+        return;
+      }
+
+      setEntrando(true);
+      await definirIdentidadeTeste({
+        id: colaborador.id,
+        nome: colaborador.nome,
+        papel: colaborador.papel,
+      });
+      setEntrando(false);
       router.replace('/preservacao');
       return;
     }
@@ -95,7 +184,7 @@ export default function SeletorTeste() {
                         styles.chip,
                         selecionado && styles.chipSelecionado,
                       ]}
-                      onPress={() => setSelectedProfile(perfil)}
+                      onPress={() => handleSelecionarPerfil(perfil)}
                     >
                       <Text
                         style={[
@@ -109,6 +198,49 @@ export default function SeletorTeste() {
                   );
                 })}
               </View>
+
+              {selectedProfile === 'Zeladoria' ? (
+                <View style={styles.colaboradores}>
+                  <Text style={styles.label}>Entrar como</Text>
+                  {carregandoColaboradores ? (
+                    <ActivityIndicator color={dark.textPrimary} />
+                  ) : erroColaboradores ? (
+                    <Text style={styles.erroColaboradores}>
+                      {erroColaboradores}
+                    </Text>
+                  ) : colaboradores.length === 0 ? (
+                    <Text style={styles.erroColaboradores}>
+                      Nenhum colaborador de Zeladoria ativo encontrado.
+                    </Text>
+                  ) : (
+                    colaboradores.map((colaborador) => {
+                      const selecionado =
+                        colaboradorSelecionadoId === colaborador.id;
+                      return (
+                        <Pressable
+                          key={colaborador.id}
+                          style={[
+                            styles.colaboradorItem,
+                            selecionado && styles.colaboradorItemSelecionado,
+                          ]}
+                          onPress={() =>
+                            setColaboradorSelecionadoId(colaborador.id)
+                          }
+                        >
+                          <Text style={styles.colaboradorNome}>
+                            {colaborador.nome}
+                          </Text>
+                          {colaborador.funcao ? (
+                            <Text style={styles.colaboradorFuncao}>
+                              {colaborador.funcao}
+                            </Text>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </View>
+              ) : null}
 
               <View style={styles.form}>
                 <View style={styles.field}>
@@ -137,8 +269,17 @@ export default function SeletorTeste() {
                   />
                 </View>
 
-                <Pressable style={styles.button} onPress={handleEntrar}>
-                  <Text style={styles.buttonText}>Entrar</Text>
+                <Pressable
+                  style={[
+                    styles.button,
+                    !entrarHabilitado && styles.buttonDesabilitado,
+                  ]}
+                  onPress={handleEntrar}
+                  disabled={!entrarHabilitado}
+                >
+                  <Text style={styles.buttonText}>
+                    {entrando ? 'Entrando…' : 'Entrar'}
+                  </Text>
                 </Pressable>
               </View>
             </View>
@@ -242,6 +383,39 @@ const styles = StyleSheet.create({
   chipTextSelecionado: {
     color: dark.textPrimary,
   },
+  colaboradores: {
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  colaboradorItem: {
+    borderWidth: 1,
+    borderColor: dark.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  colaboradorItemSelecionado: {
+    backgroundColor: dark.elevated,
+    borderColor: dark.textPrimary,
+  },
+  colaboradorNome: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: dark.textPrimary,
+  },
+  colaboradorFuncao: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: dark.textSecondary,
+    marginTop: 2,
+  },
+  erroColaboradores: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: dark.textSecondary,
+    marginTop: spacing.xs,
+  },
   form: {
     gap: spacing.md,
   },
@@ -270,6 +444,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 4,
     alignItems: 'center',
     marginTop: spacing.sm,
+  },
+  buttonDesabilitado: {
+    opacity: 0.5,
   },
   buttonText: {
     fontFamily: fonts.semiBold,

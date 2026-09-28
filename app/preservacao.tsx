@@ -39,6 +39,7 @@ import {
   pausarOrdem,
   retomarOrdem,
 } from '../src/lib/execucaoOrdens';
+import { useIdentidade } from '../src/lib/identidade';
 import { supabase } from '../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../src/lib/topUpOcorrencias';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
@@ -148,6 +149,20 @@ function TimerAtividade({
 
 export default function Preservacao() {
   const insets = useSafeAreaInsets();
+  const identidade = useIdentidade();
+
+  // Modo teste: sem identidade de colaborador escolhida (ex.: tela aberta
+  // direto pela URL, sem passar pelo seletor), volta pro seletor. Não mexe
+  // em nenhuma consulta nem lógica de execução desta tela — só decide se a
+  // tela roda ou redireciona antes de qualquer coisa acontecer.
+  useEffect(() => {
+    if (!modoTeste || identidade.carregando) {
+      return;
+    }
+    if (!identidade.usuarioId) {
+      router.replace('/seletor-teste');
+    }
+  }, [identidade.carregando, identidade.usuarioId]);
 
   // Pendentes/em_andamento de hoje — já filtrado por data_prevista=hoje
   // direto no banco. Junto com concluidasHoje, alimenta "Resumo do dia".
@@ -727,6 +742,22 @@ export default function Preservacao() {
         </View>
       </View>
 
+      {modoTeste && identidade.origem === 'teste' && identidade.nome ? (
+        <View style={styles.avisoTeste}>
+          <Text style={styles.avisoTesteTexto}>
+            Teste: entrando como {identidade.nome}
+          </Text>
+          <Pressable
+            onPress={async () => {
+              await identidade.limparIdentidadeTeste();
+              router.replace('/seletor-teste');
+            }}
+          >
+            <Text style={styles.avisoTesteTrocar}>Trocar</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={styles.toggleModoRow}>
         <Pressable
           style={[
@@ -1167,6 +1198,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
     gap: spacing.sm,
+  },
+  avisoTeste: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    backgroundColor: light.sunken,
+    borderBottomWidth: 1,
+    borderBottomColor: light.borderStrong,
+  },
+  avisoTesteTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
+  },
+  avisoTesteTrocar: {
+    fontFamily: fonts.semiBold,
+    fontSize: 12,
+    color: light.inkAction,
+    textDecorationLine: 'underline',
   },
   toggleModoRow: {
     flexDirection: 'row',

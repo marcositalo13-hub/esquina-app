@@ -27,6 +27,7 @@ import {
   View,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { IdentidadeProvider } from '../src/lib/identidade';
 import { supabase } from '../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../src/theme';
 
@@ -164,10 +165,13 @@ type SessaoEstado = Session | null | undefined;
 // causa raiz do bug diagnosticado: logout não resetava o papel antigo, e
 // duas consultas a `usuarios` em voo ao mesmo tempo (de sessões diferentes)
 // podiam sobrescrever uma à outra fora de ordem.
+// `nome` foi adicionado pra alimentar IdentidadeProvider (src/lib/identidade.tsx)
+// sem duplicar esta consulta — o redirecionamento abaixo continua lendo só
+// `papel`, comportamento inalterado.
 type EstadoPapel =
   | { status: 'carregando' }
   | { status: 'deslogado' }
-  | { status: 'pronto'; papel: string | null };
+  | { status: 'pronto'; papel: string | null; nome: string | null };
 
 export default function RootLayout() {
   const router = useRouter();
@@ -235,14 +239,18 @@ export default function RootLayout() {
     setEstadoPapel({ status: 'carregando' });
     supabase
       .from('usuarios')
-      .select('papel')
+      .select('nome, papel')
       .eq('id', sessao.user.id)
       .single()
       .then(({ data }) => {
         if (cancelado) {
           return;
         }
-        setEstadoPapel({ status: 'pronto', papel: data?.papel ?? null });
+        setEstadoPapel({
+          status: 'pronto',
+          papel: data?.papel ?? null,
+          nome: data?.nome ?? null,
+        });
       });
 
     return () => {
@@ -297,12 +305,14 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: light.bg },
-        }}
-      />
+      <IdentidadeProvider sessao={sessao} estadoPapel={estadoPapel}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: light.bg },
+          }}
+        />
+      </IdentidadeProvider>
     </GestureHandlerRootView>
   );
 }
