@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
     backgroundColor: light.sunken,
   },
   linhaTitulo: {
-    fontFamily: fonts.serifSemiBold,
+    fontFamily: fonts.headline,
     fontSize: 17,
     color: light.textPrimary,
   },

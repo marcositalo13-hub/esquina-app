@@ -64,8 +64,9 @@ export const fonts = {
   regular: 'Inter_400Regular',
   medium: 'Inter_500Medium',
   semiBold: 'Inter_600SemiBold',
-  serif: 'SourceSerif4_400Regular',
-  serifSemiBold: 'SourceSerif4_600SemiBold',
+  // Títulos de tela, de modal e de passo. Tipografia única (Inter) — sem
+  // fonte serif no app, ver DESIGN.md → Typography.
+  headline: 'Inter_600SemiBold',
 } as const;
 
 export const theme = {

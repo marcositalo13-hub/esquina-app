@@ -17,12 +17,12 @@ colors:
   status-overdue: "#B23A2E"
 typography:
   display:
-    fontFamily: "SourceSerif4_400Regular"
+    fontFamily: "Inter_600SemiBold"
     fontSize: "24px"
     fontWeight: 600
     lineHeight: 1.15
   headline:
-    fontFamily: "SourceSerif4_600SemiBold"
+    fontFamily: "Inter_600SemiBold"
     fontSize: "17px"
     fontWeight: 600
     lineHeight: 1.2
@@ -148,19 +148,21 @@ A `dark` neutral palette (`bg #121211`, `surface #1A1A19`, `elevated #232322`, `
 
 ## Typography
 
-**Body & Display Font:** Inter (with system-sans fallback) — a single family across every weight in use (400/500/600), no secondary or mono face.
+**Font:** Inter (with system-sans fallback) — a single family for every role (Display, Headline, Title, Body, Label) and every weight in use (400/500/600), no secondary, serif or mono face.
+
+**Não usar fonte serif. Decisão de 2026-09-30: tipografia única em todo o app.** Source Serif 4 was removed from the theme and from font loading; the `fonts.headline` token (`src/theme/index.ts`) is Inter SemiBold.
 
 **Character:** Inter at these weights reads as neutral, legible, and unshowy — exactly the "ledger" register: it disappears into the content instead of performing personality.
 
 ### Hierarchy
-- **Display** (Source Serif 4 Regular 400, 24px): the rare big number — a stat total on a report tile, a large percentage. Used only for a single hero figure per section, never for body content.
-- **Headline** (Source Serif 4 SemiBold 600, 17px, centered): screen titles and full-screen modal titles. Admin's own home title runs slightly larger (20px) as the one exception at the root of the navigation stack; every pushed screen and modal uses 17px.
+- **Display** (Inter SemiBold 600, 24px): the rare big number — a stat total on a report tile, a large percentage. Used only for a single hero figure per section, never for body content.
+- **Headline** (Inter SemiBold 600, 17px, token `fonts.headline`): screen titles, full-screen modal titles, and the step question of a guided flow. Admin's own home title runs slightly larger (20px) as the one exception at the root of the navigation stack; every pushed screen and modal uses 17px.
 - **Title** (Inter Medium 500, 15px): card titles, primary list-item text, standalone destructive-button labels.
 - **Body** (Inter Regular 400, 14–15px): chat bubble text, form input text, descriptive card text (contraparte, resumo, chip labels' regular sibling). 15px inside form inputs, 14px inside chat bubbles and denser card metadata.
 - **Label** (Inter Medium 500, 11–13px): field labels, secondary meta text ("Atualizado em…", "Vence em…"), badge/selo text, chip text, bottom-tab labels. No uppercase transform anywhere in the system — case stays as written.
 
 ### Named Rules
-**The Two-Family Rule.** Source Serif 4 in Display and Headline; Inter in Title, Body, and Label — exactly two families, each with a fixed job. Serif carries the big, rare moments (a hero number, a screen title); Inter carries everything read at length or in quantity. No third family, ever. Two hard limits keep the serif rare instead of precious: it never sets below 17px, and it never appears on a Zeladoria execution screen at all — field work happens on a phone, often in direct sun, and those screens run Inter end to end, no exception.
+**The One-Family Rule.** Inter in every role — Display, Headline, Title, Body, Label. Hierarchy comes from size and weight (600 for Display/Headline, 500 for Title/Label, 400 for Body), never from a second family. No serif, no mono, no third face, ever.
 
 **The Tabular Figures Rule.** Every numeral that appears in a comparable position — a monetary value, a date, a counter, days remaining — sets `fontVariant: ['tabular-nums']`, and right-aligns when it sits in a column with other numbers. Numbers in a ledger line up; a column of figures that doesn't align at the same digit isn't a ledger, it's just text that happens to be numeric.
 
@@ -226,7 +228,7 @@ Every animation must respect `AccessibilityInfo.isReduceMotionEnabled()` — che
 - **Unselected, color-coded:** 10%-opacity tint of the assigned color as background, full-opacity color as border and text (see Named Rule below).
 
 ### Ruled Rows (signature pattern)
-A record — a contract, a plano de manutenção, a normativo — is a row on `Warm Paper`, not a card. It carries no background color of its own and no corner radius; it's separated from its neighbors by a 1px horizontal rule in `Hairline Border`, top and bottom. The first row of a group carries a heavier 2px rule in `Ink Action` above it, standing in for a section head — no separate header component, no card wrapper. Internal layout: the record's title sets in Source Serif (`Title`/`Headline`, by weight), supporting metadata sets in Inter `Label`, and a numeric value — when the row has one — right-aligns on the title's own baseline with `fontVariant: ['tabular-nums']` (see Typography → The Tabular Figures Rule). Press state: the entire row's background fills `Sunken Linen`, bleeding edge-to-edge to the screen's own margins, not just the row's own padded box — so the whole line reads as activated, never as a card lifting off the page.
+A record — a contract, a plano de manutenção, a normativo — is a row on `Warm Paper`, not a card. It carries no background color of its own and no corner radius; it's separated from its neighbors by a 1px horizontal rule in `Hairline Border`, top and bottom. The first row of a group carries a heavier 2px rule in `Ink Action` above it, standing in for a section head — no separate header component, no card wrapper. Internal layout: the record's title sets in Inter `Title` (or `Headline` when it is the one prominent line), supporting metadata sets in Inter `Label`, and a numeric value — when the row has one — right-aligns on the title's own baseline with `fontVariant: ['tabular-nums']` (see Typography → The Tabular Figures Rule). Press state: the entire row's background fills `Sunken Linen`, bleeding edge-to-edge to the screen's own margins, not just the row's own padded box — so the whole line reads as activated, never as a card lifting off the page.
 
 ### Inputs / Fields
 - **Style:** `Sunken Linen` background (recessed, not raised), 1px `Hairline Border`, `rounded.md`, `Body` text.
@@ -262,7 +264,7 @@ Both shipped assistants (Normativos, Contratos) render inside this same full-scr
 ### Do:
 - **Do** build every list as ruled rows on `Warm Paper` — a title, its metadata, and a right-aligned tabular number, separated by a 1px rule — never a bordered, radius-cornered card.
 - **Do** use ink as shape, not color, to tell actions from text: a filled Ink Action block for the primary action, a 1.5px underline for a secondary one, plain text for everything else.
-- **Do** set Display and Headline in Source Serif 4 and everything else in Inter — two families, each with exactly one job, never a third.
+- **Do** set every text in Inter — one family, hierarchy by size and weight only.
 - **Do** use the tinted-background-plus-full-opacity-text pattern (`{status-color}` at ~10% opacity as fill, full opacity as text/border) for every status badge, chip, and tag.
 - **Do** route every date entry through `MiniCalendar`; a date field is a trigger, never a free-text input.
 - **Do** keep destructive confirmation inline inside the same modal (replace the area, don't stack a second modal or use a native alert).
@@ -276,4 +278,4 @@ Both shipped assistants (Normativos, Contratos) render inside this same full-scr
 - **Don't** add a drop shadow to a row, button, or input at rest. If it isn't a temporary floating overlay, it doesn't get one.
 - **Don't** apply blur/glass over a static, non-scrolling background — blur is reserved for the one surface with real content passing behind it.
 - **Don't** use a native `Alert.alert`, `confirm()`, or a stacked second modal for destructive confirmation — always the inline in-modal pattern.
-- **Don't** use uppercase text transforms, or any font outside Source Serif 4 (Display/Headline) and Inter (Title/Body/Label).
+- **Don't** use uppercase text transforms, a serif, or any font other than Inter.

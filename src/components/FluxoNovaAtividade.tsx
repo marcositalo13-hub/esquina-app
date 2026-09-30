@@ -1100,7 +1100,7 @@ const styles = StyleSheet.create({
   },
   cabecalhoTitulo: {
     flex: 1,
-    fontFamily: fonts.serifSemiBold,
+    fontFamily: fonts.headline,
     fontSize: 17,
     color: light.textPrimary,
     textAlign: 'center',
@@ -1131,9 +1131,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   pergunta: {
-    fontFamily: fonts.serif,
-    fontSize: 24,
-    lineHeight: 28,
+    fontFamily: fonts.headline,
+    fontSize: 17,
+    lineHeight: 22,
     color: light.textPrimary,
     marginBottom: spacing.sm,
   },
@@ -1214,8 +1214,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   linhaOpcaoTitulo: {
-    fontFamily: fonts.serifSemiBold,
-    fontSize: 17,
+    fontFamily: fonts.medium,
+    fontSize: 15,
     color: light.textPrimary,
   },
   linhaOpcaoDetalhe: {
@@ -1240,8 +1240,8 @@ const styles = StyleSheet.create({
     borderColor: light.inkAction,
   },
   resumoValor: {
-    fontFamily: fonts.serifSemiBold,
-    fontSize: 17,
+    fontFamily: fonts.medium,
+    fontSize: 15,
     color: light.textPrimary,
   },
   carregandoTexto: {
@@ -1287,8 +1287,8 @@ const styles = StyleSheet.create({
     backgroundColor: light.inkActionPressed,
   },
   botaoPrincipalTexto: {
-    fontFamily: fonts.serifSemiBold,
-    fontSize: 17,
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
     color: light.bg,
   },
   overlay: {
@@ -1313,7 +1313,7 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   overlayTitulo: {
-    fontFamily: fonts.serifSemiBold,
+    fontFamily: fonts.headline,
     fontSize: 17,
     color: light.textPrimary,
   },

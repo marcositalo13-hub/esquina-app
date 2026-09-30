@@ -4,10 +4,6 @@ import {
   Inter_600SemiBold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import {
-  SourceSerif4_400Regular,
-  SourceSerif4_600SemiBold,
-} from '@expo-google-fonts/source-serif-4';
 import type { Session } from '@supabase/supabase-js';
 import {
   type ErrorBoundaryProps,
@@ -181,8 +177,6 @@ export default function RootLayout() {
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
-    SourceSerif4_400Regular,
-    SourceSerif4_600SemiBold,
   });
 
   const [sessao, setSessao] = useState<SessaoEstado>(undefined);

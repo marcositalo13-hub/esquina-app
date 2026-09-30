@@ -1654,7 +1654,7 @@ const styles = StyleSheet.create({
   },
   linhaTitulo: {
     flex: 1,
-    fontFamily: fonts.serifSemiBold,
+    fontFamily: fonts.headline,
     fontSize: 17,
     color: light.textPrimary,
   },
