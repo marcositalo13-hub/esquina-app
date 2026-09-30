@@ -33,6 +33,12 @@ import {
   tituloOrdem,
 } from '../src/data/manutencao';
 import {
+  aplicarEscopoExtraordinaria,
+  aplicarEscopoRotina,
+  type EscopoZeladoria,
+  resolverEscopoZeladoria,
+} from '../src/data/visibilidadeZeladoria';
+import {
   calcularSegundosDecorridos,
   concluirOrdem,
   iniciarOrdem,
@@ -207,6 +213,11 @@ export default function Preservacao() {
   const [linhaConfirmandoId, setLinhaConfirmandoId] = useState<string | null>(
     null,
   );
+  // Bloqueio de conclusão sem identidade resolvida — não deveria acontecer
+  // na prática (a tela já redireciona/espera a identidade antes de
+  // renderizar), mas cobre a borda em vez de gravar um retrato anônimo.
+  const [modalSemIdentidadeVisivel, setModalSemIdentidadeVisivel] =
+    useState(false);
 
   useEffect(() => {
     return () => {
@@ -216,15 +227,39 @@ export default function Preservacao() {
     };
   }, []);
 
+  // Regra viva: cada consulta abaixo lê o escopo de `visibilidadeZeladoria`
+  // em vez de escrever o filtro (rota → responsável / funcionario_id) por
+  // conta própria — única fonte da regra, ver src/data/visibilidadeZeladoria.ts.
   const carregar = useCallback(async () => {
+    const usuarioId = identidade.usuarioId;
+    if (!usuarioId) {
+      setErro(null);
+      setPendentes([]);
+      setConcluidasHoje([]);
+      setConcluidas([]);
+      setExtraordinarias([]);
+      return;
+    }
+
     const hojeStr = hoje();
 
-    const [
-      respostaPendentes,
-      respostaConcluidasHoje,
-      respostaConcluidas,
-      respostaExtraordinarias,
-    ] = await Promise.all([
+    let escopo: EscopoZeladoria;
+    try {
+      escopo = await resolverEscopoZeladoria(usuarioId);
+    } catch (erroEscopo) {
+      setErro(
+        erroEscopo instanceof Error
+          ? erroEscopo.message
+          : 'Não foi possível resolver o escopo de visibilidade.',
+      );
+      return;
+    }
+
+    // Pendentes/em_andamento de hoje, só das rotas cujo responsável atual
+    // é este usuário — aplicarEscopoRotina devolve `null` quando ele não é
+    // responsável por nenhuma rota agora, e aí nem consulta o banco (a
+    // "lista de planos vazia" do enunciado).
+    const queryPendentesEscopada = aplicarEscopoRotina(
       supabase
         .from('ordens_servico')
         .select(
@@ -236,19 +271,30 @@ export default function Preservacao() {
         // o Administrador em app/admin/preservacao.tsx.
         .eq('data_prevista', hojeStr)
         .order('data_prevista', { ascending: true }),
-      // Concluídas de hoje, filtradas por data_prevista=hoje direto no
-      // banco — junto com "pendentes" acima, alimenta exclusivamente
-      // "Resumo do dia" (nunca precisa varrer o histórico amplo abaixo
-      // só para achar o que foi concluído hoje).
+      escopo,
+    );
+
+    const [
+      respostaPendentes,
+      respostaConcluidasHoje,
+      respostaConcluidas,
+      respostaExtraordinarias,
+    ] = await Promise.all([
+      queryPendentesEscopada ??
+        Promise.resolve({ data: [] as OrdemServico[], error: null }),
+      // Concluídas de hoje, pelo registro CONGELADO de quem concluiu
+      // (concluida_por_id) — não pela rota atual, então trocar o
+      // responsável nunca muda o histórico de quem já concluiu.
       supabase
         .from('ordens_servico')
         .select(
           '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*)), tipos_atividade(*), locais(*)',
         )
         .eq('status', 'concluida')
-        .eq('data_prevista', hojeStr),
-      // Histórico amplo de concluídas (qualquer data), só para a seção
-      // "Concluídas". .limit(5000) explícito: sem isso, o corte de
+        .eq('data_prevista', hojeStr)
+        .eq('concluida_por_id', usuarioId),
+      // Histórico amplo de concluídas (qualquer data), mesmo filtro por
+      // concluida_por_id. .limit(5000) explícito: sem isso, o corte de
       // segurança padrão do Supabase (1000 linhas) trunca silenciosamente
       // conforme o histórico cresce. Se o volume real ultrapassar isso,
       // é preciso paginação de verdade — dívida técnica documentada
@@ -259,18 +305,21 @@ export default function Preservacao() {
           '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*)), tipos_atividade(*), locais(*)',
         )
         .eq('status', 'concluida')
+        .eq('concluida_por_id', usuarioId)
         .order('concluida_em', { ascending: false })
         .limit(5000),
-      // Extraordinárias em aberto: sem plano por trás, então título/tipo/
-      // local vêm por join direto na própria ordem. Sem filtro de data —
-      // a atividade avulsa fica visível até ser concluída, e o prazo
-      // (data_prevista) é exibido no card, não usado como corte.
-      supabase
-        .from('ordens_servico')
-        .select('*, tipos_atividade(*), locais(*)')
-        .eq('origem', 'extraordinaria')
-        .in('status', ['pendente', 'em_andamento'])
-        .limit(1000),
+      // Extraordinárias em aberto atribuídas a este usuário
+      // (ordens_servico.funcionario_id) — sem plano por trás, então
+      // título/tipo/local vêm por join direto na própria ordem.
+      aplicarEscopoExtraordinaria(
+        supabase
+          .from('ordens_servico')
+          .select('*, tipos_atividade(*), locais(*)')
+          .eq('origem', 'extraordinaria')
+          .in('status', ['pendente', 'em_andamento'])
+          .limit(1000),
+        escopo,
+      ),
     ]);
 
     if (respostaPendentes.error) {
@@ -295,29 +344,70 @@ export default function Preservacao() {
     setConcluidasHoje((respostaConcluidasHoje.data ?? []) as OrdemServico[]);
     setConcluidas((respostaConcluidas.data ?? []) as OrdemServico[]);
     setExtraordinarias((respostaExtraordinarias.data ?? []) as OrdemServico[]);
-  }, []);
+  }, [identidade.usuarioId]);
 
   useEffect(() => {
+    // Enquanto a identidade ainda está carregando (ex.: restaurando do
+    // AsyncStorage em modo teste), não consulta nada — carregar() já sai
+    // cedo sem usuarioId, mas esperar aqui evita um primeiro fetch vazio
+    // seguido de outro assim que a identidade chega.
+    if (identidade.carregando) {
+      return;
+    }
     carregar().then(() => {
       preencherOcorrenciasFaltantes().then(() => {
         carregar();
       });
     });
-  }, [carregar]);
+  }, [carregar, identidade.carregando]);
 
   // Verifica se há atividades reprovadas pendentes de "leitura" pela
   // equipe de execução. Roda no mount e sempre que a tela ganha foco de
   // novo (ex.: volta de outra aba) via useFocusEffect. Só alimenta a
   // contagem/badge do sino — não abre mais a tela cheia sozinha (ver
   // handleAbrirNotificacoes).
+  //
+  // Mesma regra viva das pendentes (rota → responsável atual, resolvida na
+  // hora): quem vai refazer uma reprovação é o responsável de agora, não
+  // quem concluiu antes — por isso usa aplicarEscopoRotina, nunca
+  // concluida_por/concluida_por_id (que a própria reprovação já zera, ver
+  // reprovarOrdem em src/lib/validacaoOrdens.ts).
   const verificarReprovacoes = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('ordens_servico')
-      .select(
-        '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
-      )
-      .eq('reprovacao_pendente', true)
-      .order('reprovada_em', { ascending: true });
+    const usuarioId = identidade.usuarioId;
+    if (!usuarioId) {
+      setReprovacoes([]);
+      return;
+    }
+
+    let escopo: EscopoZeladoria;
+    try {
+      escopo = await resolverEscopoZeladoria(usuarioId);
+    } catch (erroEscopo) {
+      setErro(
+        erroEscopo instanceof Error
+          ? erroEscopo.message
+          : 'Não foi possível resolver o escopo de visibilidade.',
+      );
+      return;
+    }
+
+    const queryEscopada = aplicarEscopoRotina(
+      supabase
+        .from('ordens_servico')
+        .select(
+          '*, planos_manutencao(*, tipos_atividade(*), rotas(*), locais(*))',
+        )
+        .eq('reprovacao_pendente', true)
+        .order('reprovada_em', { ascending: true }),
+      escopo,
+    );
+
+    if (!queryEscopada) {
+      setReprovacoes([]);
+      return;
+    }
+
+    const { data, error } = await queryEscopada;
 
     if (error) {
       setErro(error.message);
@@ -325,12 +415,15 @@ export default function Preservacao() {
     }
 
     setReprovacoes((data ?? []) as OrdemServico[]);
-  }, []);
+  }, [identidade.usuarioId]);
 
   useFocusEffect(
     useCallback(() => {
+      if (identidade.carregando) {
+        return;
+      }
       verificarReprovacoes();
-    }, [verificarReprovacoes]),
+    }, [verificarReprovacoes, identidade.carregando]),
   );
 
   // Guarda a versão mais atual de carregar/verificarReprovacoes sem entrar
@@ -544,9 +637,19 @@ export default function Preservacao() {
     if (processandoOrdemId) {
       return;
     }
+    // Sem identidade resolvida, bloqueia antes de tentar gravar — nunca um
+    // retrato anônimo/genérico de quem concluiu. Modal próprio (nunca
+    // Alert.alert, que não existe na web).
+    if (!identidade.usuarioId || !identidade.nome) {
+      setModalSemIdentidadeVisivel(true);
+      return;
+    }
     setProcessandoOrdemId(ordemId);
     setErroLinhaId(null);
-    const { error } = await concluirOrdem(ordemId);
+    const { error } = await concluirOrdem(ordemId, {
+      usuarioId: identidade.usuarioId,
+      nome: identidade.nome,
+    });
     setProcessandoOrdemId(null);
     if (error) {
       setErroLinhaId(ordemId);
@@ -640,6 +743,21 @@ export default function Preservacao() {
     carregar();
   }
 
+  // Enquanto a identidade ainda não resolveu (restaurando sessão real ou
+  // identidade de teste do AsyncStorage), nenhuma consulta desta tela roda
+  // — carregar()/verificarReprovacoes() saem cedo, ver os efeitos acima.
+  // Aqui só troca o que aparece na tela por um estado de carregamento.
+  if (identidade.carregando) {
+    return (
+      <View style={styles.container}>
+        <ScreenBackground />
+        <View style={styles.carregandoContainer}>
+          <Text style={styles.carregandoTexto}>Carregando…</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {modalReprovacaoVisivel && reprovacaoAtual ? (
@@ -696,6 +814,33 @@ export default function Preservacao() {
                 {processandoReprovacao ? 'Salvando…' : 'Entendido'}
               </Text>
             </Pressable>
+          </View>
+        </Modal>
+      ) : null}
+
+      {modalSemIdentidadeVisivel ? (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => setModalSemIdentidadeVisivel(false)}
+        >
+          <View style={styles.semIdentidadeOverlay}>
+            <View style={styles.semIdentidadeCard}>
+              <Text style={styles.semIdentidadeTitulo}>
+                Não foi possível concluir
+              </Text>
+              <Text style={styles.semIdentidadeTexto}>
+                Não foi possível identificar quem está concluindo esta
+                atividade. Saia e entre de novo antes de continuar.
+              </Text>
+              <Pressable
+                style={styles.semIdentidadeBotao}
+                onPress={() => setModalSemIdentidadeVisivel(false)}
+              >
+                <Text style={styles.semIdentidadeBotaoTexto}>Entendi</Text>
+              </Pressable>
+            </View>
           </View>
         </Modal>
       ) : null}
@@ -1155,6 +1300,55 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: light.bg,
+  },
+  carregandoContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  carregandoTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textSecondary,
+  },
+  semIdentidadeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  semIdentidadeCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: light.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: light.border,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  semIdentidadeTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 16,
+    color: light.textPrimary,
+  },
+  semIdentidadeTexto: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textSecondary,
+  },
+  semIdentidadeBotao: {
+    backgroundColor: light.inkAction,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + 4,
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  semIdentidadeBotaoTexto: {
+    fontFamily: fonts.semiBold,
+    fontSize: 14,
+    color: light.card,
   },
   header: {
     flexDirection: 'row',

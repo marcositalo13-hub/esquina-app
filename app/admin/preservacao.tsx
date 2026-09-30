@@ -55,6 +55,7 @@ import {
   tipoNomeOrdem,
   tituloOrdem,
 } from '../../src/data/manutencao';
+import { useIdentidade } from '../../src/lib/identidade';
 import { resolverCondominioId } from '../../src/lib/resolverCondominioId';
 import { supabase } from '../../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
@@ -87,6 +88,7 @@ type DateFilter = 'hoje' | 'todas';
 
 export default function AdminPreservacao() {
   const insets = useSafeAreaInsets();
+  const identidade = useIdentidade();
 
   const [planos, setPlanos] = useState<PlanoManutencao[]>([]);
   // Consulta ampla (calendário, chips de filtro, atrasadas de qualquer
@@ -1141,7 +1143,8 @@ export default function AdminPreservacao() {
       .update({
         status: 'concluida',
         concluida_em: new Date().toISOString(),
-        concluida_por: 'Teste Preservação',
+        concluida_por: identidade.nome ?? 'Administrador',
+        concluida_por_id: identidade.usuarioId ?? null,
       })
       .eq('id', ordemId);
 

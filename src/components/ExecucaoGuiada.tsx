@@ -18,6 +18,7 @@ import {
   pausarOrdem,
   retomarOrdem,
 } from '../lib/execucaoOrdens';
+import { useIdentidade } from '../lib/identidade';
 import { fonts, light, motion, radius, semantic, spacing } from '../theme';
 import { ConfirmacaoConcluida } from './ConfirmacaoConcluida';
 
@@ -77,6 +78,7 @@ export function ExecucaoGuiada({
   onFinish,
 }: ExecucaoGuiadaProps) {
   const insets = useSafeAreaInsets();
+  const identidade = useIdentidade();
   const [etapaAtual, setEtapaAtual] = useState(() =>
     calcularEtapaInicial(ordens),
   );
@@ -84,6 +86,11 @@ export function ExecucaoGuiada({
   const [checkFerramentas, setCheckFerramentas] = useState(false);
   const [concluindo, setConcluindo] = useState(false);
   const [mostrarConfirmacao, setMostrarConfirmacao] = useState(false);
+  // Erro de conclusão (sem identidade resolvida, ou falha de gravação) —
+  // exibido dentro deste próprio fluxo em tela cheia (já é um <Modal>, ver
+  // final do arquivo), nunca Alert.alert. Bloqueia o avanço de etapa
+  // enquanto presente.
+  const [erroConcluir, setErroConcluir] = useState<string | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
   // Ordem cujo UPDATE de início (status/iniciado_em) falhou, e a mensagem
   // do erro — exibidos na etapa correspondente em vez de falhar em
@@ -243,7 +250,18 @@ export function ExecucaoGuiada({
     }
 
     setConcluindo(true);
-    await concluirOrdem(ordemAtual.id);
+    setErroConcluir(null);
+    const { error } = await concluirOrdem(ordemAtual.id, {
+      usuarioId: identidade.usuarioId,
+      nome: identidade.nome,
+    });
+
+    if (error) {
+      setConcluindo(false);
+      setErroConcluir(error);
+      return;
+    }
+
     // Fica "concluindo" (rodapé desabilitado) até a animação de
     // confirmação terminar — só então avança de etapa. Ver
     // mostrarConfirmacao/handleFimConfirmacao.
@@ -482,6 +500,9 @@ export function ExecucaoGuiada({
                     ) : null}
                     {erroPausa ? (
                       <Text style={styles.erro}>{erroPausa}</Text>
+                    ) : null}
+                    {erroConcluir ? (
+                      <Text style={styles.erro}>{erroConcluir}</Text>
                     ) : null}
 
                     {mostrarConfirmacao ? (

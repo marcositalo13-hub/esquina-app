@@ -60,15 +60,29 @@ export async function retomarOrdem(
   return { error: null, tempoPausadoNovo };
 }
 
+// Retrato congelado de quem concluiu: `concluida_por_id` (FK, pra
+// consultas — ver src/data/visibilidadeZeladoria.ts) e `concluida_por`
+// (nome, texto solto, pra exibição — nunca mudam depois, mesmo que o
+// usuário troque de nome ou a rota troque de responsável). Sem identidade
+// resolvida, bloqueia — nunca grava um retrato anônimo/genérico.
 export async function concluirOrdem(
   ordemId: string,
+  identidade: { usuarioId: string | null; nome: string | null },
 ): Promise<{ error: string | null }> {
+  if (!identidade.usuarioId || !identidade.nome) {
+    return {
+      error:
+        'Não foi possível identificar quem está concluindo esta atividade. Saia e entre de novo antes de continuar.',
+    };
+  }
+
   const { error } = await supabase
     .from('ordens_servico')
     .update({
       status: 'concluida',
       concluida_em: new Date().toISOString(),
-      concluida_por: 'Teste Preservação',
+      concluida_por: identidade.nome,
+      concluida_por_id: identidade.usuarioId,
     })
     .eq('id', ordemId);
 
