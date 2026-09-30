@@ -27,6 +27,7 @@ O texto visível ao usuário é **"Zeladoria"** (perfil de login) / **"Zeladoria
 ## Decisões de produto
 
 - Validação de atividades pelo Administrador: somente em lista (seção "Pendentes de validação"). Não reintroduzir fluxo guiado de validação em tela cheia.
+- Criação de atividade: fluxo guiado em 4 passos (Atividade → Rota → Responsável → Revisar). O passo Responsável só aparece se a rota for nova ou estiver sem responsável ativo. Nada é gravado antes do passo Revisar. Edição de atividade, rota e colaborador é direta, sem passos.
 
 ## Estado atual — módulo por módulo
 

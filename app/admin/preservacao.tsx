@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdiarAcao } from '../../src/components/AdiarAcao';
 import { type AnchorPosition, CardMenu } from '../../src/components/CardMenu';
 import { Chip } from '../../src/components/Chip';
+import { FluxoNovaAtividade } from '../../src/components/FluxoNovaAtividade';
 import {
   type DiaMarcado,
   MiniCalendar,
@@ -32,6 +33,7 @@ import {
   adicionarDiasChave,
   atualizarAtividadeExtraordinaria,
   criarAtividadeExtraordinaria,
+  criarPlanoManutencao,
   formatarDataBR,
   formatarDuracao,
   gerarDatasOcorrencia,
@@ -131,6 +133,20 @@ export default function AdminPreservacao() {
     y: 0,
   });
   const botaoCriarRef = useRef<View | null>(null);
+  const [fluxoNovaAtividadeVisivel, setFluxoNovaAtividadeVisivel] =
+    useState(false);
+  const [avisoAtividadeCriada, setAvisoAtividadeCriada] = useState(false);
+  const avisoAtividadeCriadaTimeout = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (avisoAtividadeCriadaTimeout.current) {
+        clearTimeout(avisoAtividadeCriadaTimeout.current);
+      }
+    };
+  }, []);
 
   const [modalExtraVisivel, setModalExtraVisivel] = useState(false);
   // Preenchido só em edição (abrirModalEditarExtraordinaria) — caminho
@@ -1235,13 +1251,16 @@ export default function AdminPreservacao() {
     setOrdemNaRotaEditadoManualmente(true);
   }
 
-  function abrirModalNovo() {
-    limparFormulario();
-    setEditingId(null);
-    setErroModal(null);
-    setCalendarioDataInicioVisivel(false);
-    setSeletorLocalVisivel(false);
-    setModalVisivel(true);
+  async function handleAtividadeCriada() {
+    setFluxoNovaAtividadeVisivel(false);
+    await Promise.all([carregarRotas(), carregarTudo()]);
+    setAvisoAtividadeCriada(true);
+    if (avisoAtividadeCriadaTimeout.current) {
+      clearTimeout(avisoAtividadeCriadaTimeout.current);
+    }
+    avisoAtividadeCriadaTimeout.current = setTimeout(() => {
+      setAvisoAtividadeCriada(false);
+    }, 2500);
   }
 
   // O "+" do cabeçalho abre um menu com os dois tipos de criação (plano de
@@ -1887,21 +1906,8 @@ export default function AdminPreservacao() {
           return;
         }
       } else {
-        let condominioId: string;
         try {
-          condominioId = await resolverCondominioId();
-        } catch (erro) {
-          setErroModal(
-            erro instanceof Error
-              ? erro.message
-              : 'Não foi possível identificar o condomínio.',
-          );
-          return;
-        }
-
-        const { data: plano, error: erroPlano } = await supabase
-          .from('planos_manutencao')
-          .insert({
+          await criarPlanoManutencao({
             titulo,
             tipo_id: tipoId,
             descricao: descricao || null,
@@ -1912,43 +1918,13 @@ export default function AdminPreservacao() {
             observacoes: observacoes || null,
             rota_id: rotaId,
             ordem_na_rota: ordemNaRotaNumero,
-            condominio_id: condominioId,
-          })
-          .select()
-          .single();
-
-        if (erroPlano || !plano) {
+          });
+        } catch (erro) {
           setErroModal(
-            erroPlano?.message ?? 'Não foi possível salvar o plano.',
+            erro instanceof Error
+              ? erro.message
+              : 'Não foi possível salvar o plano.',
           );
-          return;
-        }
-
-        // Gera as ocorrências até hoje + JANELA_DIAS (ou data_inicio +
-        // JANELA_DIAS, o que for maior), não só uma única ordem.
-        const ateDataPorHoje = adicionarDiasChave(hoje(), JANELA_DIAS);
-        const ateDataPorInicio = adicionarDiasChave(dataInicio, JANELA_DIAS);
-        const ateData =
-          ateDataPorHoje > ateDataPorInicio ? ateDataPorHoje : ateDataPorInicio;
-
-        const datas = gerarDatasOcorrencia(dataInicio, periodicidade, ateData);
-
-        const { error: erroOrdem } = await supabase
-          .from('ordens_servico')
-          .insert(
-            datas.map((data) => ({
-              plano_id: plano.id,
-              data_prevista: data,
-              status: 'pendente',
-              // Herda do plano recém-criado (não resolve de novo) — a
-              // ordem nasce sempre no mesmo condomínio do plano que a
-              // gerou.
-              condominio_id: plano.condominio_id,
-            })),
-          );
-
-        if (erroOrdem) {
-          setErroModal(erroOrdem.message);
           return;
         }
       }
@@ -2605,7 +2581,7 @@ export default function AdminPreservacao() {
           style={styles.menuItem}
           onPress={() => {
             setMenuCriarVisivel(false);
-            abrirModalNovo();
+            setFluxoNovaAtividadeVisivel(true);
           }}
         >
           <Text style={styles.menuItemTexto}>Nova atividade</Text>
@@ -4153,11 +4129,45 @@ export default function AdminPreservacao() {
           </View>
         </View>
       </Modal>
+
+      {fluxoNovaAtividadeVisivel ? (
+        <FluxoNovaAtividade
+          onFechar={() => setFluxoNovaAtividadeVisivel(false)}
+          onSalvo={handleAtividadeCriada}
+        />
+      ) : null}
+
+      {avisoAtividadeCriada ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.avisoAtividadeCriada,
+            { bottom: insets.bottom + spacing.lg },
+          ]}
+        >
+          <Text style={styles.avisoAtividadeCriadaTexto}>Atividade criada</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  avisoAtividadeCriada: {
+    position: 'absolute',
+    alignSelf: 'center',
+    backgroundColor: light.inkAction,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    zIndex: 30,
+    elevation: 30,
+  },
+  avisoAtividadeCriadaTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.bg,
+  },
   container: {
     flex: 1,
     backgroundColor: light.bg,

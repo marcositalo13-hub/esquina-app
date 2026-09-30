@@ -389,6 +389,144 @@ export function gerarDatasOcorrencia(
   return datas;
 }
 
+export type NovoPlanoManutencao = {
+  titulo: string;
+  tipo_id: string;
+  descricao: string | null;
+  local_id: string | null;
+  periodicidade: Periodicidade;
+  prioridade: Prioridade;
+  data_inicio: string;
+  observacoes: string | null;
+  rota_id: string;
+  ordem_na_rota: number | null;
+};
+
+// O plano já existe no banco, só a primeira leva de ordens falhou — quem
+// chama pode tentar de novo só gerarOrdensIniciaisDoPlano(plano), sem
+// inserir um segundo plano.
+export class ErroGeracaoOrdens extends Error {
+  plano: PlanoManutencao;
+
+  constructor(mensagem: string, plano: PlanoManutencao) {
+    super(mensagem);
+    this.name = 'ErroGeracaoOrdens';
+    this.plano = plano;
+  }
+}
+
+// Gera as ocorrências até hoje + JANELA_DIAS (ou data_inicio + JANELA_DIAS,
+// o que for maior), não só uma única ordem.
+export async function gerarOrdensIniciaisDoPlano(
+  plano: PlanoManutencao,
+): Promise<void> {
+  const ateDataPorHoje = adicionarDiasChave(hojeLocal(), JANELA_DIAS);
+  const ateDataPorInicio = adicionarDiasChave(plano.data_inicio, JANELA_DIAS);
+  const ateData =
+    ateDataPorHoje > ateDataPorInicio ? ateDataPorHoje : ateDataPorInicio;
+
+  const datas = gerarDatasOcorrencia(
+    plano.data_inicio,
+    plano.periodicidade,
+    ateData,
+  );
+
+  const { error } = await supabase.from('ordens_servico').insert(
+    datas.map((data) => ({
+      plano_id: plano.id,
+      data_prevista: data,
+      status: 'pendente',
+      // Herda do plano recém-criado (não resolve de novo) — a ordem nasce
+      // sempre no mesmo condomínio do plano que a gerou.
+      condominio_id: plano.condominio_id,
+    })),
+  );
+
+  if (error) {
+    throw new ErroGeracaoOrdens(error.message, plano);
+  }
+}
+
+// Única função de criação de plano de rotina — usada pelo formulário de
+// plano (Duplicar) e pelo fluxo guiado de nova atividade, para que a
+// primeira leva de ordens seja gerada do mesmo jeito nos dois.
+export async function criarPlanoManutencao(
+  dados: NovoPlanoManutencao,
+): Promise<PlanoManutencao> {
+  const condominioId = await resolverCondominioId();
+
+  const { data: plano, error } = await supabase
+    .from('planos_manutencao')
+    .insert({ ...dados, condominio_id: condominioId })
+    .select()
+    .single();
+
+  if (error || !plano) {
+    throw new Error(error?.message ?? 'Não foi possível salvar o plano.');
+  }
+
+  await gerarOrdensIniciaisDoPlano(plano as PlanoManutencao);
+
+  return plano as PlanoManutencao;
+}
+
+export async function criarRota(dados: {
+  nome: string;
+  funcionario_id: string | null;
+}): Promise<Rota> {
+  const condominioId = await resolverCondominioId();
+
+  const { data, error } = await supabase
+    .from('rotas')
+    .insert({
+      nome: dados.nome.trim(),
+      ativo: true,
+      funcionario_id: dados.funcionario_id,
+      condominio_id: condominioId,
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Não foi possível criar a rota.');
+  }
+
+  return data as Rota;
+}
+
+export async function atualizarRota(
+  id: string,
+  campos: { nome?: string; funcionario_id?: string | null },
+): Promise<Rota> {
+  const { data, error } = await supabase
+    .from('rotas')
+    .update(campos)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Não foi possível salvar a rota.');
+  }
+
+  return data as Rota;
+}
+
+// Posição de um plano novo no fim da rota — mesma regra do formulário de
+// plano (quantidade de planos já na rota + 1).
+export async function proximaOrdemNaRota(rotaId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('planos_manutencao')
+    .select('id', { count: 'exact', head: true })
+    .eq('rota_id', rotaId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (count ?? 0) + 1;
+}
+
 // Formata uma duração em segundos como "12min" (abaixo de 60min) ou
 // "1h 20min" (60min ou mais) — usado para exibir o tempo gasto numa
 // atividade concluída (concluida_em - iniciado_em).
