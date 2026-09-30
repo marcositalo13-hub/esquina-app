@@ -27,7 +27,6 @@ import {
 } from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { StatusBadge } from '../../src/components/StatusBadge';
-import { ValidacaoGuiada } from '../../src/components/ValidacaoGuiada';
 import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
 import {
   adicionarDiasChave,
@@ -292,14 +291,9 @@ export default function AdminPreservacao() {
   const [aplicandoEdicaoMassa, setAplicandoEdicaoMassa] = useState(false);
   const [erroEdicaoMassa, setErroEdicaoMassa] = useState<string | null>(null);
 
-  const [modalValidacaoVisivel, setModalValidacaoVisivel] = useState(false);
-  const [ordemValidacaoInicialId, setOrdemValidacaoInicialId] = useState<
-    string | null
-  >(null);
-
   // Lista inline de "Pendentes de validação" — Bom/Médio/Ruim/Reprovar
-  // direto na linha, sem abrir o fluxo guiado de tela cheia (ValidacaoGuiada
-  // continua existindo, intocado, para quem preferir esse fluxo).
+  // direto na linha. Validação acontece SOMENTE por aqui — não reintroduzir
+  // um fluxo guiado em tela cheia (ver CLAUDE.md).
   const [processandoValidacaoId, setProcessandoValidacaoId] = useState<
     string | null
   >(null);
@@ -322,10 +316,14 @@ export default function AdminPreservacao() {
       { tipo: 'qualidade'; valor: Qualidade } | { tipo: 'reprovada' }
     >
   >({});
-  // Grupos (por rota) recolhidos por padrão — estado próprio, separado de
+  // Grupos (por rota) EXPANDIDOS por padrão — guarda só as exceções
+  // (recolhidos manualmente), não os expandidos. Assim, um grupo novo
+  // (via Realtime ou recarga) começa expandido automaticamente, sem
+  // precisar ser adicionado a lista nenhuma — ele simplesmente nunca
+  // esteve no conjunto de recolhidos. Estado próprio, separado de
   // rotasExpandidas ("Atividades do dia"), pra não acoplar expandir/
   // recolher de uma seção com a outra.
-  const [validacaoGruposExpandidos, setValidacaoGruposExpandidos] = useState<
+  const [validacaoGruposRecolhidos, setValidacaoGruposRecolhidos] = useState<
     Set<string>
   >(() => new Set());
 
@@ -575,10 +573,9 @@ export default function AdminPreservacao() {
 
   // Pendentes de validação — mesma fonte de dados de "Atividades do dia"
   // (ordensHoje já cobre rotina e extraordinária de hoje, sem filtro de
-  // origem), só filtrada por concluída+não validada. É a mesma condição
-  // que o ValidacaoGuiada busca sozinho ao abrir (data_prevista=hoje,
-  // status=concluida, validada=false) — aqui só reaproveitada como lista
-  // já visível na tela, sem precisar abrir nada.
+  // origem), só filtrada por concluída+não validada (data_prevista=hoje,
+  // status=concluida, validada=false) — já visível na tela, sem precisar
+  // abrir nada.
   // Ordens com override local (validada/reprovada por aqui) continuam na
   // lista mesmo depois que a assinatura Realtime desta tela refizer o
   // fetch e trouxer validada=true (ou status='pendente', no caso de
@@ -623,7 +620,7 @@ export default function AdminPreservacao() {
   }, [pendentesValidacao, validacaoOverrides]);
 
   function toggleValidacaoGrupoExpandido(chave: string) {
-    setValidacaoGruposExpandidos((atual) => {
+    setValidacaoGruposRecolhidos((atual) => {
       const novo = new Set(atual);
       if (novo.has(chave)) {
         novo.delete(chave);
@@ -1705,18 +1702,6 @@ export default function AdminPreservacao() {
     }
   }
 
-  function abrirModalValidacao(ordemId: string) {
-    fecharMenuAtividade();
-    setOrdemValidacaoInicialId(ordemId);
-    setModalValidacaoVisivel(true);
-  }
-
-  function handleFinalizarValidacao() {
-    setModalValidacaoVisivel(false);
-    setOrdemValidacaoInicialId(null);
-    carregarTudo();
-  }
-
   async function handleValidarLinha(ordemId: string, qualidade: Qualidade) {
     if (processandoValidacaoId) {
       return;
@@ -2228,12 +2213,26 @@ export default function AdminPreservacao() {
           </View>
 
           {ordem.status === 'concluida' && !ordem.validada ? (
-            <Pressable
-              style={styles.botaoValidar}
-              onPress={() => abrirModalValidacao(ordem.id)}
+            // Selo estático — a validação em si acontece só pela lista
+            // "Pendentes de validação" (Bom/Médio/Ruim/Reprovar), nunca
+            // por um fluxo guiado em tela cheia. Ver CLAUDE.md.
+            <View
+              style={[
+                styles.seloValidacao,
+                {
+                  borderColor: semantic.pending,
+                  backgroundColor: `${semantic.pending}0D`,
+                  alignSelf: 'flex-start',
+                  marginTop: spacing.sm,
+                },
+              ]}
             >
-              <Text style={styles.botaoValidarTexto}>Validar</Text>
-            </Pressable>
+              <Text
+                style={[styles.seloValidacaoTexto, { color: semantic.pending }]}
+              >
+                Aguardando validação
+              </Text>
+            </View>
           ) : null}
         </View>
 
@@ -2868,7 +2867,7 @@ export default function AdminPreservacao() {
                 const pendentesCount = grupo.itens.filter(
                   (ordem) => !(ordem.id in validacaoOverrides),
                 ).length;
-                const expandido = validacaoGruposExpandidos.has(grupo.chave);
+                const expandido = !validacaoGruposRecolhidos.has(grupo.chave);
 
                 return (
                   <View key={grupo.chave} style={styles.grupoValidacao}>
@@ -4154,13 +4153,6 @@ export default function AdminPreservacao() {
           </View>
         </View>
       </Modal>
-
-      {modalValidacaoVisivel && ordemValidacaoInicialId ? (
-        <ValidacaoGuiada
-          ordemInicialId={ordemValidacaoInicialId}
-          onFinish={handleFinalizarValidacao}
-        />
-      ) : null}
     </View>
   );
 }
@@ -4828,18 +4820,6 @@ const styles = StyleSheet.create({
   qualidadeTexto: {
     fontFamily: fonts.medium,
     fontSize: 12,
-  },
-  botaoValidar: {
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.md,
-    backgroundColor: light.inkAction,
-  },
-  botaoValidarTexto: {
-    fontFamily: fonts.semiBold,
-    fontSize: 14,
-    color: '#FFFFFF',
   },
   overlay: {
     flex: 1,

@@ -24,6 +24,10 @@ O texto visível ao usuário é **"Zeladoria"** (perfil de login) / **"Zeladoria
 - `contratos`, `tipos_contrato` e `cadastros_teste` **não têm arquivo `.sql` versionado no repositório** — schema existe só no banco ao vivo. Antes de qualquer trabalho de RLS nessas tabelas, faça `supabase db dump` (ou equivalente) e versione o schema real.
 - Consultas ao Supabase sempre com filtro/paginação explícita — o limite padrão de 1000 linhas por query já causou sumiço intermitente de registros.
 
+## Decisões de produto
+
+- Validação de atividades pelo Administrador: somente em lista (seção "Pendentes de validação"). Não reintroduzir fluxo guiado de validação em tela cheia.
+
 ## Estado atual — módulo por módulo
 
 ### Zeladoria e Manutenção — funcional, ciclo completo

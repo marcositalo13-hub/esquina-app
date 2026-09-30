@@ -55,7 +55,7 @@ export type QualidadeInfo = {
 };
 
 // Rótulo, cor e descrição curta de cada nível de qualidade — usado tanto
-// no fluxo de validação (ValidacaoGuiada) quanto no indicador exibido nos
+// na lista "Pendentes de validação" quanto no indicador exibido nos
 // cards de atividade já validada (app/admin/preservacao.tsx).
 export function getQualidadeInfo(qualidade: Qualidade): QualidadeInfo {
   switch (qualidade) {
