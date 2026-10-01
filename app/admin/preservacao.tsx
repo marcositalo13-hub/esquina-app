@@ -31,6 +31,11 @@ import { ResponsavelRota } from '../../src/components/ResponsavelRota';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { SeletorResponsavel } from '../../src/components/SeletorResponsavel';
 import { StatusBadge } from '../../src/components/StatusBadge';
+import {
+  formatarDiaCurto,
+  type ResumoRota,
+  resumoDasRotas,
+} from '../../src/data/agendaZeladoria';
 import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
 import {
   adicionarDiasChave,
@@ -692,6 +697,30 @@ export default function AdminPreservacao() {
     return { extraordinarias, grupos: Array.from(grupos.values()), semRota };
   }, [atividadesDoDia]);
 
+  // "Hoje" e "próxima" de cada rota (seção "Rotas" e confirmação de troca
+  // de responsável) — calculados em src/data/agendaZeladoria.ts, numa
+  // consulta só para todas as rotas.
+  const [resumoPorRota, setResumoPorRota] = useState<Map<string, ResumoRota>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    let ativo = true;
+    resumoDasRotas(rotas.map((rota) => rota.id)).then(
+      (resumo) => {
+        if (ativo) {
+          setResumoPorRota(resumo);
+        }
+      },
+      (falha) => {
+        // Sem o resumo, o card só mostra a contagem de atividades.
+        console.error('Falha ao carregar o resumo das rotas', falha);
+      },
+    );
+    return () => {
+      ativo = false;
+    };
+  }, [rotas]);
+
   // Atividades (planos) por rota para a seção "Rotas" — planos marcados
   // como inativos (planos_manutencao.ativo = false) não contam.
   const planosAtivosPorRota = useMemo(() => {
@@ -1263,6 +1292,29 @@ export default function AdminPreservacao() {
     );
   }
 
+  function textoHojeProxima(resumo: ResumoRota | undefined): string {
+    if (!resumo) {
+      return '';
+    }
+    if (resumo.hoje > 0) {
+      return ` · ${resumo.hoje} hoje`;
+    }
+    if (resumo.proxima) {
+      return ` · nada hoje · próxima ${formatarDiaCurto(resumo.proxima)}`;
+    }
+    return ' · sem próximas';
+  }
+
+  function linhaAgendaDaTroca(resumo: ResumoRota | undefined): string | null {
+    if (resumo && resumo.hoje > 0) {
+      return `Atividades hoje: ${resumo.hoje}.`;
+    }
+    if (resumo?.proxima) {
+      return `Próxima atividade: ${formatarDiaCurto(resumo.proxima)}.`;
+    }
+    return null;
+  }
+
   function renderSecaoRotas() {
     if (rotas.length === 0) {
       return (
@@ -1314,6 +1366,7 @@ export default function AdminPreservacao() {
                     <Text style={styles.grupoRotaResumoSubtitulo}>
                       {atividades}{' '}
                       {atividades === 1 ? 'atividade' : 'atividades'}
+                      {textoHojeProxima(resumoPorRota.get(rota.id))}
                     </Text>
                   )}
                   <ResponsavelRota
@@ -4365,6 +4418,18 @@ export default function AdminPreservacao() {
                     'o novo responsável'}{' '}
                   a partir de agora.
                 </Text>
+                {(() => {
+                  const linha = linhaAgendaDaTroca(
+                    rotaResponsavelModal
+                      ? resumoPorRota.get(rotaResponsavelModal.id)
+                      : undefined,
+                  );
+                  return linha ? (
+                    <Text style={styles.confirmacaoResponsavelAgenda}>
+                      {linha}
+                    </Text>
+                  ) : null;
+                })()}
                 {erroResponsavelRota ? (
                   <Text style={styles.erro}>{erroResponsavelRota}</Text>
                 ) : null}
@@ -4867,6 +4932,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     borderTopWidth: 2,
     borderTopColor: light.inkAction,
+  },
+  confirmacaoResponsavelAgenda: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: light.textSecondary,
   },
   confirmacaoResponsavelTexto: {
     fontFamily: fonts.medium,

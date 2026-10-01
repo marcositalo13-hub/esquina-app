@@ -19,6 +19,11 @@ import {
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { StatusBadge } from '../src/components/StatusBadge';
 import {
+  formatarDiaCurto,
+  type ProximaAtividade,
+  proximasAtividadesDoUsuario,
+} from '../src/data/agendaZeladoria';
+import {
   corIndicadorGrupo,
   formatarDataBR,
   formatarDuracao,
@@ -577,6 +582,103 @@ export default function Preservacao() {
     ];
   }, [extraordinariasOrdenadas, resumoRotas]);
 
+  // Sem nada para hoje: explica o porquê (sem rota × rota sem programação ×
+  // falha), com as próximas atividades — calculadas em
+  // src/data/agendaZeladoria.ts, nunca aqui.
+  const semAtividadeHoje = ordensListaHoje.length === 0;
+  const [agenda, setAgenda] = useState<
+    | { estado: 'carregando' }
+    | {
+        estado: 'pronto';
+        responsavelPorRota: boolean;
+        itens: ProximaAtividade[];
+      }
+    | { estado: 'erro' }
+  >({ estado: 'carregando' });
+
+  useEffect(() => {
+    const usuarioId = identidade.usuarioId;
+    if (!semAtividadeHoje || !usuarioId) {
+      return;
+    }
+    let ativo = true;
+    setAgenda({ estado: 'carregando' });
+    proximasAtividadesDoUsuario(usuarioId).then(
+      (resultado) => {
+        if (ativo) {
+          setAgenda({ estado: 'pronto', ...resultado });
+        }
+      },
+      (falha) => {
+        console.error('Falha ao carregar próximas atividades', falha);
+        if (ativo) {
+          setAgenda({ estado: 'erro' });
+        }
+      },
+    );
+    return () => {
+      ativo = false;
+    };
+  }, [semAtividadeHoje, identidade.usuarioId]);
+
+  function renderSemAtividadeHoje() {
+    if (agenda.estado === 'carregando') {
+      return <Text style={styles.vazio}>Carregando…</Text>;
+    }
+    if (agenda.estado === 'erro') {
+      return (
+        <Text style={styles.erro}>
+          Não foi possível carregar suas próximas atividades. Saia e entre de
+          novo para tentar outra vez.
+        </Text>
+      );
+    }
+    if (!agenda.responsavelPorRota && agenda.itens.length === 0) {
+      return (
+        <View style={styles.semAtividade}>
+          <Text style={styles.semAtividadeTitulo}>
+            Você ainda não é responsável por nenhuma rota. Fale com o síndico.
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.semAtividade}>
+        <Text style={styles.semAtividadeTitulo}>
+          Nenhuma atividade para hoje
+        </Text>
+        {agenda.itens.length === 0 ? (
+          <Text style={styles.vazio}>
+            Suas rotas ainda não têm atividades programadas.
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.semAtividadeSubtitulo}>
+              Suas próximas atividades:
+            </Text>
+            {agenda.itens.map((item) => (
+              <View key={item.id} style={styles.proximaLinha}>
+                <View style={styles.proximaTextos}>
+                  <Text style={styles.proximaTitulo}>{item.titulo}</Text>
+                  {item.rotaNome || item.localNome ? (
+                    <Text style={styles.proximaDetalhe}>
+                      {[item.rotaNome ?? 'Extraordinária', item.localNome]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text style={styles.proximaData}>
+                  {formatarDiaCurto(item.dataPrevista)}
+                </Text>
+              </View>
+            ))}
+          </>
+        )}
+      </View>
+    );
+  }
+
   async function handleIniciarLinha(ordemId: string) {
     if (processandoOrdemId) {
       return;
@@ -948,9 +1050,7 @@ export default function Preservacao() {
           {erro ? <Text style={styles.erro}>{erro}</Text> : null}
 
           {ordensListaHoje.length === 0 ? (
-            <Text style={styles.vazio}>
-              Nenhuma atividade prevista para hoje.
-            </Text>
+            renderSemAtividadeHoje()
           ) : (
             <View style={styles.listaChecklist}>
               {ordensListaHoje.map((ordem) => {
@@ -1075,6 +1175,8 @@ export default function Preservacao() {
       ) : (
         <ScrollView contentContainerStyle={styles.body}>
           {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+          {semAtividadeHoje ? renderSemAtividadeHoje() : null}
 
           {/* Sem extraordinária em aberto, a seção inteira some — nada de
             título órfão nem card vazio. */}
@@ -1537,6 +1639,50 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     color: light.textSecondary,
+  },
+  semAtividade: {
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  semAtividadeTitulo: {
+    fontFamily: fonts.semiBold,
+    fontSize: 16,
+    color: light.textPrimary,
+  },
+  semAtividadeSubtitulo: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textSecondary,
+    marginTop: spacing.xs,
+  },
+  proximaLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: light.border,
+  },
+  proximaTextos: {
+    flex: 1,
+    gap: 2,
+  },
+  proximaTitulo: {
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    color: light.textPrimary,
+  },
+  proximaDetalhe: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  proximaData: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
   lista: {
     gap: spacing.sm,

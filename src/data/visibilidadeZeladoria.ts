@@ -13,6 +13,9 @@ export type EscopoZeladoria = {
   // Ids dos planos_manutencao cuja rota tem este usuário como responsável
   // atual. Array vazio = nenhum plano sob a responsabilidade dele agora.
   planoIds: string[];
+  // Rotas cujo responsável atual é este usuário (inclusive rotas ainda sem
+  // planos) — só para dizer se ele é responsável por alguma rota.
+  rotaIds: string[];
 };
 
 export async function resolverEscopoZeladoria(
@@ -29,7 +32,7 @@ export async function resolverEscopoZeladoria(
 
   const rotaIds = (rotasDoUsuario ?? []).map((rota) => rota.id as string);
   if (rotaIds.length === 0) {
-    return { usuarioId, planoIds: [] };
+    return { usuarioId, planoIds: [], rotaIds: [] };
   }
 
   const { data: planosDasRotas, error: erroPlanos } = await supabase
@@ -44,6 +47,7 @@ export async function resolverEscopoZeladoria(
   return {
     usuarioId,
     planoIds: (planosDasRotas ?? []).map((plano) => plano.id as string),
+    rotaIds,
   };
 }
 
