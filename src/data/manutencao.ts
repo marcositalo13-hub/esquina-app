@@ -133,6 +133,8 @@ export type OrdemServico = {
   // ordem, nas colunas abaixo, em vez de virem por join.
   plano_id: string | null;
   origem: OrigemOrdemServico;
+  // Responsável direto (extraordinária); em rotina vem da rota do plano.
+  funcionario_id?: string | null;
   titulo: string | null;
   tipo_id: string | null;
   local_id: string | null;

@@ -2,12 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useFuncionariosAtivos } from '../lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../theme';
+import { TextoDestacado } from './TextoDestacado';
 
 type ResponsavelRotaProps = {
   funcionarioId: string | null;
   // Abre a escolha de responsável (SeletorResponsavel) — quem chama decide
   // onde e como gravar.
   onPress: () => void;
+  // Termo de busca a destacar no nome (quando a busca casou pelo
+  // responsável).
+  destaque?: string;
 };
 
 // Responsável exibido no card de rota: nome (com ícone) quando há um
@@ -16,6 +20,7 @@ type ResponsavelRotaProps = {
 export function ResponsavelRota({
   funcionarioId,
   onPress,
+  destaque,
 }: ResponsavelRotaProps) {
   const { estado, porId } = useFuncionariosAtivos();
   const responsavel = funcionarioId ? porId.get(funcionarioId) : undefined;
@@ -50,7 +55,15 @@ export function ResponsavelRota({
       accessibilityLabel={`Responsável: ${nome}. Trocar responsável`}
     >
       <Ionicons name="person-outline" size={14} color={light.textSecondary} />
-      <Text style={styles.responsavelTexto}>{nome}</Text>
+      {destaque ? (
+        <TextoDestacado
+          valor={nome}
+          termo={destaque}
+          style={styles.responsavelTexto}
+        />
+      ) : (
+        <Text style={styles.responsavelTexto}>{nome}</Text>
+      )}
     </Pressable>
   );
 }
