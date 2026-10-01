@@ -259,6 +259,21 @@ Both shipped assistants (Normativos, Contratos) render inside this same full-scr
 
 **Charts.** A Relatórios chart that doesn't represent a status value (e.g. a monthly total by contract type) marks its data in Ink Action, never a leftover accent color. Only a chart segment that literally represents ok/pending/overdue is allowed a status color; everything else drawn on a chart is ink.
 
+### Trilho de etapas (padrão)
+Componente: `src/components/TrilhoEtapas.tsx` (variantes `horizontal` e `vertical`; `TrilhoContador` exportado à parte).
+
+- **Uso:** qualquer processo com etapas ordenadas e conhecidas — fluxos guiados (Nova atividade, Nova rota), status de atividade, status de chamado.
+- **Até 6 etapas:** pontos ligados por linhas. **Acima de 6:** contador + barra ("N de M", barra contínua preenchida na proporção das etapas concluídas) — automático, independente da variante pedida.
+- **Estados e formas:**
+  - *concluída* — ponto cheio em `Status OK` com ✓ branco;
+  - *atual* — anel em `Ink Primary`, fundo vazio, rótulo em peso maior;
+  - *pendente* — anel claro (`Hairline Border`), fundo vazio, rótulo em `Ink Secondary`;
+  - *alerta* — ponto cheio em `Status Overdue` com ✗ branco.
+  Linha entre dois pontos em `Status OK` quando a etapa anterior está concluída; senão, `Hairline Border`. Na vertical, o detalhe da etapa aparece abaixo do rótulo, em texto pequeno.
+- **Acessibilidade:** cada ponto anuncia "<rótulo>, <estado>"; o conjunto horizontal anuncia "Passo N de M: <rótulo atual>".
+- **Regra:** a cor nunca carrega a informação sozinha — todo estado tem forma própria (cheio/anel, ✓/✗, peso do rótulo).
+- **Regra:** a tradução de um objeto (ordem, chamado) em etapas é feita por uma função em `src/data`; o componente não conhece o domínio.
+
 ## Do's and Don'ts
 
 ### Do:

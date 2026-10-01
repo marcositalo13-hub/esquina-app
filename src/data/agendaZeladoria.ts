@@ -39,6 +39,32 @@ export function hojeBrasil(): string {
   return hojeLocal();
 }
 
+const formatadorHoraBrasil = (() => {
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: FUSO_BRASIL,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return null;
+  }
+})();
+
+// Timestamp (ISO, UTC) → 'hh:mm' no horário de Brasília.
+export function formatarHoraBrasil(instante: string): string {
+  const data = new Date(instante);
+  if (formatadorHoraBrasil) {
+    try {
+      return formatadorHoraBrasil.format(data);
+    } catch {
+      // segue para o fallback
+    }
+  }
+  return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`;
+}
+
 const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
 // 'AAAA-MM-DD' → 'qui, 03/10'. A chave já é uma data de calendário, então o

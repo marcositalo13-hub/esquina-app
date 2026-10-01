@@ -43,6 +43,7 @@ import { Chip } from './Chip';
 import { ExplicacaoRota } from './ExplicacaoRota';
 import { MiniCalendar } from './MiniCalendar';
 import { SeletorResponsavel } from './SeletorResponsavel';
+import { type EstadoEtapa, TrilhoEtapas } from './TrilhoEtapas';
 
 // Mesmo padrão do formulário de plano (limparFormulario em
 // app/admin/preservacao.tsx) — o fluxo não pergunta prioridade, mas a
@@ -50,6 +51,13 @@ import { SeletorResponsavel } from './SeletorResponsavel';
 const PRIORIDADE_PADRAO: Prioridade = 'Média';
 
 type Passo = 1 | 2 | 3 | 4;
+
+function estadoDaEtapa(etapa: number, passoAtual: number): EstadoEtapa {
+  if (etapa < passoAtual) {
+    return 'concluida';
+  }
+  return etapa === passoAtual ? 'atual' : 'pendente';
+}
 
 type Carga<T> =
   | { estado: 'carregando' }
@@ -809,17 +817,18 @@ export function FluxoNovaAtividade({
         </View>
 
         <View style={styles.progresso}>
-          {([1, 2, 3, 4] as Passo[]).map((item) => (
-            <View
-              key={item}
-              style={[
-                styles.progressoSegmento,
-                item <= passo && styles.progressoSegmentoAtivo,
-              ]}
-            />
-          ))}
+          <TrilhoEtapas
+            variante="horizontal"
+            etapas={(
+              ['Atividade', 'Rota', 'Responsável', 'Revisar'] as const
+            ).map((rotulo, indice) => ({
+              rotulo,
+              // Passo pulado (Responsável, quando a rota já tem responsável
+              // ativo) fica para trás do passo atual e aparece concluído.
+              estado: estadoDaEtapa(indice + 1, passo),
+            }))}
+          />
         </View>
-        <Text style={styles.progressoTexto}>Passo {passo} de 4</Text>
 
         <ScrollView
           ref={corpoRef}
@@ -1090,24 +1099,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   progresso: {
-    flexDirection: 'row',
-    gap: spacing.xs,
     paddingHorizontal: spacing.lg,
-  },
-  progressoSegmento: {
-    flex: 1,
-    height: 3,
-    backgroundColor: light.border,
-  },
-  progressoSegmentoAtivo: {
-    backgroundColor: light.inkAction,
-  },
-  progressoTexto: {
-    fontFamily: fonts.medium,
-    fontSize: 12,
-    color: light.textMuted,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
   },
   corpo: {
     paddingHorizontal: spacing.lg,

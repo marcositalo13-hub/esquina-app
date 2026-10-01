@@ -111,6 +111,10 @@ Qualquer comando que altere `theme/index.ts`, tokens de cor, raio, ou qualquer v
 | Botões nomeados não funcionam no navegador | `Alert.alert()` não existe na web |
 | Deploy bloqueado por autor do commit | E-mail do commit não bate com e-mail verificado no GitHub |
 
+## Dívidas conhecidas
+
+- Reprovação apaga concluida_por, concluida_em e iniciado_em da tentativa reprovada; o histórico de tentativas anteriores se perde. Futuro: registrar tentativas.
+
 ## Pendente de decisão antes de implementar (Módulo Administrador)
 
 Regra exata de "pendência" (ponto vermelho) por card na home do Admin; lista completa de tipos do catálogo de atividades; se "Relatório Geral" e "Morador" têm escopo próprio a especificar.

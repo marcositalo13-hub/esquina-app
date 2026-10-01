@@ -33,12 +33,14 @@ import { SeletorResponsavel } from '../../src/components/SeletorResponsavel';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { TelaRota } from '../../src/components/TelaRota';
 import { TextoDestacado } from '../../src/components/TextoDestacado';
+import { TrilhoEtapas } from '../../src/components/TrilhoEtapas';
 import {
   formatarDiaCurto,
   type ResumoRota,
   resumoDasRotas,
 } from '../../src/data/agendaZeladoria';
 import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
+import { etapasDaOrdem } from '../../src/data/historicoOrdem';
 import {
   adicionarDiasChave,
   atualizarAtividadeExtraordinaria,
@@ -150,6 +152,22 @@ export default function AdminPreservacao() {
   // Rota aberta na tela da rota (painel lista-detalhe da seção "Rotas").
   const [rotaAbertaId, setRotaAbertaId] = useState<string | null>(null);
   const [buscaRotas, setBuscaRotas] = useState('');
+  // Cards da seção "Hoje" com o "Histórico" aberto (recolhido por padrão).
+  const [historicosAbertos, setHistoricosAbertos] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  function alternarHistorico(ordemId: string) {
+    setHistoricosAbertos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(ordemId)) {
+        novo.delete(ordemId);
+      } else {
+        novo.add(ordemId);
+      }
+      return novo;
+    });
+  }
   const [aviso, setAviso] = useState<string | null>(null);
   const avisoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2556,6 +2574,27 @@ export default function AdminPreservacao() {
               >
                 Aguardando validação
               </Text>
+            </View>
+          ) : null}
+
+          <Pressable
+            onPress={() => alternarHistorico(ordem.id)}
+            hitSlop={8}
+            style={styles.historicoToggle}
+            aria-expanded={historicosAbertos.has(ordem.id)}
+          >
+            <Text style={styles.historicoToggleTexto}>Histórico</Text>
+            <Ionicons
+              name={
+                historicosAbertos.has(ordem.id) ? 'chevron-up' : 'chevron-down'
+              }
+              size={14}
+              color={light.textSecondary}
+            />
+          </Pressable>
+          {historicosAbertos.has(ordem.id) ? (
+            <View style={styles.historicoTrilho}>
+              <TrilhoEtapas variante="vertical" etapas={etapasDaOrdem(ordem)} />
             </View>
           ) : null}
         </View>
@@ -5022,6 +5061,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  historicoToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: spacing.sm,
+  },
+  historicoToggleTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: light.textSecondary,
+  },
+  historicoTrilho: {
+    marginTop: spacing.sm,
   },
   buscaVazia: {
     alignItems: 'flex-start',

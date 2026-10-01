@@ -16,8 +16,17 @@ import { useFuncionariosAtivos } from '../lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../theme';
 import { ExplicacaoRota } from './ExplicacaoRota';
 import { SeletorResponsavel } from './SeletorResponsavel';
+import { type EstadoEtapa, TrilhoEtapas } from './TrilhoEtapas';
 
 type Passo = 1 | 2 | 3;
+
+// "Pronto" só é alcançado com a rota já criada: chegou lá, está concluído.
+function estadoDaEtapa(etapa: number, passoAtual: Passo): EstadoEtapa {
+  if (etapa < passoAtual || (etapa === 3 && passoAtual === 3)) {
+    return 'concluida';
+  }
+  return etapa === passoAtual ? 'atual' : 'pendente';
+}
 
 type FluxoNovaRotaProps = {
   onFechar: () => void;
@@ -204,17 +213,16 @@ export function FluxoNovaRota({
         </View>
 
         <View style={styles.progresso}>
-          {([1, 2, 3] as Passo[]).map((item) => (
-            <View
-              key={item}
-              style={[
-                styles.progressoSegmento,
-                item <= passo && styles.progressoSegmentoAtivo,
-              ]}
-            />
-          ))}
+          <TrilhoEtapas
+            variante="horizontal"
+            etapas={(['Nome', 'Responsável', 'Pronto'] as const).map(
+              (rotulo, indice) => ({
+                rotulo,
+                estado: estadoDaEtapa(indice + 1, passo),
+              }),
+            )}
+          />
         </View>
-        <Text style={styles.progressoTexto}>Passo {passo} de 3</Text>
 
         <ScrollView
           ref={corpoRef}
@@ -372,24 +380,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   progresso: {
-    flexDirection: 'row',
-    gap: spacing.xs,
     paddingHorizontal: spacing.lg,
-  },
-  progressoSegmento: {
-    flex: 1,
-    height: 3,
-    backgroundColor: light.border,
-  },
-  progressoSegmentoAtivo: {
-    backgroundColor: light.inkAction,
-  },
-  progressoTexto: {
-    fontFamily: fonts.medium,
-    fontSize: 12,
-    color: light.textMuted,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
   },
   corpo: {
     paddingHorizontal: spacing.lg,
