@@ -38,6 +38,7 @@ import {
   valorNumericoParaDigitos,
 } from '../../src/data/contratos';
 import { formatarDataBR, hojeLocal } from '../../src/data/manutencao';
+import { buscar } from '../../src/lib/busca';
 import { supabase } from '../../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
@@ -112,14 +113,6 @@ function estaEmJanelaDeAviso(contrato: Contrato, hoje: string): boolean {
     restantes > DIAS_LIMIAR_VENCIMENTO &&
     restantes <= contrato.prazo_aviso_previo_dias
   );
-}
-
-// Busca client-side insensível a caixa e acento.
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
 }
 
 // Três pontos que saltam em sequência, indicando resposta pendente — mesma
@@ -731,16 +724,14 @@ export default function AdminContratos() {
   // Busca (título + contraparte) E tipo E status — os três combinam com AND;
   // cada grupo vazio não filtra nada.
   const contratosFiltrados = useMemo(() => {
-    const termo = normalizarTexto(busca.trim());
-
     return contratos.filter((contrato) => {
-      if (termo) {
-        const alvo = normalizarTexto(
-          `${contrato.titulo} ${contrato.contraparte_nome}`,
-        );
-        if (!alvo.includes(termo)) {
-          return false;
-        }
+      if (
+        !buscar(busca, [
+          { rotulo: 'contrato', valor: contrato.titulo },
+          { rotulo: 'contraparte', valor: contrato.contraparte_nome },
+        ]).corresponde
+      ) {
+        return false;
       }
 
       if (

@@ -38,17 +38,8 @@ import {
   type ResultadoGeracaoEmMassa,
   type UnidadeComMoradores,
 } from '../../src/data/unidades';
+import { buscar } from '../../src/lib/busca';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
-
-// Busca client-side insensível a caixa e acento — mesmo helper duplicado em
-// app/admin/ambientes.tsx, app/admin/contratos.tsx e
-// app/admin/normativos-gerenciar.tsx / app/admin/preservacao.tsx.
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
 
 function mensagemDeErro(erro: unknown): string {
   if (erro instanceof ErroUnidade && erro.code === CODIGO_ERRO_DUPLICADO) {
@@ -237,37 +228,23 @@ export default function AdminUnidades() {
   // Busca por bloco, número, nome/telefone/cpf de morador, nome de pet ou
   // nome de dependente — qualquer correspondência inclui a unidade.
   const gruposPorBloco = useMemo(() => {
-    const termo = normalizarTexto(busca.trim());
-    const filtradas = unidades.filter((item) => {
-      if (!termo) {
-        return true;
-      }
-      if (normalizarTexto(item.bloco ?? '').includes(termo)) {
-        return true;
-      }
-      if (normalizarTexto(item.numero).includes(termo)) {
-        return true;
-      }
-      if (
-        item.moradores.some(
-          (m) =>
-            normalizarTexto(m.nome).includes(termo) ||
-            normalizarTexto(m.telefone ?? '').includes(termo) ||
-            normalizarTexto(m.cpf ?? '').includes(termo),
-        )
-      ) {
-        return true;
-      }
-      if (item.pets.some((p) => normalizarTexto(p.nome).includes(termo))) {
-        return true;
-      }
-      if (
-        item.dependentes.some((d) => normalizarTexto(d.nome).includes(termo))
-      ) {
-        return true;
-      }
-      return false;
-    });
+    const filtradas = unidades.filter(
+      (item) =>
+        buscar(busca, [
+          { rotulo: 'bloco', valor: item.bloco },
+          { rotulo: 'unidade', valor: item.numero },
+          ...item.moradores.flatMap((m) => [
+            { rotulo: 'morador', valor: m.nome },
+            { rotulo: 'telefone', valor: m.telefone },
+            { rotulo: 'cpf', valor: m.cpf },
+          ]),
+          ...item.pets.map((pet) => ({ rotulo: 'pet', valor: pet.nome })),
+          ...item.dependentes.map((d) => ({
+            rotulo: 'dependente',
+            valor: d.nome,
+          })),
+        ]).corresponde,
+    );
 
     const mapa = new Map<string, UnidadeComMoradores[]>();
     for (const item of filtradas) {

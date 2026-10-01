@@ -33,18 +33,10 @@ import {
   type SugestaoLocal,
   vincularSugestao,
 } from '../../src/data/ambientes';
+import { buscar } from '../../src/lib/busca';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 type Secao = 'cadastrados' | 'sugestoes';
-
-// Busca client-side insensível a caixa e acento — mesmo helper duplicado em
-// app/admin/contratos.tsx e app/admin/normativos-gerenciar.tsx.
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
 
 function formatarDataCurta(iso: string): string {
   const data = new Date(iso);
@@ -158,7 +150,6 @@ export default function AdminAmbientes() {
   // Busca por nome E filtro de categoria E "mostrar inativos" combinam com
   // AND — cada filtro vazio/desligado simplesmente não restringe nada.
   const gruposCadastrados = useMemo(() => {
-    const termo = normalizarTexto(busca.trim());
     const filtrados = ambientes.filter((item) => {
       if (!mostrarInativos && !item.ativo) {
         return false;
@@ -166,7 +157,7 @@ export default function AdminAmbientes() {
       if (categoriaFiltro && item.categoria !== categoriaFiltro) {
         return false;
       }
-      if (termo && !normalizarTexto(item.nome).includes(termo)) {
+      if (!buscar(busca, [{ rotulo: 'local', valor: item.nome }]).corresponde) {
         return false;
       }
       return true;
@@ -179,19 +170,18 @@ export default function AdminAmbientes() {
   }, [ambientes, busca, mostrarInativos, categoriaFiltro]);
 
   const sugestoesFiltradas = useMemo(() => {
-    const termo = normalizarTexto(busca.trim());
-    if (!termo) {
-      return sugestoes;
-    }
-    return sugestoes.filter((item) =>
-      normalizarTexto(item.texto_digitado).includes(termo),
+    return sugestoes.filter(
+      (item) =>
+        buscar(busca, [{ rotulo: 'sugestão', valor: item.texto_digitado }])
+          .corresponde,
     );
   }, [sugestoes, busca]);
 
   const ambientesParaVincular = useMemo(() => {
-    const termo = normalizarTexto(buscaVincular.trim());
-    return ambientes.filter((item) =>
-      termo ? normalizarTexto(item.nome).includes(termo) : true,
+    return ambientes.filter(
+      (item) =>
+        buscar(buscaVincular, [{ rotulo: 'local', valor: item.nome }])
+          .corresponde,
     );
   }, [ambientes, buscaVincular]);
 

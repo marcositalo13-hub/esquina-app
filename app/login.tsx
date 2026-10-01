@@ -23,8 +23,7 @@ import { dark, fonts, radius, semantic, spacing } from '../src/theme';
 // com moradores. Ver app/perfis-teste.tsx.
 const modoTeste = process.env.EXPO_PUBLIC_MODO_TESTE === 'true';
 
-// Máscara de CPF (000.000.000-00) — mesmo padrão de "helper duplicado por
-// arquivo" já usado no projeto (normalizarTexto etc.), sem componente
+// Máscara de CPF (000.000.000-00) — helper local, sem componente
 // compartilhado porque só este formulário precisa disso hoje.
 function aplicarMascaraCpf(valor: string): string {
   return valor

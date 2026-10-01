@@ -14,6 +14,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import type { Normativo } from '../../src/data/normativos';
+import { buscar } from '../../src/lib/busca';
 import { supabase } from '../../src/lib/supabase';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
@@ -24,14 +25,6 @@ function formatarAtualizadoEm(iso: string): string {
   const mes = String(data.getMonth() + 1).padStart(2, '0');
   const ano = data.getFullYear();
   return `Atualizado em ${dia}/${mes}/${ano}`;
-}
-
-// Busca client-side insensível a caixa e acento.
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
 }
 
 export default function AdminNormativosGerenciar() {
@@ -78,15 +71,12 @@ export default function AdminNormativosGerenciar() {
   }, [carregarNormativos]);
 
   const normativosFiltrados = useMemo(() => {
-    const termo = normalizarTexto(busca.trim());
-    if (!termo) {
-      return normativos;
-    }
-
-    return normativos.filter((normativo) =>
-      normalizarTexto(
-        `${normativo.titulo} ${normativo.categoria ?? ''}`,
-      ).includes(termo),
+    return normativos.filter(
+      (normativo) =>
+        buscar(busca, [
+          { rotulo: 'normativo', valor: normativo.titulo },
+          { rotulo: 'categoria', valor: normativo.categoria },
+        ]).corresponde,
     );
   }, [normativos, busca]);
 

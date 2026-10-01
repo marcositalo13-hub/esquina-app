@@ -32,6 +32,7 @@ import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { SeletorResponsavel } from '../../src/components/SeletorResponsavel';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { TelaRota } from '../../src/components/TelaRota';
+import { TextoDestacado } from '../../src/components/TextoDestacado';
 import {
   formatarDiaCurto,
   type ResumoRota,
@@ -66,6 +67,7 @@ import {
   tipoNomeOrdem,
   tituloOrdem,
 } from '../../src/data/manutencao';
+import { buscar } from '../../src/lib/busca';
 import { useIdentidade } from '../../src/lib/identidade';
 import { resolverCondominioId } from '../../src/lib/resolverCondominioId';
 import { supabase } from '../../src/lib/supabase';
@@ -75,16 +77,6 @@ import { reprovarOrdem, validarOrdem } from '../../src/lib/validacaoOrdens';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const hoje = hojeLocal;
-
-// Busca client-side insensível a caixa e acento — mesmo helper duplicado em
-// app/admin/ambientes.tsx, app/admin/contratos.tsx e
-// app/admin/normativos-gerenciar.tsx.
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
 
 // Nome do local a exibir: prioriza o ambiente vinculado (locais.nome);
 // cai para o texto livre antigo (plano.local) só quando não há local_id —
@@ -157,6 +149,7 @@ export default function AdminPreservacao() {
   const rotaCriadaNoFluxoRef = useRef(false);
   // Rota aberta na tela da rota (painel lista-detalhe da seção "Rotas").
   const [rotaAbertaId, setRotaAbertaId] = useState<string | null>(null);
+  const [buscaRotas, setBuscaRotas] = useState('');
   const [aviso, setAviso] = useState<string | null>(null);
   const avisoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -792,8 +785,6 @@ export default function AdminPreservacao() {
   // só afeta a barra de progresso (exceto quando um dia está selecionado,
   // caso em que ele fica desabilitado e a data escolhida vale para os dois).
   const planosFiltrados = useMemo(() => {
-    const termoBusca = normalizarTexto(buscaPlano.trim());
-
     return planos.filter((plano) => {
       if (tipoFiltros.length > 0 && !tipoFiltros.includes(plano.tipo_id)) {
         return false;
@@ -819,12 +810,26 @@ export default function AdminPreservacao() {
       ) {
         return false;
       }
-      if (termoBusca && !normalizarTexto(plano.titulo).includes(termoBusca)) {
+      const responsavelId = plano.rotas?.funcionario_id;
+      if (
+        !buscar(buscaPlano, [
+          { rotulo: 'atividade', valor: plano.titulo },
+          { rotulo: 'rota', valor: plano.rotas?.nome },
+          {
+            rotulo: 'responsável',
+            valor: responsavelId
+              ? funcionariosPorId.get(responsavelId)?.nome
+              : null,
+          },
+          { rotulo: 'local', valor: nomeLocal(plano) },
+        ]).corresponde
+      ) {
         return false;
       }
       return true;
     });
   }, [
+    funcionariosPorId,
     planos,
     tipoFiltros,
     prioridadeFiltros,
@@ -841,7 +846,6 @@ export default function AdminPreservacao() {
   // lista de propósito — atividade avulsa não tem recorrência, então não
   // pertence a nenhuma das periodicidades filtradas.
   const extraordinariasFiltradas = useMemo(() => {
-    const termoBusca = normalizarTexto(buscaPlano.trim());
     const hojeStr = hoje();
 
     return extraordinarias.filter((ordem) => {
@@ -870,14 +874,23 @@ export default function AdminPreservacao() {
         return false;
       }
       if (
-        termoBusca &&
-        !normalizarTexto(tituloOrdem(ordem)).includes(termoBusca)
+        !buscar(buscaPlano, [
+          { rotulo: 'atividade', valor: tituloOrdem(ordem) },
+          {
+            rotulo: 'responsável',
+            valor: ordem.funcionario_id
+              ? funcionariosPorId.get(ordem.funcionario_id)?.nome
+              : null,
+          },
+          { rotulo: 'local', valor: localNomeOrdem(ordem) },
+        ]).corresponde
       ) {
         return false;
       }
       return true;
     });
   }, [
+    funcionariosPorId,
     extraordinarias,
     tipoFiltros,
     prioridadeFiltros,
@@ -983,14 +996,11 @@ export default function AdminPreservacao() {
   );
 
   const filtrarAmbientesPorNome = useCallback(
-    (termoBruto: string) => {
-      const termo = normalizarTexto(termoBruto.trim());
-      return termo
-        ? ambientesAtivos.filter((item) =>
-            normalizarTexto(item.nome).includes(termo),
-          )
-        : ambientesAtivos;
-    },
+    (termo: string) =>
+      ambientesAtivos.filter(
+        (item) =>
+          buscar(termo, [{ rotulo: 'local', valor: item.nome }]).corresponde,
+      ),
     [ambientesAtivos],
   );
 
@@ -1355,10 +1365,57 @@ export default function AdminPreservacao() {
       );
     }
 
+    // Filtragem em memória (rotas, planos e nomes já carregados), sem
+    // consulta ao banco por tecla.
+    const resultados = rotas
+      .map((rota) => {
+        const planosDaRota = planosAtivosPorRota.get(rota.id) ?? [];
+        return {
+          rota,
+          resultado: buscar(buscaRotas, [
+            { rotulo: 'rota', valor: rota.nome },
+            {
+              rotulo: 'responsável',
+              valor: rota.funcionario_id
+                ? funcionariosPorId.get(rota.funcionario_id)?.nome
+                : null,
+            },
+            ...planosDaRota.map((plano) => ({
+              rotulo: 'atividade',
+              valor: plano.titulo,
+            })),
+          ]),
+        };
+      })
+      .filter((item) => item.resultado.corresponde);
+    const termoRotas = buscaRotas.trim();
+
     return (
       <View style={styles.listaGrupos}>
-        {rotas.map((rota) => {
+        <TextInput
+          value={buscaRotas}
+          onChangeText={setBuscaRotas}
+          placeholder="Buscar rota, colaborador ou atividade"
+          placeholderTextColor={light.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.input}
+        />
+
+        {resultados.length === 0 ? (
+          <View style={styles.buscaVazia}>
+            <Text style={styles.vazio}>
+              Nada encontrado para "{termoRotas}".
+            </Text>
+            <Pressable onPress={() => setBuscaRotas('')} hitSlop={8}>
+              <Text style={styles.buscaLimpar}>Limpar busca</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {resultados.map(({ rota, resultado }) => {
           const atividades = planosAtivosPorRota.get(rota.id)?.length ?? 0;
+          const motivo = resultado.campo;
           return (
             <Fragment key={rota.id}>
               <View style={styles.grupoRotaResumoCard}>
@@ -1376,9 +1433,26 @@ export default function AdminPreservacao() {
                     accessibilityLabel={`Abrir rota ${rota.nome}`}
                   >
                     <View style={styles.rotaCardCorpoTextos}>
-                      <Text style={styles.grupoRotaResumoTitulo}>
-                        {rota.nome}
-                      </Text>
+                      {motivo?.rotulo === 'rota' ? (
+                        <TextoDestacado
+                          valor={rota.nome}
+                          termo={termoRotas}
+                          style={styles.grupoRotaResumoTitulo}
+                        />
+                      ) : (
+                        <Text style={styles.grupoRotaResumoTitulo}>
+                          {rota.nome}
+                        </Text>
+                      )}
+                      {motivo?.rotulo === 'atividade' ? (
+                        <Text style={styles.buscaMotivo}>
+                          atividade:{' '}
+                          <TextoDestacado
+                            valor={motivo.valor}
+                            termo={termoRotas}
+                          />
+                        </Text>
+                      ) : null}
                       {atividades > 0 ? (
                         <Text style={styles.grupoRotaResumoSubtitulo}>
                           {atividades}{' '}
@@ -1418,6 +1492,9 @@ export default function AdminPreservacao() {
                   <ResponsavelRota
                     funcionarioId={rota.funcionario_id}
                     onPress={() => abrirResponsavelRota(rota)}
+                    destaque={
+                      motivo?.rotulo === 'responsável' ? termoRotas : undefined
+                    }
                   />
                 </View>
               </View>
@@ -2936,7 +3013,7 @@ export default function AdminPreservacao() {
                 <TextInput
                   value={buscaPlano}
                   onChangeText={setBuscaPlano}
-                  placeholder="Buscar por nome"
+                  placeholder="Buscar atividade, rota, colaborador ou local"
                   placeholderTextColor={light.textSecondary}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -4945,6 +5022,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  buscaVazia: {
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  buscaLimpar: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: light.inkAction,
+    textDecorationLine: 'underline',
+  },
+  buscaMotivo: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: light.textSecondary,
   },
   rotaCardCorpo: {
     flex: 1,

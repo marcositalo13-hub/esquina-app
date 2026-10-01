@@ -35,6 +35,7 @@ import {
   type Rota,
   type TipoAtividade,
 } from '../data/manutencao';
+import { buscar } from '../lib/busca';
 import { supabase } from '../lib/supabase';
 import { useFuncionariosAtivos } from '../lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../theme';
@@ -114,13 +115,6 @@ function useCarga<T>(buscar: () => Promise<T>) {
   return [carga, recarregar] as const;
 }
 
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
-
 function mensagemDeFalha(
   etapa: EtapaGravacao,
   rotaJaCriada: Rota | null,
@@ -195,6 +189,7 @@ export function FluxoNovaAtividade({
     rotaInicialId ? { tipo: 'existente', rotaId: rotaInicialId } : null,
   );
   const [nomeNovaRota, setNomeNovaRota] = useState('');
+  const [buscaRota, setBuscaRota] = useState('');
   const [responsavelId, setResponsavelId] = useState<string | null>(null);
 
   const [erros, setErros] = useState<Partial<Record<CampoComErro, string>>>({});
@@ -444,12 +439,10 @@ export function FluxoNovaAtividade({
     if (locais.estado !== 'pronto') {
       return [];
     }
-    const termo = normalizarTexto(buscaLocal.trim());
-    if (!termo) {
-      return locais.dados;
-    }
-    return locais.dados.filter((local) =>
-      normalizarTexto(local.nome).includes(termo),
+    return locais.dados.filter(
+      (local) =>
+        buscar(buscaLocal, [{ rotulo: 'local', valor: local.nome }])
+          .corresponde,
     );
   }, [locais, buscaLocal]);
 
@@ -583,6 +576,21 @@ export function FluxoNovaAtividade({
   function renderPasso2() {
     const carregandoPasso =
       rotas.estado === 'carregando' || funcionarios.estado === 'carregando';
+    const rotasFiltradas =
+      rotas.estado === 'pronto'
+        ? rotas.dados.filter(
+            (rota) =>
+              buscar(buscaRota, [
+                { rotulo: 'rota', valor: rota.nome },
+                {
+                  rotulo: 'responsável',
+                  valor: rota.funcionario_id
+                    ? funcionariosPorId.get(rota.funcionario_id)?.nome
+                    : null,
+                },
+              ]).corresponde,
+          )
+        : [];
 
     return (
       <>
@@ -605,8 +613,31 @@ export function FluxoNovaAtividade({
               />
             ) : null}
 
+            <TextInput
+              value={buscaRota}
+              onChangeText={setBuscaRota}
+              placeholder="Buscar rota ou colaborador"
+              placeholderTextColor={light.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[styles.inputBusca, styles.inputBuscaRota]}
+            />
+
             <View style={styles.pauta}>
-              {rotas.dados.map((rota) => {
+              {rotasFiltradas.length === 0 && buscaRota.trim() ? (
+                <LinhaOpcao
+                  titulo={`Criar nova rota "${buscaRota.trim()}"`}
+                  icone="add"
+                  selecionada={false}
+                  onPress={() => {
+                    setEscolhaRota({ tipo: 'nova' });
+                    setNomeNovaRota(buscaRota.trim());
+                    limparErro('rota');
+                    limparErro('nomeNovaRota');
+                  }}
+                />
+              ) : null}
+              {rotasFiltradas.map((rota) => {
                 const responsavel = rota.funcionario_id
                   ? funcionariosPorId.get(rota.funcionario_id)
                   : undefined;
@@ -1276,6 +1307,9 @@ const styles = StyleSheet.create({
   overlayFechar: {
     alignSelf: 'center',
     paddingVertical: spacing.xs,
+  },
+  inputBuscaRota: {
+    marginTop: spacing.md,
   },
   inputBusca: {
     backgroundColor: light.sunken,
