@@ -29,6 +29,7 @@ O texto visível ao usuário é **"Zeladoria"** (perfil de login) / **"Zeladoria
 - Validação de atividades pelo Administrador: somente em lista (seção "Pendentes de validação"). Não reintroduzir fluxo guiado de validação em tela cheia.
 - Criação de atividade: fluxo guiado em 4 passos (Atividade → Rota → Responsável → Revisar). O passo Responsável só aparece se a rota for nova ou estiver sem responsável ativo. Nada é gravado antes do passo Revisar. Edição de atividade, rota e colaborador é direta, sem passos.
 - Criação de rota: fluxo guiado (Nome → Responsável → Rota criada). Responsável de rota: qualquer usuário ativo, de qualquer papel; visível e editável direto no card da rota. Toda escolha de responsável usa o componente SeletorResponsavel.
+- Aba Zeladoria e Manutenção (Administrador): seções Hoje (operação do dia) e Rotas (todas as rotas). Novas seções (Atividades, Locais) só aparecem quando estiverem prontas; nunca exibir seção vazia de espera. Um nome designa uma única coisa na interface.
 
 ## Estado atual — módulo por módulo
 

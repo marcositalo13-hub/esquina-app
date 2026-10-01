@@ -108,6 +108,8 @@ export type PlanoManutencao = {
   rota_id: string | null;
   ordem_na_rota: number | null;
   created_at: string;
+  // Coluna not null no banco (default true), sem edição na UI ainda.
+  ativo?: boolean;
   // Sempre presente no banco (not null), mas nem toda consulta a busca
   // explicitamente — nullable aqui só pra não quebrar chamadas antigas que
   // não incluíam a coluna no select.

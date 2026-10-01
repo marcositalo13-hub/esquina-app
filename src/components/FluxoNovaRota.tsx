@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { criarRota, type Rota } from '../data/manutencao';
 import { useFuncionariosAtivos } from '../lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../theme';
+import { ExplicacaoRota } from './ExplicacaoRota';
 import { SeletorResponsavel } from './SeletorResponsavel';
 
 type Passo = 1 | 2 | 3;
@@ -223,9 +224,7 @@ export function FluxoNovaRota({
           {passo === 1 ? (
             <>
               <Text style={styles.pergunta}>Como se chama a rota?</Text>
-              <Text style={styles.subtitulo}>
-                Rota é o percurso de um responsável.
-              </Text>
+              <ExplicacaoRota />
               <View style={styles.pauta}>
                 <View style={styles.linha}>
                   <Text style={styles.rotulo}>Nome</Text>

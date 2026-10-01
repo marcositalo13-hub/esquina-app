@@ -39,6 +39,7 @@ import { supabase } from '../lib/supabase';
 import { useFuncionariosAtivos } from '../lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../theme';
 import { Chip } from './Chip';
+import { ExplicacaoRota } from './ExplicacaoRota';
 import { MiniCalendar } from './MiniCalendar';
 import { SeletorResponsavel } from './SeletorResponsavel';
 
@@ -586,9 +587,7 @@ export function FluxoNovaAtividade({
     return (
       <>
         <Text style={styles.pergunta}>Em qual rota ela entra?</Text>
-        <Text style={styles.subtitulo}>
-          Rota é o percurso de um responsável.
-        </Text>
+        <ExplicacaoRota />
 
         {carregandoPasso ? (
           <Text style={styles.carregandoTexto}>Carregando rotas…</Text>
