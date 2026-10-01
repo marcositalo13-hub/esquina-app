@@ -64,6 +64,7 @@ import { useIdentidade } from '../../src/lib/identidade';
 import { resolverCondominioId } from '../../src/lib/resolverCondominioId';
 import { supabase } from '../../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
+import { useFuncionariosAtivos } from '../../src/lib/useFuncionariosAtivos';
 import { reprovarOrdem, validarOrdem } from '../../src/lib/validacaoOrdens';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
@@ -170,10 +171,19 @@ export default function AdminPreservacao() {
   const [rotaResponsavelModal, setRotaResponsavelModal] = useState<Rota | null>(
     null,
   );
+  // Escolha feita no seletor do card, ainda NÃO gravada — só "Confirmar"
+  // grava.
+  const [responsavelEscolhidoId, setResponsavelEscolhidoId] = useState<
+    string | null
+  >(null);
   const [salvandoResponsavelRota, setSalvandoResponsavelRota] = useState(false);
   const [erroResponsavelRota, setErroResponsavelRota] = useState<string | null>(
     null,
   );
+  // Rota cujo seletor está aberto agora — uma gravação que termina depois de
+  // o seletor ter sido fechado (ou aberto para outra rota) não mexe nele.
+  const rotaResponsavelAbertaIdRef = useRef<string | null>(null);
+  const { porId: funcionariosPorId } = useFuncionariosAtivos();
 
   const [modalExtraVisivel, setModalExtraVisivel] = useState(false);
   // Preenchido só em edição (abrirModalEditarExtraordinaria) — caminho
@@ -1340,35 +1350,86 @@ export default function AdminPreservacao() {
   }
 
   function abrirResponsavelRota(rota: Rota) {
+    rotaResponsavelAbertaIdRef.current = rota.id;
     setErroResponsavelRota(null);
+    setResponsavelEscolhidoId(null);
     setRotaResponsavelModal(rota);
   }
 
-  async function handleEscolherResponsavelRota(funcionarioId: string | null) {
+  function fecharResponsavelRota() {
+    rotaResponsavelAbertaIdRef.current = null;
+    setRotaResponsavelModal(null);
+    setResponsavelEscolhidoId(null);
+    setErroResponsavelRota(null);
+  }
+
+  // Tocar num nome só seleciona; a gravação fica para "Confirmar".
+  function handleEscolherResponsavelRota(funcionarioId: string | null) {
     if (!rotaResponsavelModal || !funcionarioId || salvandoResponsavelRota) {
       return;
     }
+    if (funcionarioId === rotaResponsavelModal.funcionario_id) {
+      fecharResponsavelRota();
+      return;
+    }
+    setErroResponsavelRota(null);
+    setResponsavelEscolhidoId(funcionarioId);
+  }
+
+  async function handleConfirmarResponsavelRota() {
+    if (
+      !rotaResponsavelModal ||
+      !responsavelEscolhidoId ||
+      salvandoResponsavelRota
+    ) {
+      return;
+    }
+    const rotaId = rotaResponsavelModal.id;
     setSalvandoResponsavelRota(true);
     setErroResponsavelRota(null);
     try {
-      const rotaAtualizada = await atualizarRota(rotaResponsavelModal.id, {
-        funcionario_id: funcionarioId,
+      const rotaAtualizada = await atualizarRota(rotaId, {
+        funcionario_id: responsavelEscolhidoId,
       });
-      // Mesma recarga de handleSalvarEditarRota: `rotas` + o join de
-      // ordensHoje/ordens que alimenta os cards de "Rotas".
+
+      // Atualiza na hora os dois cards da rota: "Rotas" lê de `rotas`;
+      // "Rotas de hoje" lê do join planos_manutencao.rotas em ordensHoje.
       setRotas((atual) =>
-        atual.map((item) =>
-          item.id === rotaAtualizada.id ? rotaAtualizada : item,
+        atual.map((item) => (item.id === rotaId ? rotaAtualizada : item)),
+      );
+      setOrdensHoje((atual) =>
+        atual.map((ordem) =>
+          ordem.planos_manutencao?.rota_id === rotaId &&
+          ordem.planos_manutencao.rotas
+            ? {
+                ...ordem,
+                planos_manutencao: {
+                  ...ordem.planos_manutencao,
+                  rotas: {
+                    ...ordem.planos_manutencao.rotas,
+                    funcionario_id: rotaAtualizada.funcionario_id,
+                  },
+                },
+              }
+            : ordem,
         ),
       );
-      await recarregarOrdens();
-      setRotaResponsavelModal(null);
+
+      if (rotaResponsavelAbertaIdRef.current === rotaId) {
+        fecharResponsavelRota();
+      }
       mostrarAviso('Responsável definido');
+
+      // Recargas em segundo plano: a interface já está liberada.
+      carregarRotas();
+      recarregarOrdens();
     } catch (erro) {
       console.error('Falha ao definir responsável da rota', erro);
-      setErroResponsavelRota(
-        'Não foi possível salvar o responsável. Tente de novo.',
-      );
+      if (rotaResponsavelAbertaIdRef.current === rotaId) {
+        setErroResponsavelRota('Não foi possível salvar. Tente de novo.');
+      } else {
+        mostrarAviso('Não foi possível salvar o responsável.');
+      }
     } finally {
       setSalvandoResponsavelRota(false);
     }
@@ -4276,7 +4337,7 @@ export default function AdminPreservacao() {
         visible={rotaResponsavelModal !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setRotaResponsavelModal(null)}
+        onRequestClose={fecharResponsavelRota}
       >
         <View style={styles.overlay}>
           <View style={[styles.modalRotaCard, styles.modalResponsavelCard]}>
@@ -4285,26 +4346,73 @@ export default function AdminPreservacao() {
             </Text>
             <ScrollView style={styles.modalLocalLista}>
               <SeletorResponsavel
-                selecionadoId={rotaResponsavelModal?.funcionario_id ?? null}
+                selecionadoId={
+                  responsavelEscolhidoId ??
+                  rotaResponsavelModal?.funcionario_id ??
+                  null
+                }
                 onSelecionar={handleEscolherResponsavelRota}
                 desabilitado={salvandoResponsavelRota}
               />
             </ScrollView>
-            {salvandoResponsavelRota ? (
-              <Text style={styles.vazio}>Salvando…</Text>
-            ) : null}
-            {erroResponsavelRota ? (
-              <Text style={styles.erro}>{erroResponsavelRota}</Text>
-            ) : null}
-            <View style={styles.modalBotoes}>
-              <Pressable
-                style={[styles.modalBotao, styles.modalBotaoCancelar]}
-                onPress={() => setRotaResponsavelModal(null)}
-                disabled={salvandoResponsavelRota}
-              >
-                <Text style={styles.modalBotaoCancelarTexto}>Fechar</Text>
-              </Pressable>
-            </View>
+
+            {responsavelEscolhidoId ? (
+              <View style={styles.confirmacaoResponsavel}>
+                <Text style={styles.confirmacaoResponsavelTexto}>
+                  As atividades de {rotaResponsavelModal?.nome ?? ''} passam
+                  para{' '}
+                  {funcionariosPorId.get(responsavelEscolhidoId)?.nome ??
+                    'o novo responsável'}{' '}
+                  a partir de agora.
+                </Text>
+                {erroResponsavelRota ? (
+                  <Text style={styles.erro}>{erroResponsavelRota}</Text>
+                ) : null}
+                <View style={styles.modalBotoes}>
+                  <Pressable
+                    style={[styles.modalBotao, styles.modalBotaoCancelar]}
+                    onPress={() => {
+                      // Durante a gravação não há o que cancelar: só fecha;
+                      // o desfecho chega como aviso (ver
+                      // handleConfirmarResponsavelRota).
+                      if (salvandoResponsavelRota) {
+                        fecharResponsavelRota();
+                        return;
+                      }
+                      setResponsavelEscolhidoId(null);
+                      setErroResponsavelRota(null);
+                    }}
+                  >
+                    <Text style={styles.modalBotaoCancelarTexto}>
+                      {salvandoResponsavelRota ? 'Fechar' : 'Cancelar'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalBotao,
+                      styles.modalBotaoSalvar,
+                      (pressed || salvandoResponsavelRota) &&
+                        styles.modalBotaoPressionado,
+                    ]}
+                    onPress={handleConfirmarResponsavelRota}
+                    disabled={salvandoResponsavelRota}
+                  >
+                    <Text style={styles.modalBotaoSalvarTexto}>
+                      {salvandoResponsavelRota ? 'Salvando…' : 'Confirmar'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.modalBotoes}>
+                <Pressable
+                  style={[styles.modalBotao, styles.modalBotaoCancelar]}
+                  onPress={fecharResponsavelRota}
+                >
+                  <Text style={styles.modalBotaoCancelarTexto}>Fechar</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -4753,6 +4861,17 @@ const styles = StyleSheet.create({
   },
   modalResponsavelCard: {
     maxHeight: '85%',
+  },
+  confirmacaoResponsavel: {
+    gap: spacing.sm,
+    paddingTop: spacing.md,
+    borderTopWidth: 2,
+    borderTopColor: light.inkAction,
+  },
+  confirmacaoResponsavelTexto: {
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    color: light.textPrimary,
   },
   grupoRotaProgressoRow: {
     flexDirection: 'row',
