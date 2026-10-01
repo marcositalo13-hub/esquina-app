@@ -31,6 +31,7 @@ import { ResponsavelRota } from '../../src/components/ResponsavelRota';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
 import { SeletorResponsavel } from '../../src/components/SeletorResponsavel';
 import { StatusBadge } from '../../src/components/StatusBadge';
+import { TelaRota } from '../../src/components/TelaRota';
 import {
   formatarDiaCurto,
   type ResumoRota,
@@ -154,6 +155,8 @@ export default function AdminPreservacao() {
   // Rota já gravada pelo FluxoNovaRota antes de ele fechar ("Fazer isso
   // depois" ou X no passo final) — ao fechar, mostra a seção "Rotas".
   const rotaCriadaNoFluxoRef = useRef(false);
+  // Rota aberta na tela da rota (painel lista-detalhe da seção "Rotas").
+  const [rotaAbertaId, setRotaAbertaId] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const avisoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -721,18 +724,32 @@ export default function AdminPreservacao() {
     };
   }, [rotas]);
 
-  // Atividades (planos) por rota para a seção "Rotas" — planos marcados
-  // como inativos (planos_manutencao.ativo = false) não contam.
+  // Atividades (planos) por rota para a seção "Rotas" e a tela da rota —
+  // planos marcados como inativos (planos_manutencao.ativo = false) não
+  // contam. Ordem: ordem_na_rota (nula conta como 0, mesma regra de
+  // "Rotas de hoje"); empate mantém a ordem de `planos` (mais novos antes).
   const planosAtivosPorRota = useMemo(() => {
-    const contagem = new Map<string, number>();
+    const porRota = new Map<string, PlanoManutencao[]>();
     for (const plano of planos) {
       if (!plano.rota_id || plano.ativo === false) {
         continue;
       }
-      contagem.set(plano.rota_id, (contagem.get(plano.rota_id) ?? 0) + 1);
+      const lista = porRota.get(plano.rota_id);
+      if (lista) {
+        lista.push(plano);
+      } else {
+        porRota.set(plano.rota_id, [plano]);
+      }
     }
-    return contagem;
+    for (const lista of porRota.values()) {
+      lista.sort((a, b) => (a.ordem_na_rota ?? 0) - (b.ordem_na_rota ?? 0));
+    }
+    return porRota;
   }, [planos]);
+
+  const rotaAberta = rotaAbertaId
+    ? (rotas.find((rota) => rota.id === rotaAbertaId) ?? null)
+    : null;
 
   // Planos com ao menos uma ordem pendente/em andamento e atrasada (para o
   // chip "Atrasadas" e para o badge nos chips de Tipo).
@@ -1341,15 +1358,48 @@ export default function AdminPreservacao() {
     return (
       <View style={styles.listaGrupos}>
         {rotas.map((rota) => {
-          const atividades = planosAtivosPorRota.get(rota.id) ?? 0;
+          const atividades = planosAtivosPorRota.get(rota.id)?.length ?? 0;
           return (
             <Fragment key={rota.id}>
               <View style={styles.grupoRotaResumoCard}>
                 <View style={styles.grupoRotaResumoCabecalho}>
-                  <Text style={styles.grupoRotaResumoTitulo}>{rota.nome}</Text>
-                  {renderBotaoMenuRota(rota)}
+                  {/* Corpo (nome + contagens): abre a tela da rota. Fica
+                      separado do ⋮ e da linha de baixo (responsável /
+                      "Adicionar") por espaçamento maior que os hitSlop
+                      deles — as áreas de toque não se sobrepõem. */}
+                  <Pressable
+                    onPress={() => setRotaAbertaId(rota.id)}
+                    style={({ pressed }) => [
+                      styles.rotaCardCorpo,
+                      pressed && styles.rotaCardCorpoPressionado,
+                    ]}
+                    accessibilityLabel={`Abrir rota ${rota.nome}`}
+                  >
+                    <View style={styles.rotaCardCorpoTextos}>
+                      <Text style={styles.grupoRotaResumoTitulo}>
+                        {rota.nome}
+                      </Text>
+                      {atividades > 0 ? (
+                        <Text style={styles.grupoRotaResumoSubtitulo}>
+                          {atividades}{' '}
+                          {atividades === 1 ? 'atividade' : 'atividades'}
+                          {textoHojeProxima(resumoPorRota.get(rota.id))}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={light.textMuted}
+                    />
+                  </Pressable>
+                  <View style={styles.rotaCardMenu}>
+                    {renderBotaoMenuRota(rota)}
+                  </View>
                 </View>
-                <View style={styles.grupoRotaSubtituloRow}>
+                <View
+                  style={[styles.grupoRotaSubtituloRow, styles.rotaCardRodape]}
+                >
                   {atividades === 0 ? (
                     <View style={styles.semAtividadesRow}>
                       <Text style={styles.semAtividadesTexto}>
@@ -1363,11 +1413,7 @@ export default function AdminPreservacao() {
                       </Pressable>
                     </View>
                   ) : (
-                    <Text style={styles.grupoRotaResumoSubtitulo}>
-                      {atividades}{' '}
-                      {atividades === 1 ? 'atividade' : 'atividades'}
-                      {textoHojeProxima(resumoPorRota.get(rota.id))}
-                    </Text>
+                    <View />
                   )}
                   <ResponsavelRota
                     funcionarioId={rota.funcionario_id}
@@ -2758,667 +2804,600 @@ export default function AdminPreservacao() {
     <View style={styles.container}>
       <ScreenBackground />
 
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Pressable
-          onPress={() => router.push('/admin')}
-          style={styles.headerButton}
-        >
-          <Ionicons name="chevron-back" size={22} color={light.textPrimary} />
-        </Pressable>
-
-        <Text style={styles.title}>Zeladoria e Manutenção</Text>
-
-        <Pressable
-          ref={botaoCriarRef}
-          onPress={abrirMenuCriar}
-          style={({ pressed }) => [
-            styles.novoBotaoPrincipal,
-            pressed && styles.addButtonPressed,
-          ]}
-        >
-          <Ionicons name="add" size={18} color="#FFFFFF" />
-          <Text style={styles.novoBotaoPrincipalTexto}>Novo</Text>
-        </Pressable>
-      </View>
-
-      {/* Porta de entrada única de criação — Fase 1 do redesenho: as três
-          formas de criar algo nesta aba (rota, atividade/plano, extraordinária)
-          partem só daqui. Cada opção abre o formulário existente
-          correspondente, sem alterá-lo. */}
-      <CardMenu
-        visible={menuCriarVisivel}
-        onClose={() => setMenuCriarVisivel(false)}
-        anchorPosition={menuCriarAncora}
-      >
-        <Pressable
-          style={styles.menuItem}
-          onPress={() => {
-            setMenuCriarVisivel(false);
-            setFluxoNovaRotaVisivel(true);
-          }}
-        >
-          <Text style={styles.menuItemTexto}>Nova rota</Text>
-          <Text style={styles.menuItemDescricao}>
-            Conjunto de atividades com um responsável.
-          </Text>
-        </Pressable>
-        <Pressable
-          style={styles.menuItem}
-          onPress={() => {
-            setMenuCriarVisivel(false);
-            setFluxoNovaAtividadeVisivel(true);
-          }}
-        >
-          <Text style={styles.menuItemTexto}>Nova atividade</Text>
-          <Text style={styles.menuItemDescricao}>
-            Tarefa planejada, dentro de uma rota.
-          </Text>
-        </Pressable>
-        <Pressable style={styles.menuItem} onPress={abrirModalExtraordinaria}>
-          <Text style={styles.menuItemTexto}>Atividade extraordinária</Text>
-          <Text style={styles.menuItemDescricao}>
-            Tarefa imprevista, fora das rotas.
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[
-            styles.menuConfirmacaoBotaoCancelar,
-            styles.menuCriarBotaoCancelar,
-          ]}
-          onPress={() => setMenuCriarVisivel(false)}
-        >
-          <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>Cancelar</Text>
-        </Pressable>
-      </CardMenu>
-
-      <View style={styles.abas} role="tablist">
-        {(
-          [
-            { chave: 'hoje', rotulo: 'Hoje' },
-            { chave: 'rotas', rotulo: 'Rotas' },
-          ] as const
-        ).map((aba) => (
-          <Pressable
-            key={aba.chave}
-            role="tab"
-            aria-selected={secao === aba.chave}
-            onPress={() => setSecao(aba.chave)}
-            style={[styles.aba, secao === aba.chave && styles.abaAtiva]}
+      {rotaAberta ? (
+        <TelaRota
+          rota={rotaAberta}
+          planos={planosAtivosPorRota.get(rotaAberta.id) ?? []}
+          onFechar={() => setRotaAbertaId(null)}
+          onEditarAtividade={handleEditar}
+          onAdicionarAtividade={abrirNovaAtividadeNaRota}
+          onAbrirResponsavel={abrirResponsavelRota}
+          onEditarRota={abrirModalEditarRota}
+        />
+      ) : (
+        <>
+          <View
+            style={[styles.header, { paddingTop: insets.top + spacing.md }]}
           >
-            <Text
-              style={[
-                styles.abaTexto,
-                secao === aba.chave && styles.abaTextoAtivo,
-              ]}
-            >
-              {aba.rotulo}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.body}>
-        {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
-
-        {secao === 'rotas' ? renderSecaoRotas() : null}
-
-        {secao === 'hoje' ? (
-          <>
-            <TextInput
-              value={buscaPlano}
-              onChangeText={setBuscaPlano}
-              placeholder="Buscar por nome"
-              placeholderTextColor={light.textSecondary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-
-            <View style={styles.painelCard}>
-              <Pressable
-                style={styles.calendarioCabecalho}
-                onPress={() => setCalendarioFiltrosAberto((v) => !v)}
-              >
-                <Text style={styles.calendarioTitulo}>
-                  Calendário e Filtros
-                </Text>
-                <Ionicons
-                  name={calendarioFiltrosAberto ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={light.textSecondary}
-                />
-              </Pressable>
-
-              {calendarioFiltrosAberto ? (
-                <View style={styles.calendarioFiltrosConteudo}>
-                  <MiniCalendar
-                    markedDates={markedDates}
-                    selectedDate={selectedDate}
-                    onSelectDay={handleSelecionarDia}
-                  />
-
-                  <View style={styles.progressoTrilho}>
-                    <View
-                      style={[
-                        styles.segmento,
-                        styles.segmentoConcluidas,
-                        { flex: progresso.concluidas },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.segmento,
-                        styles.segmentoPendentes,
-                        { flex: progresso.pendentes },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.segmento,
-                        styles.segmentoAtrasadas,
-                        { flex: progresso.atrasadas },
-                      ]}
-                    />
-                  </View>
-
-                  <View style={styles.contadoresRow}>
-                    <View style={styles.contadorItem}>
-                      <Text
-                        style={[styles.contadorBolinha, { color: semantic.ok }]}
-                      >
-                        ●
-                      </Text>
-                      <Text style={styles.contadorTexto}>
-                        {progresso.concluidas} concluídas
-                      </Text>
-                    </View>
-                    <View style={styles.contadorItem}>
-                      <Text
-                        style={[
-                          styles.contadorBolinha,
-                          { color: light.textMuted },
-                        ]}
-                      >
-                        ●
-                      </Text>
-                      <Text style={styles.contadorTexto}>
-                        {progresso.pendentes} pendentes
-                      </Text>
-                    </View>
-                    <View style={styles.contadorItem}>
-                      <Text
-                        style={[
-                          styles.contadorBolinha,
-                          { color: semantic.overdue },
-                        ]}
-                      >
-                        ●
-                      </Text>
-                      <Text style={styles.contadorTexto}>
-                        {progresso.atrasadas} atrasadas
-                      </Text>
-                    </View>
-                  </View>
-
-                  {selectedDate ? (
-                    <Pressable
-                      style={styles.filtroDataBanner}
-                      onPress={() => setSelectedDate(null)}
-                    >
-                      <Text style={styles.filtroDataTexto}>
-                        Filtrando por: {formatarDataBR(selectedDate)} ✕
-                      </Text>
-                    </Pressable>
-                  ) : null}
-
-                  <View
-                    style={[
-                      styles.segmentedControl,
-                      selectedDate ? styles.segmentedControlDesabilitado : null,
-                    ]}
-                    pointerEvents={selectedDate ? 'none' : 'auto'}
-                  >
-                    <Pressable
-                      style={[
-                        styles.segmentButton,
-                        dateFilter === 'hoje' && styles.segmentButtonAtivo,
-                      ]}
-                      onPress={() => setDateFilter('hoje')}
-                    >
-                      <Text
-                        style={[
-                          styles.segmentText,
-                          dateFilter === 'hoje' && styles.segmentTextAtivo,
-                        ]}
-                      >
-                        Hoje
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.segmentButton,
-                        dateFilter === 'todas' && styles.segmentButtonAtivo,
-                      ]}
-                      onPress={() => setDateFilter('todas')}
-                    >
-                      <Text
-                        style={[
-                          styles.segmentText,
-                          dateFilter === 'todas' && styles.segmentTextAtivo,
-                        ]}
-                      >
-                        Todas as datas
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  <Pressable
-                    style={[
-                      styles.chipAtrasadas,
-                      atrasadasFiltro && styles.chipAtrasadasAtivo,
-                    ]}
-                    onPress={() => setAtrasadasFiltro((v) => !v)}
-                  >
-                    <Ionicons
-                      name="alert-circle-outline"
-                      size={14}
-                      color={atrasadasFiltro ? '#FFFFFF' : semantic.overdue}
-                    />
-                    <Text
-                      style={[
-                        styles.chipAtrasadasTexto,
-                        atrasadasFiltro && styles.chipAtrasadasTextoAtivo,
-                      ]}
-                    >
-                      Atrasadas
-                    </Text>
-                  </Pressable>
-
-                  <View style={styles.filtroGrupo}>
-                    <Text style={styles.label}>Tipo</Text>
-                    <View style={styles.chipWrap}>
-                      {tiposAtivos.map((tipo) => (
-                        <View key={tipo.id}>
-                          <Chip
-                            label={tipo.nome}
-                            selected={tipoFiltros.includes(tipo.id)}
-                            onPress={() => toggleTipoFiltro(tipo.id)}
-                          />
-                          {tiposComAtraso.has(tipo.id) ? (
-                            <View style={styles.chipBadgeDot} />
-                          ) : null}
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.filtroGrupo}>
-                    <Text style={styles.label}>Prioridade</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.chipRow}
-                    >
-                      {PRIORIDADES.map((item) => (
-                        <Chip
-                          key={item}
-                          label={item}
-                          selected={prioridadeFiltros.includes(item)}
-                          color={getCorPrioridade(item)}
-                          onPress={() => togglePrioridadeFiltro(item)}
-                        />
-                      ))}
-                    </ScrollView>
-                  </View>
-
-                  <View style={styles.filtroGrupo}>
-                    <Text style={styles.label}>Periodicidade</Text>
-                    <View style={styles.chipWrap}>
-                      {PERIODICIDADES.map((item) => (
-                        <Chip
-                          key={item}
-                          label={item}
-                          selected={periodicidadeFiltros.includes(item)}
-                          onPress={() => togglePeriodicidadeFiltro(item)}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-
-            {gruposValidacao.length > 0 ? (
-              <>
-                <Text style={styles.secaoTitulo}>Pendentes de validação</Text>
-                <View style={styles.listaValidacao}>
-                  {gruposValidacao.map((grupo) => {
-                    const pendentesCount = grupo.itens.filter(
-                      (ordem) => !(ordem.id in validacaoOverrides),
-                    ).length;
-                    const expandido = !validacaoGruposRecolhidos.has(
-                      grupo.chave,
-                    );
-
-                    return (
-                      <View key={grupo.chave} style={styles.grupoValidacao}>
-                        <Pressable
-                          style={styles.grupoValidacaoCabecalho}
-                          onPress={() =>
-                            toggleValidacaoGrupoExpandido(grupo.chave)
-                          }
-                        >
-                          <Text style={styles.grupoValidacaoCabecalhoTexto}>
-                            {grupo.nome} ({pendentesCount} pendente
-                            {pendentesCount === 1 ? '' : 's'})
-                          </Text>
-                          <Ionicons
-                            name={expandido ? 'chevron-up' : 'chevron-down'}
-                            size={16}
-                            color={light.inkAction}
-                          />
-                        </Pressable>
-
-                        {expandido ? (
-                          <View style={styles.grupoValidacaoItens}>
-                            {grupo.itens.map((ordem) =>
-                              renderLinhaValidacao(ordem),
-                            )}
-                          </View>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              </>
-            ) : null}
-
             <Pressable
-              style={styles.secaoTituloRow}
-              onPress={() => setRotasSecaoAberta((v) => !v)}
+              onPress={() => router.push('/admin')}
+              style={styles.headerButton}
             >
-              <Text style={styles.secaoTitulo}>Rotas de hoje</Text>
               <Ionicons
-                name={rotasSecaoAberta ? 'chevron-up' : 'chevron-down'}
-                size={18}
-                color={light.textSecondary}
+                name="chevron-back"
+                size={22}
+                color={light.textPrimary}
               />
             </Pressable>
 
-            {rotasSecaoAberta ? (
-              atividadesDoDia.length === 0 ? (
-                <Text style={styles.vazio}>
-                  Nenhuma atividade prevista para hoje.
+            <Text style={styles.title}>Zeladoria e Manutenção</Text>
+
+            <Pressable
+              ref={botaoCriarRef}
+              onPress={abrirMenuCriar}
+              style={({ pressed }) => [
+                styles.novoBotaoPrincipal,
+                pressed && styles.addButtonPressed,
+              ]}
+            >
+              <Ionicons name="add" size={18} color="#FFFFFF" />
+              <Text style={styles.novoBotaoPrincipalTexto}>Novo</Text>
+            </Pressable>
+          </View>
+
+          {/* Porta de entrada única de criação — Fase 1 do redesenho: as três
+          formas de criar algo nesta aba (rota, atividade/plano, extraordinária)
+          partem só daqui. Cada opção abre o formulário existente
+          correspondente, sem alterá-lo. */}
+          <CardMenu
+            visible={menuCriarVisivel}
+            onClose={() => setMenuCriarVisivel(false)}
+            anchorPosition={menuCriarAncora}
+          >
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuCriarVisivel(false);
+                setFluxoNovaRotaVisivel(true);
+              }}
+            >
+              <Text style={styles.menuItemTexto}>Nova rota</Text>
+              <Text style={styles.menuItemDescricao}>
+                Conjunto de atividades com um responsável.
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuCriarVisivel(false);
+                setFluxoNovaAtividadeVisivel(true);
+              }}
+            >
+              <Text style={styles.menuItemTexto}>Nova atividade</Text>
+              <Text style={styles.menuItemDescricao}>
+                Tarefa planejada, dentro de uma rota.
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={abrirModalExtraordinaria}
+            >
+              <Text style={styles.menuItemTexto}>Atividade extraordinária</Text>
+              <Text style={styles.menuItemDescricao}>
+                Tarefa imprevista, fora das rotas.
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.menuConfirmacaoBotaoCancelar,
+                styles.menuCriarBotaoCancelar,
+              ]}
+              onPress={() => setMenuCriarVisivel(false)}
+            >
+              <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>
+                Cancelar
+              </Text>
+            </Pressable>
+          </CardMenu>
+
+          <View style={styles.abas} role="tablist">
+            {(
+              [
+                { chave: 'hoje', rotulo: 'Hoje' },
+                { chave: 'rotas', rotulo: 'Rotas' },
+              ] as const
+            ).map((aba) => (
+              <Pressable
+                key={aba.chave}
+                role="tab"
+                aria-selected={secao === aba.chave}
+                onPress={() => setSecao(aba.chave)}
+                style={[styles.aba, secao === aba.chave && styles.abaAtiva]}
+              >
+                <Text
+                  style={[
+                    styles.abaTexto,
+                    secao === aba.chave && styles.abaTextoAtivo,
+                  ]}
+                >
+                  {aba.rotulo}
                 </Text>
-              ) : (
-                <View style={styles.listaGrupos}>
-                  {atividadesAgrupadas.extraordinarias.length > 0 ? (
-                    <View style={styles.lista}>
-                      {atividadesAgrupadas.extraordinarias.map((ordem) =>
-                        renderAtividadeCard(ordem),
-                      )}
+              </Pressable>
+            ))}
+          </View>
+
+          <ScrollView contentContainerStyle={styles.body}>
+            {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
+
+            {secao === 'rotas' ? renderSecaoRotas() : null}
+
+            {secao === 'hoje' ? (
+              <>
+                <TextInput
+                  value={buscaPlano}
+                  onChangeText={setBuscaPlano}
+                  placeholder="Buscar por nome"
+                  placeholderTextColor={light.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                />
+
+                <View style={styles.painelCard}>
+                  <Pressable
+                    style={styles.calendarioCabecalho}
+                    onPress={() => setCalendarioFiltrosAberto((v) => !v)}
+                  >
+                    <Text style={styles.calendarioTitulo}>
+                      Calendário e Filtros
+                    </Text>
+                    <Ionicons
+                      name={
+                        calendarioFiltrosAberto ? 'chevron-up' : 'chevron-down'
+                      }
+                      size={18}
+                      color={light.textSecondary}
+                    />
+                  </Pressable>
+
+                  {calendarioFiltrosAberto ? (
+                    <View style={styles.calendarioFiltrosConteudo}>
+                      <MiniCalendar
+                        markedDates={markedDates}
+                        selectedDate={selectedDate}
+                        onSelectDay={handleSelecionarDia}
+                      />
+
+                      <View style={styles.progressoTrilho}>
+                        <View
+                          style={[
+                            styles.segmento,
+                            styles.segmentoConcluidas,
+                            { flex: progresso.concluidas },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.segmento,
+                            styles.segmentoPendentes,
+                            { flex: progresso.pendentes },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.segmento,
+                            styles.segmentoAtrasadas,
+                            { flex: progresso.atrasadas },
+                          ]}
+                        />
+                      </View>
+
+                      <View style={styles.contadoresRow}>
+                        <View style={styles.contadorItem}>
+                          <Text
+                            style={[
+                              styles.contadorBolinha,
+                              { color: semantic.ok },
+                            ]}
+                          >
+                            ●
+                          </Text>
+                          <Text style={styles.contadorTexto}>
+                            {progresso.concluidas} concluídas
+                          </Text>
+                        </View>
+                        <View style={styles.contadorItem}>
+                          <Text
+                            style={[
+                              styles.contadorBolinha,
+                              { color: light.textMuted },
+                            ]}
+                          >
+                            ●
+                          </Text>
+                          <Text style={styles.contadorTexto}>
+                            {progresso.pendentes} pendentes
+                          </Text>
+                        </View>
+                        <View style={styles.contadorItem}>
+                          <Text
+                            style={[
+                              styles.contadorBolinha,
+                              { color: semantic.overdue },
+                            ]}
+                          >
+                            ●
+                          </Text>
+                          <Text style={styles.contadorTexto}>
+                            {progresso.atrasadas} atrasadas
+                          </Text>
+                        </View>
+                      </View>
+
+                      {selectedDate ? (
+                        <Pressable
+                          style={styles.filtroDataBanner}
+                          onPress={() => setSelectedDate(null)}
+                        >
+                          <Text style={styles.filtroDataTexto}>
+                            Filtrando por: {formatarDataBR(selectedDate)} ✕
+                          </Text>
+                        </Pressable>
+                      ) : null}
+
+                      <View
+                        style={[
+                          styles.segmentedControl,
+                          selectedDate
+                            ? styles.segmentedControlDesabilitado
+                            : null,
+                        ]}
+                        pointerEvents={selectedDate ? 'none' : 'auto'}
+                      >
+                        <Pressable
+                          style={[
+                            styles.segmentButton,
+                            dateFilter === 'hoje' && styles.segmentButtonAtivo,
+                          ]}
+                          onPress={() => setDateFilter('hoje')}
+                        >
+                          <Text
+                            style={[
+                              styles.segmentText,
+                              dateFilter === 'hoje' && styles.segmentTextAtivo,
+                            ]}
+                          >
+                            Hoje
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.segmentButton,
+                            dateFilter === 'todas' && styles.segmentButtonAtivo,
+                          ]}
+                          onPress={() => setDateFilter('todas')}
+                        >
+                          <Text
+                            style={[
+                              styles.segmentText,
+                              dateFilter === 'todas' && styles.segmentTextAtivo,
+                            ]}
+                          >
+                            Todas as datas
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      <Pressable
+                        style={[
+                          styles.chipAtrasadas,
+                          atrasadasFiltro && styles.chipAtrasadasAtivo,
+                        ]}
+                        onPress={() => setAtrasadasFiltro((v) => !v)}
+                      >
+                        <Ionicons
+                          name="alert-circle-outline"
+                          size={14}
+                          color={atrasadasFiltro ? '#FFFFFF' : semantic.overdue}
+                        />
+                        <Text
+                          style={[
+                            styles.chipAtrasadasTexto,
+                            atrasadasFiltro && styles.chipAtrasadasTextoAtivo,
+                          ]}
+                        >
+                          Atrasadas
+                        </Text>
+                      </Pressable>
+
+                      <View style={styles.filtroGrupo}>
+                        <Text style={styles.label}>Tipo</Text>
+                        <View style={styles.chipWrap}>
+                          {tiposAtivos.map((tipo) => (
+                            <View key={tipo.id}>
+                              <Chip
+                                label={tipo.nome}
+                                selected={tipoFiltros.includes(tipo.id)}
+                                onPress={() => toggleTipoFiltro(tipo.id)}
+                              />
+                              {tiposComAtraso.has(tipo.id) ? (
+                                <View style={styles.chipBadgeDot} />
+                              ) : null}
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+
+                      <View style={styles.filtroGrupo}>
+                        <Text style={styles.label}>Prioridade</Text>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={styles.chipRow}
+                        >
+                          {PRIORIDADES.map((item) => (
+                            <Chip
+                              key={item}
+                              label={item}
+                              selected={prioridadeFiltros.includes(item)}
+                              color={getCorPrioridade(item)}
+                              onPress={() => togglePrioridadeFiltro(item)}
+                            />
+                          ))}
+                        </ScrollView>
+                      </View>
+
+                      <View style={styles.filtroGrupo}>
+                        <Text style={styles.label}>Periodicidade</Text>
+                        <View style={styles.chipWrap}>
+                          {PERIODICIDADES.map((item) => (
+                            <Chip
+                              key={item}
+                              label={item}
+                              selected={periodicidadeFiltros.includes(item)}
+                              onPress={() => togglePeriodicidadeFiltro(item)}
+                            />
+                          ))}
+                        </View>
+                      </View>
                     </View>
                   ) : null}
+                </View>
 
-                  {atividadesAgrupadas.grupos.map(({ rota, itens }) => {
-                    const concluidas = itens.filter(
-                      (o) => o.status === 'concluida',
-                    ).length;
-                    const percentual =
-                      itens.length > 0
-                        ? Math.round((concluidas / itens.length) * 100)
-                        : 0;
-                    const expandida = rotasExpandidas.has(rota.id);
+                {gruposValidacao.length > 0 ? (
+                  <>
+                    <Text style={styles.secaoTitulo}>
+                      Pendentes de validação
+                    </Text>
+                    <View style={styles.listaValidacao}>
+                      {gruposValidacao.map((grupo) => {
+                        const pendentesCount = grupo.itens.filter(
+                          (ordem) => !(ordem.id in validacaoOverrides),
+                        ).length;
+                        const expandido = !validacaoGruposRecolhidos.has(
+                          grupo.chave,
+                        );
 
-                    return (
-                      <Fragment key={rota.id}>
-                        <View style={styles.grupoRota}>
-                          <View style={styles.grupoRotaResumoCard}>
-                            <View style={styles.grupoRotaResumoCabecalho}>
-                              <Text style={styles.grupoRotaResumoTitulo}>
-                                {rota.nome}
-                              </Text>
-                              {renderBotaoMenuRota(rota)}
-                            </View>
-                            <View style={styles.grupoRotaSubtituloRow}>
-                              <Text style={styles.grupoRotaResumoSubtitulo}>
-                                {itens.length} atividades programadas para o dia
-                              </Text>
-                              <ResponsavelRota
-                                funcionarioId={rota.funcionario_id}
-                                onPress={() => abrirResponsavelRota(rota)}
-                              />
-                            </View>
-
-                            <View style={styles.grupoRotaProgressoRow}>
-                              <View style={styles.grupoRotaProgressoTrilho}>
-                                <View
-                                  style={[
-                                    styles.grupoRotaProgressoPreenchimento,
-                                    { width: `${percentual}%` },
-                                  ]}
-                                />
-                              </View>
-                              <Text style={styles.grupoRotaProgressoTexto}>
-                                {percentual}%
-                              </Text>
-                            </View>
-
+                        return (
+                          <View key={grupo.chave} style={styles.grupoValidacao}>
                             <Pressable
-                              style={styles.grupoRotaExpandirRow}
-                              onPress={() => toggleRotaExpandida(rota.id)}
+                              style={styles.grupoValidacaoCabecalho}
+                              onPress={() =>
+                                toggleValidacaoGrupoExpandido(grupo.chave)
+                              }
                             >
-                              <Text style={styles.grupoRotaExpandirTexto}>
-                                {expandida
-                                  ? 'Recolher atividades'
-                                  : 'Expandir atividades'}
+                              <Text style={styles.grupoValidacaoCabecalhoTexto}>
+                                {grupo.nome} ({pendentesCount} pendente
+                                {pendentesCount === 1 ? '' : 's'})
                               </Text>
                               <Ionicons
-                                name={expandida ? 'chevron-up' : 'chevron-down'}
+                                name={expandido ? 'chevron-up' : 'chevron-down'}
                                 size={16}
                                 color={light.inkAction}
                               />
                             </Pressable>
+
+                            {expandido ? (
+                              <View style={styles.grupoValidacaoItens}>
+                                {grupo.itens.map((ordem) =>
+                                  renderLinhaValidacao(ordem),
+                                )}
+                              </View>
+                            ) : null}
                           </View>
-
-                          {expandida ? (
-                            <View style={styles.atividadesRotaContainer}>
-                              {itens.map((ordem) =>
-                                renderAtividadeCard(ordem, true),
-                              )}
-                            </View>
-                          ) : null}
-                        </View>
-
-                        <CardMenu
-                          visible={menuRotaAbertaId === rota.id}
-                          onClose={fecharMenuRota}
-                          anchorPosition={menuRotaAncora}
-                        >
-                          <Pressable
-                            style={styles.menuItem}
-                            onPress={() => abrirModalEditarRota(rota)}
-                          >
-                            <Text style={styles.menuItemTexto}>
-                              Editar rota
-                            </Text>
-                          </Pressable>
-                        </CardMenu>
-                      </Fragment>
-                    );
-                  })}
-
-                  {atividadesAgrupadas.semRota.length > 0 ? (
-                    <View style={styles.lista}>
-                      {atividadesAgrupadas.semRota.map((ordem) =>
-                        renderAtividadeCard(ordem),
-                      )}
+                        );
+                      })}
                     </View>
-                  ) : null}
-                </View>
-              )
-            ) : null}
+                  </>
+                ) : null}
 
-            <View style={styles.painelCard}>
-              <View style={styles.calendarioCabecalho}>
                 <Pressable
-                  style={styles.calendarioCabecalhoToggle}
-                  onPress={() => setPlanosAbertos((v) => !v)}
+                  style={styles.secaoTituloRow}
+                  onPress={() => setRotasSecaoAberta((v) => !v)}
                 >
-                  <Text style={styles.calendarioTitulo}>
-                    Todos os planos cadastrados
-                  </Text>
+                  <Text style={styles.secaoTitulo}>Rotas de hoje</Text>
                   <Ionicons
-                    name={planosAbertos ? 'chevron-up' : 'chevron-down'}
+                    name={rotasSecaoAberta ? 'chevron-up' : 'chevron-down'}
                     size={18}
                     color={light.textSecondary}
                   />
                 </Pressable>
-                <Pressable onPress={alternarModoSelecaoPlanos}>
-                  <Text style={styles.selecionarLink}>
-                    {modoSelecaoPlanos ? 'Concluir' : 'Selecionar'}
-                  </Text>
-                </Pressable>
-              </View>
 
-              {planosAbertos ? (
-                <View style={styles.lista}>
-                  {!carregando &&
-                  planosFiltrados.length === 0 &&
-                  extraordinariasFiltradas.length === 0 ? (
+                {rotasSecaoAberta ? (
+                  atividadesDoDia.length === 0 ? (
                     <Text style={styles.vazio}>
-                      {buscaPlano.trim()
-                        ? 'Nenhuma atividade encontrada.'
-                        : 'Nenhuma atividade cadastrada.'}
+                      Nenhuma atividade prevista para hoje.
                     </Text>
-                  ) : null}
+                  ) : (
+                    <View style={styles.listaGrupos}>
+                      {atividadesAgrupadas.extraordinarias.length > 0 ? (
+                        <View style={styles.lista}>
+                          {atividadesAgrupadas.extraordinarias.map((ordem) =>
+                            renderAtividadeCard(ordem),
+                          )}
+                        </View>
+                      ) : null}
 
-                  {/* Extraordinárias primeiro: são avulsas e têm prazo próprio,
+                      {atividadesAgrupadas.grupos.map(({ rota, itens }) => {
+                        const concluidas = itens.filter(
+                          (o) => o.status === 'concluida',
+                        ).length;
+                        const percentual =
+                          itens.length > 0
+                            ? Math.round((concluidas / itens.length) * 100)
+                            : 0;
+                        const expandida = rotasExpandidas.has(rota.id);
+
+                        return (
+                          <Fragment key={rota.id}>
+                            <View style={styles.grupoRota}>
+                              <View style={styles.grupoRotaResumoCard}>
+                                <View style={styles.grupoRotaResumoCabecalho}>
+                                  <Text style={styles.grupoRotaResumoTitulo}>
+                                    {rota.nome}
+                                  </Text>
+                                  {renderBotaoMenuRota(rota)}
+                                </View>
+                                <View style={styles.grupoRotaSubtituloRow}>
+                                  <Text style={styles.grupoRotaResumoSubtitulo}>
+                                    {itens.length} atividades programadas para o
+                                    dia
+                                  </Text>
+                                  <ResponsavelRota
+                                    funcionarioId={rota.funcionario_id}
+                                    onPress={() => abrirResponsavelRota(rota)}
+                                  />
+                                </View>
+
+                                <View style={styles.grupoRotaProgressoRow}>
+                                  <View style={styles.grupoRotaProgressoTrilho}>
+                                    <View
+                                      style={[
+                                        styles.grupoRotaProgressoPreenchimento,
+                                        { width: `${percentual}%` },
+                                      ]}
+                                    />
+                                  </View>
+                                  <Text style={styles.grupoRotaProgressoTexto}>
+                                    {percentual}%
+                                  </Text>
+                                </View>
+
+                                <Pressable
+                                  style={styles.grupoRotaExpandirRow}
+                                  onPress={() => toggleRotaExpandida(rota.id)}
+                                >
+                                  <Text style={styles.grupoRotaExpandirTexto}>
+                                    {expandida
+                                      ? 'Recolher atividades'
+                                      : 'Expandir atividades'}
+                                  </Text>
+                                  <Ionicons
+                                    name={
+                                      expandida ? 'chevron-up' : 'chevron-down'
+                                    }
+                                    size={16}
+                                    color={light.inkAction}
+                                  />
+                                </Pressable>
+                              </View>
+
+                              {expandida ? (
+                                <View style={styles.atividadesRotaContainer}>
+                                  {itens.map((ordem) =>
+                                    renderAtividadeCard(ordem, true),
+                                  )}
+                                </View>
+                              ) : null}
+                            </View>
+
+                            <CardMenu
+                              visible={menuRotaAbertaId === rota.id}
+                              onClose={fecharMenuRota}
+                              anchorPosition={menuRotaAncora}
+                            >
+                              <Pressable
+                                style={styles.menuItem}
+                                onPress={() => abrirModalEditarRota(rota)}
+                              >
+                                <Text style={styles.menuItemTexto}>
+                                  Editar rota
+                                </Text>
+                              </Pressable>
+                            </CardMenu>
+                          </Fragment>
+                        );
+                      })}
+
+                      {atividadesAgrupadas.semRota.length > 0 ? (
+                        <View style={styles.lista}>
+                          {atividadesAgrupadas.semRota.map((ordem) =>
+                            renderAtividadeCard(ordem),
+                          )}
+                        </View>
+                      ) : null}
+                    </View>
+                  )
+                ) : null}
+
+                <View style={styles.painelCard}>
+                  <View style={styles.calendarioCabecalho}>
+                    <Pressable
+                      style={styles.calendarioCabecalhoToggle}
+                      onPress={() => setPlanosAbertos((v) => !v)}
+                    >
+                      <Text style={styles.calendarioTitulo}>
+                        Todos os planos cadastrados
+                      </Text>
+                      <Ionicons
+                        name={planosAbertos ? 'chevron-up' : 'chevron-down'}
+                        size={18}
+                        color={light.textSecondary}
+                      />
+                    </Pressable>
+                    <Pressable onPress={alternarModoSelecaoPlanos}>
+                      <Text style={styles.selecionarLink}>
+                        {modoSelecaoPlanos ? 'Concluir' : 'Selecionar'}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {planosAbertos ? (
+                    <View style={styles.lista}>
+                      {!carregando &&
+                      planosFiltrados.length === 0 &&
+                      extraordinariasFiltradas.length === 0 ? (
+                        <Text style={styles.vazio}>
+                          {buscaPlano.trim()
+                            ? 'Nenhuma atividade encontrada.'
+                            : 'Nenhuma atividade cadastrada.'}
+                        </Text>
+                      ) : null}
+
+                      {/* Extraordinárias primeiro: são avulsas e têm prazo próprio,
                   então não entram no .map de planos (que espera
                   PlanoManutencao e oferece editar/duplicar/rota/massa). */}
-                  {extraordinariasFiltradas.map((ordem) => (
-                    <Fragment key={ordem.id}>
-                      <View style={styles.extraCardAdmin}>
-                        <View style={styles.extraCabecalhoAdmin}>
-                          <View style={styles.planoCabecalhoTitulos}>
-                            <Text style={styles.planoTitulo}>
-                              {tituloOrdem(ordem)}
-                            </Text>
-                            <View style={styles.seloExtra}>
-                              <Text style={styles.seloExtraTexto}>
-                                Extraordinária
-                              </Text>
-                            </View>
-                          </View>
-                          <Pressable
-                            ref={(el) => {
-                              if (el) {
-                                menuExtraIconRefs.current.set(ordem.id, el);
-                              }
-                            }}
-                            onPress={() => handleAbrirMenuExtra(ordem.id)}
-                            hitSlop={{
-                              top: 10,
-                              bottom: 10,
-                              left: 10,
-                              right: 10,
-                            }}
-                            style={({ pressed }) => [
-                              styles.planoMenuButton,
-                              pressed && styles.planoMenuButtonPressionado,
-                            ]}
-                          >
-                            <Ionicons
-                              name="ellipsis-horizontal"
-                              size={18}
-                              color={light.textSecondary}
-                            />
-                          </Pressable>
-                        </View>
-
-                        <Text style={styles.planoTipo}>
-                          {ordem.tipos_atividade?.nome ?? 'Sem tipo'}
-                        </Text>
-                        {ordem.locais?.nome ? (
-                          <Text style={styles.planoDetalhe}>
-                            {ordem.locais.nome}
-                          </Text>
-                        ) : null}
-
-                        <View style={styles.planoRodape}>
-                          <Text style={styles.planoDetalhe}>
-                            Prazo · {formatarDataBR(ordem.data_prevista)}
-                          </Text>
-                          {ordem.prioridade ? (
-                            <Chip
-                              label={ordem.prioridade}
-                              color={getCorPrioridade(ordem.prioridade)}
-                            />
-                          ) : null}
-                        </View>
-                      </View>
-
-                      <CardMenu
-                        visible={menuExtraAbertoId === ordem.id}
-                        onClose={fecharMenuExtra}
-                        anchorPosition={menuExtraAncora}
-                      >
-                        <Pressable
-                          style={styles.menuItem}
-                          onPress={() => abrirModalEditarExtraordinaria(ordem)}
-                        >
-                          <Text style={styles.menuItemTexto}>Editar</Text>
-                        </Pressable>
-                      </CardMenu>
-                    </Fragment>
-                  ))}
-
-                  {planosFiltrados.map((plano) => {
-                    const menuAberto = menuAbertoId === plano.id;
-                    const proximaOrdem = encontrarProximaOrdemPendente(
-                      plano.id,
-                    );
-                    const selecionado = planosSelecionados.has(plano.id);
-
-                    return (
-                      <Fragment key={plano.id}>
-                        <Pressable
-                          style={styles.planoCard}
-                          onPress={
-                            modoSelecaoPlanos
-                              ? () => alternarSelecaoPlano(plano.id)
-                              : undefined
-                          }
-                        >
-                          <View style={styles.planoCabecalho}>
-                            {modoSelecaoPlanos ? (
-                              <View
-                                style={[
-                                  styles.linhaRotaIndicador,
-                                  selecionado &&
-                                    styles.linhaRotaIndicadorSelecionado,
-                                ]}
-                              >
-                                {selecionado ? (
-                                  <Ionicons
-                                    name="checkmark"
-                                    size={14}
-                                    color="#FFFFFF"
-                                  />
-                                ) : null}
+                      {extraordinariasFiltradas.map((ordem) => (
+                        <Fragment key={ordem.id}>
+                          <View style={styles.extraCardAdmin}>
+                            <View style={styles.extraCabecalhoAdmin}>
+                              <View style={styles.planoCabecalhoTitulos}>
+                                <Text style={styles.planoTitulo}>
+                                  {tituloOrdem(ordem)}
+                                </Text>
+                                <View style={styles.seloExtra}>
+                                  <Text style={styles.seloExtraTexto}>
+                                    Extraordinária
+                                  </Text>
+                                </View>
                               </View>
-                            ) : null}
-                            <Text style={styles.planoTitulo}>
-                              {plano.titulo}
-                            </Text>
-                            {modoSelecaoPlanos ? null : (
                               <Pressable
                                 ref={(el) => {
                                   if (el) {
-                                    menuIconRefs.current.set(plano.id, el);
+                                    menuExtraIconRefs.current.set(ordem.id, el);
                                   }
                                 }}
-                                onPress={() => handleAbrirMenu(plano.id)}
+                                onPress={() => handleAbrirMenuExtra(ordem.id)}
                                 hitSlop={{
                                   top: 10,
                                   bottom: 10,
@@ -3436,216 +3415,332 @@ export default function AdminPreservacao() {
                                   color={light.textSecondary}
                                 />
                               </Pressable>
-                            )}
-                          </View>
-
-                          {plano.rota_id && plano.rotas ? (
-                            <View style={styles.rotaChip}>
-                              <Text style={styles.rotaChipTexto}>
-                                {plano.rotas.nome}
-                              </Text>
                             </View>
-                          ) : null}
 
-                          <Text style={styles.planoTipo}>
-                            {plano.tipos_atividade?.nome ?? 'Sem tipo'}
-                          </Text>
-
-                          {nomeLocal(plano) ? (
-                            <Text style={styles.planoDetalhe}>
-                              {nomeLocal(plano)}
+                            <Text style={styles.planoTipo}>
+                              {ordem.tipos_atividade?.nome ?? 'Sem tipo'}
                             </Text>
-                          ) : null}
+                            {ordem.locais?.nome ? (
+                              <Text style={styles.planoDetalhe}>
+                                {ordem.locais.nome}
+                              </Text>
+                            ) : null}
 
-                          <View style={styles.planoRodape}>
-                            <Text style={styles.planoDetalhe}>
-                              {plano.periodicidade} ·{' '}
-                              {formatarDataBR(plano.data_inicio)}
-                            </Text>
-                            <Chip
-                              label={plano.prioridade}
-                              color={getCorPrioridade(plano.prioridade)}
-                            />
-                          </View>
-                        </Pressable>
-
-                        <CardMenu
-                          visible={menuAberto}
-                          onClose={fecharMenu}
-                          anchorPosition={menuAncora}
-                        >
-                          {menuEtapa === 'opcoes' ? (
-                            <>
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={() => handleMenuEditar(plano)}
-                              >
-                                <Text style={styles.menuItemTexto}>Editar</Text>
-                              </Pressable>
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={() => handleMenuDuplicar(plano)}
-                              >
-                                <Text style={styles.menuItemTexto}>
-                                  Duplicar
-                                </Text>
-                              </Pressable>
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={() => abrirModalAtribuirRota(plano)}
-                              >
-                                <Text style={styles.menuItemTexto}>
-                                  Adicionar à rota
-                                </Text>
-                              </Pressable>
-                              {proximaOrdem ? (
-                                <AdiarAcao
-                                  ordemId={proximaOrdem.id}
-                                  planoId={proximaOrdem.plano_id}
-                                  variant="menuItem"
-                                  onConfirmar={(novaData) => {
-                                    handleAdiarOrdem(proximaOrdem.id, novaData);
-                                    fecharMenu();
-                                  }}
+                            <View style={styles.planoRodape}>
+                              <Text style={styles.planoDetalhe}>
+                                Prazo · {formatarDataBR(ordem.data_prevista)}
+                              </Text>
+                              {ordem.prioridade ? (
+                                <Chip
+                                  label={ordem.prioridade}
+                                  color={getCorPrioridade(ordem.prioridade)}
                                 />
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.menuItem,
-                                    styles.menuItemDesabilitado,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.menuItemTexto,
-                                      styles.menuItemTextoDesabilitado,
-                                    ]}
-                                  >
-                                    Adiar
-                                  </Text>
-                                </View>
-                              )}
-                              {proximaOrdem ? (
-                                <Pressable
-                                  style={styles.menuItem}
-                                  onPress={() => {
-                                    fecharMenu();
-                                    handleConcluirOrdem(proximaOrdem.id);
-                                  }}
-                                >
-                                  <Text style={styles.menuItemTexto}>
-                                    {atualizandoOrdemId === proximaOrdem.id
-                                      ? 'Concluindo…'
-                                      : 'Concluir'}
-                                  </Text>
-                                </Pressable>
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.menuItem,
-                                    styles.menuItemDesabilitado,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.menuItemTexto,
-                                      styles.menuItemTextoDesabilitado,
-                                    ]}
-                                  >
-                                    Concluir
-                                  </Text>
-                                </View>
-                              )}
-                              <Pressable
-                                style={styles.menuItem}
-                                onPress={handleMenuPedirConfirmacaoExclusao}
-                              >
-                                <Text
-                                  style={[
-                                    styles.menuItemTexto,
-                                    styles.menuItemExcluirTexto,
-                                  ]}
-                                >
-                                  Excluir
-                                </Text>
-                              </Pressable>
-                            </>
-                          ) : (
-                            <View style={styles.menuConfirmacao}>
-                              <Text style={styles.menuConfirmacaoTexto}>
-                                Confirmar exclusão?
-                              </Text>
-                              <View style={styles.menuConfirmacaoBotoes}>
-                                <Pressable
-                                  style={styles.menuConfirmacaoBotaoCancelar}
-                                  onPress={fecharMenu}
-                                >
-                                  <Text
-                                    style={
-                                      styles.menuConfirmacaoBotaoCancelarTexto
-                                    }
-                                  >
-                                    Cancelar
-                                  </Text>
-                                </Pressable>
-                                <Pressable
-                                  style={styles.menuConfirmacaoBotaoExcluir}
-                                  onPress={() =>
-                                    handleMenuExcluirConfirmar(plano)
-                                  }
-                                >
-                                  <Text
-                                    style={
-                                      styles.menuConfirmacaoBotaoExcluirTexto
-                                    }
-                                  >
-                                    Excluir
-                                  </Text>
-                                </Pressable>
-                              </View>
+                              ) : null}
                             </View>
-                          )}
-                        </CardMenu>
-                      </Fragment>
-                    );
-                  })}
-                </View>
-              ) : null}
-            </View>
-          </>
-        ) : null}
-      </ScrollView>
+                          </View>
 
-      {secao === 'hoje' && planosSelecionados.size > 0 ? (
-        <View
-          style={[
-            styles.barraSelecao,
-            { paddingBottom: insets.bottom + spacing.sm },
-          ]}
-        >
-          <Text style={styles.barraSelecaoTexto}>
-            {planosSelecionados.size} selecionados
-          </Text>
-          <View style={styles.barraSelecaoBotoes}>
-            <Pressable
-              style={styles.barraSelecaoBotaoCancelar}
-              onPress={cancelarSelecaoPlanos}
+                          <CardMenu
+                            visible={menuExtraAbertoId === ordem.id}
+                            onClose={fecharMenuExtra}
+                            anchorPosition={menuExtraAncora}
+                          >
+                            <Pressable
+                              style={styles.menuItem}
+                              onPress={() =>
+                                abrirModalEditarExtraordinaria(ordem)
+                              }
+                            >
+                              <Text style={styles.menuItemTexto}>Editar</Text>
+                            </Pressable>
+                          </CardMenu>
+                        </Fragment>
+                      ))}
+
+                      {planosFiltrados.map((plano) => {
+                        const menuAberto = menuAbertoId === plano.id;
+                        const proximaOrdem = encontrarProximaOrdemPendente(
+                          plano.id,
+                        );
+                        const selecionado = planosSelecionados.has(plano.id);
+
+                        return (
+                          <Fragment key={plano.id}>
+                            <Pressable
+                              style={styles.planoCard}
+                              onPress={
+                                modoSelecaoPlanos
+                                  ? () => alternarSelecaoPlano(plano.id)
+                                  : undefined
+                              }
+                            >
+                              <View style={styles.planoCabecalho}>
+                                {modoSelecaoPlanos ? (
+                                  <View
+                                    style={[
+                                      styles.linhaRotaIndicador,
+                                      selecionado &&
+                                        styles.linhaRotaIndicadorSelecionado,
+                                    ]}
+                                  >
+                                    {selecionado ? (
+                                      <Ionicons
+                                        name="checkmark"
+                                        size={14}
+                                        color="#FFFFFF"
+                                      />
+                                    ) : null}
+                                  </View>
+                                ) : null}
+                                <Text style={styles.planoTitulo}>
+                                  {plano.titulo}
+                                </Text>
+                                {modoSelecaoPlanos ? null : (
+                                  <Pressable
+                                    ref={(el) => {
+                                      if (el) {
+                                        menuIconRefs.current.set(plano.id, el);
+                                      }
+                                    }}
+                                    onPress={() => handleAbrirMenu(plano.id)}
+                                    hitSlop={{
+                                      top: 10,
+                                      bottom: 10,
+                                      left: 10,
+                                      right: 10,
+                                    }}
+                                    style={({ pressed }) => [
+                                      styles.planoMenuButton,
+                                      pressed &&
+                                        styles.planoMenuButtonPressionado,
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name="ellipsis-horizontal"
+                                      size={18}
+                                      color={light.textSecondary}
+                                    />
+                                  </Pressable>
+                                )}
+                              </View>
+
+                              {plano.rota_id && plano.rotas ? (
+                                <View style={styles.rotaChip}>
+                                  <Text style={styles.rotaChipTexto}>
+                                    {plano.rotas.nome}
+                                  </Text>
+                                </View>
+                              ) : null}
+
+                              <Text style={styles.planoTipo}>
+                                {plano.tipos_atividade?.nome ?? 'Sem tipo'}
+                              </Text>
+
+                              {nomeLocal(plano) ? (
+                                <Text style={styles.planoDetalhe}>
+                                  {nomeLocal(plano)}
+                                </Text>
+                              ) : null}
+
+                              <View style={styles.planoRodape}>
+                                <Text style={styles.planoDetalhe}>
+                                  {plano.periodicidade} ·{' '}
+                                  {formatarDataBR(plano.data_inicio)}
+                                </Text>
+                                <Chip
+                                  label={plano.prioridade}
+                                  color={getCorPrioridade(plano.prioridade)}
+                                />
+                              </View>
+                            </Pressable>
+
+                            <CardMenu
+                              visible={menuAberto}
+                              onClose={fecharMenu}
+                              anchorPosition={menuAncora}
+                            >
+                              {menuEtapa === 'opcoes' ? (
+                                <>
+                                  <Pressable
+                                    style={styles.menuItem}
+                                    onPress={() => handleMenuEditar(plano)}
+                                  >
+                                    <Text style={styles.menuItemTexto}>
+                                      Editar
+                                    </Text>
+                                  </Pressable>
+                                  <Pressable
+                                    style={styles.menuItem}
+                                    onPress={() => handleMenuDuplicar(plano)}
+                                  >
+                                    <Text style={styles.menuItemTexto}>
+                                      Duplicar
+                                    </Text>
+                                  </Pressable>
+                                  <Pressable
+                                    style={styles.menuItem}
+                                    onPress={() =>
+                                      abrirModalAtribuirRota(plano)
+                                    }
+                                  >
+                                    <Text style={styles.menuItemTexto}>
+                                      Adicionar à rota
+                                    </Text>
+                                  </Pressable>
+                                  {proximaOrdem ? (
+                                    <AdiarAcao
+                                      ordemId={proximaOrdem.id}
+                                      planoId={proximaOrdem.plano_id}
+                                      variant="menuItem"
+                                      onConfirmar={(novaData) => {
+                                        handleAdiarOrdem(
+                                          proximaOrdem.id,
+                                          novaData,
+                                        );
+                                        fecharMenu();
+                                      }}
+                                    />
+                                  ) : (
+                                    <View
+                                      style={[
+                                        styles.menuItem,
+                                        styles.menuItemDesabilitado,
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.menuItemTexto,
+                                          styles.menuItemTextoDesabilitado,
+                                        ]}
+                                      >
+                                        Adiar
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {proximaOrdem ? (
+                                    <Pressable
+                                      style={styles.menuItem}
+                                      onPress={() => {
+                                        fecharMenu();
+                                        handleConcluirOrdem(proximaOrdem.id);
+                                      }}
+                                    >
+                                      <Text style={styles.menuItemTexto}>
+                                        {atualizandoOrdemId === proximaOrdem.id
+                                          ? 'Concluindo…'
+                                          : 'Concluir'}
+                                      </Text>
+                                    </Pressable>
+                                  ) : (
+                                    <View
+                                      style={[
+                                        styles.menuItem,
+                                        styles.menuItemDesabilitado,
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.menuItemTexto,
+                                          styles.menuItemTextoDesabilitado,
+                                        ]}
+                                      >
+                                        Concluir
+                                      </Text>
+                                    </View>
+                                  )}
+                                  <Pressable
+                                    style={styles.menuItem}
+                                    onPress={handleMenuPedirConfirmacaoExclusao}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.menuItemTexto,
+                                        styles.menuItemExcluirTexto,
+                                      ]}
+                                    >
+                                      Excluir
+                                    </Text>
+                                  </Pressable>
+                                </>
+                              ) : (
+                                <View style={styles.menuConfirmacao}>
+                                  <Text style={styles.menuConfirmacaoTexto}>
+                                    Confirmar exclusão?
+                                  </Text>
+                                  <View style={styles.menuConfirmacaoBotoes}>
+                                    <Pressable
+                                      style={
+                                        styles.menuConfirmacaoBotaoCancelar
+                                      }
+                                      onPress={fecharMenu}
+                                    >
+                                      <Text
+                                        style={
+                                          styles.menuConfirmacaoBotaoCancelarTexto
+                                        }
+                                      >
+                                        Cancelar
+                                      </Text>
+                                    </Pressable>
+                                    <Pressable
+                                      style={styles.menuConfirmacaoBotaoExcluir}
+                                      onPress={() =>
+                                        handleMenuExcluirConfirmar(plano)
+                                      }
+                                    >
+                                      <Text
+                                        style={
+                                          styles.menuConfirmacaoBotaoExcluirTexto
+                                        }
+                                      >
+                                        Excluir
+                                      </Text>
+                                    </Pressable>
+                                  </View>
+                                </View>
+                              )}
+                            </CardMenu>
+                          </Fragment>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
+          </ScrollView>
+
+          {secao === 'hoje' && planosSelecionados.size > 0 ? (
+            <View
+              style={[
+                styles.barraSelecao,
+                { paddingBottom: insets.bottom + spacing.sm },
+              ]}
             >
-              <Text style={styles.barraSelecaoBotaoCancelarTexto}>
-                Cancelar
+              <Text style={styles.barraSelecaoTexto}>
+                {planosSelecionados.size} selecionados
               </Text>
-            </Pressable>
-            <Pressable
-              style={styles.barraSelecaoBotaoEditar}
-              onPress={abrirModalEdicaoEmMassa}
-            >
-              <Text style={styles.barraSelecaoBotaoEditarTexto}>
-                Editar selecionados
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
+              <View style={styles.barraSelecaoBotoes}>
+                <Pressable
+                  style={styles.barraSelecaoBotaoCancelar}
+                  onPress={cancelarSelecaoPlanos}
+                >
+                  <Text style={styles.barraSelecaoBotaoCancelarTexto}>
+                    Cancelar
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.barraSelecaoBotaoEditar}
+                  onPress={abrirModalEdicaoEmMassa}
+                >
+                  <Text style={styles.barraSelecaoBotaoEditarTexto}>
+                    Editar selecionados
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+        </>
+      )}
 
       <Modal
         visible={modalVisivel}
@@ -4850,6 +4945,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  rotaCardCorpo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rotaCardCorpoPressionado: {
+    opacity: 0.6,
+  },
+  rotaCardCorpoTextos: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  rotaCardMenu: {
+    marginLeft: spacing.md,
+  },
+  rotaCardRodape: {
+    marginTop: spacing.sm,
   },
   semAtividadesRow: {
     flexDirection: 'row',

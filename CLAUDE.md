@@ -31,6 +31,7 @@ O texto visível ao usuário é **"Zeladoria"** (perfil de login) / **"Zeladoria
 - Criação de rota: fluxo guiado (Nome → Responsável → Rota criada). Responsável de rota: qualquer usuário ativo, de qualquer papel; visível e editável direto no card da rota. Toda escolha de responsável usa o componente SeletorResponsavel.
 - Aba Zeladoria e Manutenção (Administrador): seções Hoje (operação do dia) e Rotas (todas as rotas). Novas seções (Atividades, Locais) só aparecem quando estiverem prontas; nunca exibir seção vazia de espera. Um nome designa uma única coisa na interface.
 - Toda tela vazia explica o porquê (visibilidade do estado do sistema). 'Hoje' e 'próxima atividade' são calculados por funções únicas em src/data, sempre na data local do Brasil, e usados pelo zelador e pelo administrador.
+- Seção Rotas segue o padrão lista-detalhe: o card abre a tela da rota, com todas as atividades da rota, edição direta e 'Adicionar atividade' pelo fluxo guiado. Por ora, a tela da rota é um painel dentro da aba; migrará para uma página com URL quando o formulário de atividade for extraído.
 
 ## Estado atual — módulo por módulo
 

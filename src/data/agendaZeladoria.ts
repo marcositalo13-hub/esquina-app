@@ -147,17 +147,21 @@ export type ResumoRota = {
   hoje: number;
   // Data ('AAAA-MM-DD') da próxima ordem pendente depois de hoje, ou null.
   proxima: string | null;
+  // Mesmo cálculo, por plano da rota (tela da rota): planoId → próxima.
+  proximaPorPlano: Map<string, string | null>;
 };
 
 type LinhaResumo = {
   id: string;
   planos_manutencao: {
+    id: string;
     hoje: { id: string }[];
     proxima: { data_prevista: string }[];
   }[];
 };
 
-// Hoje e próxima de TODAS as rotas pedidas em UMA consulta: parte de
+// Hoje e próxima de TODAS as rotas pedidas (e de cada plano delas) em UMA
+// consulta: parte de
 // `rotas` e embute os planos e, de cada plano, as ordens de hoje e só a
 // primeira ordem pendente futura (limit 1 por plano). Assim o volume
 // devolvido não depende da janela de 90 dias de ordens — não esbarra no
@@ -174,7 +178,7 @@ export async function resumoDasRotas(
   const { data, error } = await supabase
     .from('rotas')
     .select(
-      'id, planos_manutencao(hoje:ordens_servico(id), proxima:ordens_servico(data_prevista))',
+      'id, planos_manutencao(id, hoje:ordens_servico(id), proxima:ordens_servico(data_prevista))',
     )
     .in('id', rotaIds)
     .eq('planos_manutencao.hoje.data_prevista', hoje)
@@ -193,14 +197,16 @@ export async function resumoDasRotas(
   for (const rota of (data ?? []) as unknown as LinhaResumo[]) {
     let totalHoje = 0;
     let proxima: string | null = null;
+    const proximaPorPlano = new Map<string, string | null>();
     for (const plano of rota.planos_manutencao ?? []) {
       totalHoje += plano.hoje?.length ?? 0;
-      const data = plano.proxima?.[0]?.data_prevista;
+      const data = plano.proxima?.[0]?.data_prevista ?? null;
+      proximaPorPlano.set(plano.id, data);
       if (data && (proxima === null || data < proxima)) {
         proxima = data;
       }
     }
-    resumo.set(rota.id, { hoje: totalHoje, proxima });
+    resumo.set(rota.id, { hoje: totalHoje, proxima, proximaPorPlano });
   }
   return resumo;
 }
