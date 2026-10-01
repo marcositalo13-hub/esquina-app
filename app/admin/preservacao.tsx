@@ -22,16 +22,19 @@ import { AdiarAcao } from '../../src/components/AdiarAcao';
 import { type AnchorPosition, CardMenu } from '../../src/components/CardMenu';
 import { Chip } from '../../src/components/Chip';
 import { FluxoNovaAtividade } from '../../src/components/FluxoNovaAtividade';
+import { FluxoNovaRota } from '../../src/components/FluxoNovaRota';
 import {
   type DiaMarcado,
   MiniCalendar,
 } from '../../src/components/MiniCalendar';
 import { ScreenBackground } from '../../src/components/ScreenBackground';
+import { SeletorResponsavel } from '../../src/components/SeletorResponsavel';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { type Ambiente, listarAmbientes } from '../../src/data/ambientes';
 import {
   adicionarDiasChave,
   atualizarAtividadeExtraordinaria,
+  atualizarRota,
   criarAtividadeExtraordinaria,
   criarPlanoManutencao,
   formatarDataBR,
@@ -60,6 +63,7 @@ import { useIdentidade } from '../../src/lib/identidade';
 import { resolverCondominioId } from '../../src/lib/resolverCondominioId';
 import { supabase } from '../../src/lib/supabase';
 import { preencherOcorrenciasFaltantes } from '../../src/lib/topUpOcorrencias';
+import { useFuncionariosAtivos } from '../../src/lib/useFuncionariosAtivos';
 import { reprovarOrdem, validarOrdem } from '../../src/lib/validacaoOrdens';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
@@ -135,18 +139,39 @@ export default function AdminPreservacao() {
   const botaoCriarRef = useRef<View | null>(null);
   const [fluxoNovaAtividadeVisivel, setFluxoNovaAtividadeVisivel] =
     useState(false);
-  const [avisoAtividadeCriada, setAvisoAtividadeCriada] = useState(false);
-  const avisoAtividadeCriadaTimeout = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const [fluxoNovaAtividadeRotaId, setFluxoNovaAtividadeRotaId] = useState<
+    string | null
+  >(null);
+  const [fluxoNovaRotaVisivel, setFluxoNovaRotaVisivel] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const avisoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
-      if (avisoAtividadeCriadaTimeout.current) {
-        clearTimeout(avisoAtividadeCriadaTimeout.current);
+      if (avisoTimeout.current) {
+        clearTimeout(avisoTimeout.current);
       }
     };
   }, []);
+
+  function mostrarAviso(texto: string) {
+    setAviso(texto);
+    if (avisoTimeout.current) {
+      clearTimeout(avisoTimeout.current);
+    }
+    avisoTimeout.current = setTimeout(() => setAviso(null), 2500);
+  }
+
+  // Lista única de usuários (cache de sessão) — nome do responsável no card
+  // de rota e seletor de responsável (ver SeletorResponsavel).
+  const funcionarios = useFuncionariosAtivos();
+  const [rotaResponsavelModal, setRotaResponsavelModal] = useState<Rota | null>(
+    null,
+  );
+  const [salvandoResponsavelRota, setSalvandoResponsavelRota] = useState(false);
+  const [erroResponsavelRota, setErroResponsavelRota] = useState<string | null>(
+    null,
+  );
 
   const [modalExtraVisivel, setModalExtraVisivel] = useState(false);
   // Preenchido só em edição (abrirModalEditarExtraordinaria) — caminho
@@ -250,23 +275,11 @@ export default function AdminPreservacao() {
   const [responsavelEditarRotaId, setResponsavelEditarRotaId] = useState<
     string | null
   >(null);
-  const [funcionariosZeladoria, setFuncionariosZeladoria] = useState<
-    { id: string; nome: string }[]
-  >([]);
-  const [carregandoFuncionariosZeladoria, setCarregandoFuncionariosZeladoria] =
-    useState(false);
   const [salvandoEditarRota, setSalvandoEditarRota] = useState(false);
   const [erroModalEditarRota, setErroModalEditarRota] = useState<string | null>(
     null,
   );
 
-  // Nome do responsável por rota, pra exibir no card de "Atividades do
-  // dia" — carregado uma vez no mount (mesmo padrão de carregarRotas/
-  // carregarAmbientes), separado de funcionariosZeladoria (esse é sob
-  // demanda, só ao abrir "Editar rota", e já filtrado por papel/ativo).
-  const [funcionariosPorId, setFuncionariosPorId] = useState<
-    Record<string, string>
-  >({});
   // Qual fluxo abriu "Nova rota" — decide onde a rota recém-criada deve ser
   // selecionada automaticamente ao ser criada (ver handleCriarRota).
   const [origemNovaRota, setOrigemNovaRota] = useState<'plano' | 'atribuir'>(
@@ -433,31 +446,6 @@ export default function AdminPreservacao() {
     }
   }, []);
 
-  // Nome do responsável por rota — via api/listar-funcionarios.ts porque
-  // `usuarios` tem RLS habilitada sem política ainda (a anon key usada por
-  // `supabase` aqui não consegue ler nada lá).
-  const carregarFuncionariosNomes = useCallback(async () => {
-    try {
-      const resposta = await fetch('/api/listar-funcionarios');
-      const dados = (await resposta.json().catch(() => null)) as {
-        funcionarios?: { id: string; nome: string }[];
-      } | null;
-
-      if (!resposta.ok) {
-        return;
-      }
-
-      const mapa: Record<string, string> = {};
-      for (const item of dados?.funcionarios ?? []) {
-        mapa[item.id] = item.nome;
-      }
-      setFuncionariosPorId(mapa);
-    } catch {
-      // Falha aqui não trava a tela — o card só mostra "Sem responsável"
-      // mesmo quando funcionario_id está preenchido, em vez do nome.
-    }
-  }, []);
-
   // Catálogo de Ambientes usado pelo seletor de "Local" do formulário de
   // plano — só os ativos, mesmo padrão de app/admin/ambientes.tsx.
   const carregarAmbientes = useCallback(async () => {
@@ -503,7 +491,6 @@ export default function AdminPreservacao() {
       carregarRotas(),
       carregarAmbientes(),
       carregarExtraordinarias(),
-      carregarFuncionariosNomes(),
     ]).finally(() => {
       setCarregando(false);
       // Top-up silencioso: roda depois do primeiro carregamento, sem
@@ -519,7 +506,6 @@ export default function AdminPreservacao() {
     carregarRotas,
     carregarAmbientes,
     carregarExtraordinarias,
-    carregarFuncionariosNomes,
   ]);
 
   // Guarda a versão mais atual de recarregarOrdens sem entrar nas
@@ -1051,50 +1037,14 @@ export default function AdminPreservacao() {
     setMenuRotaAbertaId(null);
   }
 
-  // Não existia tela/modal de edição de rota antes disto — só criação
-  // ("Nova rota") e atribuição de plano a uma rota. Carrega os funcionários
-  // de zeladoria ativos sob demanda (só quando o modal abre), mesma fonte
-  // de api/listar-funcionarios.ts usada em app/admin/funcionarios.tsx.
-  async function abrirModalEditarRota(rota: Rota) {
+  // Responsáveis vêm do SeletorResponsavel (lista única, cache de sessão).
+  function abrirModalEditarRota(rota: Rota) {
     fecharMenuRota();
     setRotaEditandoId(rota.id);
     setNomeEditarRota(rota.nome);
     setResponsavelEditarRotaId(rota.funcionario_id);
     setErroModalEditarRota(null);
     setModalEditarRotaVisivel(true);
-
-    setCarregandoFuncionariosZeladoria(true);
-    try {
-      const resposta = await fetch('/api/listar-funcionarios');
-      const dados = (await resposta.json().catch(() => null)) as {
-        funcionarios?: {
-          id: string;
-          nome: string;
-          papel: string;
-          ativo: boolean;
-        }[];
-        erro?: string;
-      } | null;
-
-      if (!resposta.ok) {
-        throw new Error(
-          dados?.erro ?? 'Não foi possível carregar os funcionários.',
-        );
-      }
-
-      const zeladoriaAtiva = (dados?.funcionarios ?? []).filter(
-        (item) => item.papel === 'zeladoria' && item.ativo,
-      );
-      setFuncionariosZeladoria(zeladoriaAtiva);
-    } catch (erro) {
-      setErroModalEditarRota(
-        erro instanceof Error
-          ? erro.message
-          : 'Não foi possível carregar os funcionários.',
-      );
-    } finally {
-      setCarregandoFuncionariosZeladoria(false);
-    }
   }
 
   function fecharModalEditarRota() {
@@ -1253,14 +1203,50 @@ export default function AdminPreservacao() {
 
   async function handleAtividadeCriada() {
     setFluxoNovaAtividadeVisivel(false);
+    setFluxoNovaAtividadeRotaId(null);
     await Promise.all([carregarRotas(), carregarTudo()]);
-    setAvisoAtividadeCriada(true);
-    if (avisoAtividadeCriadaTimeout.current) {
-      clearTimeout(avisoAtividadeCriadaTimeout.current);
+    mostrarAviso('Atividade criada');
+  }
+
+  function handleAdicionarPrimeiraAtividade(rota: Rota) {
+    setFluxoNovaRotaVisivel(false);
+    setFluxoNovaAtividadeRotaId(rota.id);
+    setFluxoNovaAtividadeVisivel(true);
+  }
+
+  function abrirResponsavelRota(rota: Rota) {
+    setErroResponsavelRota(null);
+    setRotaResponsavelModal(rota);
+  }
+
+  async function handleEscolherResponsavelRota(funcionarioId: string | null) {
+    if (!rotaResponsavelModal || !funcionarioId || salvandoResponsavelRota) {
+      return;
     }
-    avisoAtividadeCriadaTimeout.current = setTimeout(() => {
-      setAvisoAtividadeCriada(false);
-    }, 2500);
+    setSalvandoResponsavelRota(true);
+    setErroResponsavelRota(null);
+    try {
+      const rotaAtualizada = await atualizarRota(rotaResponsavelModal.id, {
+        funcionario_id: funcionarioId,
+      });
+      // Mesma recarga de handleSalvarEditarRota: `rotas` + o join de
+      // ordensHoje/ordens que alimenta os cards de "Rotas".
+      setRotas((atual) =>
+        atual.map((item) =>
+          item.id === rotaAtualizada.id ? rotaAtualizada : item,
+        ),
+      );
+      await recarregarOrdens();
+      setRotaResponsavelModal(null);
+      mostrarAviso('Responsável definido');
+    } catch (erro) {
+      console.error('Falha ao definir responsável da rota', erro);
+      setErroResponsavelRota(
+        'Não foi possível salvar o responsável. Tente de novo.',
+      );
+    } finally {
+      setSalvandoResponsavelRota(false);
+    }
   }
 
   // O "+" do cabeçalho abre um menu com os dois tipos de criação (plano de
@@ -2569,7 +2555,7 @@ export default function AdminPreservacao() {
           style={styles.menuItem}
           onPress={() => {
             setMenuCriarVisivel(false);
-            abrirModalRota();
+            setFluxoNovaRotaVisivel(true);
           }}
         >
           <Text style={styles.menuItemTexto}>Nova rota</Text>
@@ -2605,13 +2591,6 @@ export default function AdminPreservacao() {
           <Text style={styles.menuConfirmacaoBotaoCancelarTexto}>Cancelar</Text>
         </Pressable>
       </CardMenu>
-
-      {/* Mesmo overlay usado dentro dos modais de plano/atribuir rota (ver
-          novaRotaOverlay) — aqui, fora de qualquer <Modal>, pra funcionar
-          quando acionado direto pelo menu "+ Novo" acima, sem nenhum outro
-          modal aberto por trás. Não é um <Modal> próprio (nunca foi), então
-          não há risco de empilhar dois Modals simultâneos. */}
-      {novaRotaOverlay}
 
       <ScrollView contentContainerStyle={styles.body}>
         {erroLista ? <Text style={styles.erro}>{erroLista}</Text> : null}
@@ -2912,6 +2891,19 @@ export default function AdminPreservacao() {
                     ? Math.round((concluidas / itens.length) * 100)
                     : 0;
                 const expandida = rotasExpandidas.has(rota.id);
+                const responsavelRota = rota.funcionario_id
+                  ? funcionarios.porId.get(rota.funcionario_id)
+                  : undefined;
+                // Sem responsável, ou responsável inativo (só dá pra saber
+                // depois que a lista de usuários carregou).
+                const semResponsavelAtivo =
+                  !rota.funcionario_id ||
+                  (funcionarios.estado === 'pronto' && !responsavelRota?.ativo);
+                const nomeResponsavelRota =
+                  responsavelRota?.nome ??
+                  (funcionarios.estado === 'carregando'
+                    ? 'Carregando…'
+                    : 'Responsável definido');
 
                 return (
                   <Fragment key={rota.id}>
@@ -2946,23 +2938,42 @@ export default function AdminPreservacao() {
                             />
                           </Pressable>
                         </View>
-                        <Text style={styles.grupoRotaResumoSubtitulo}>
-                          {itens.length} atividades programadas para o dia
-                        </Text>
-
-                        {rota.funcionario_id ? (
-                          <Text style={styles.grupoRotaResponsavelTexto}>
-                            Responsável:{' '}
-                            {funcionariosPorId[rota.funcionario_id] ??
-                              'Funcionário'}
+                        <View style={styles.grupoRotaSubtituloRow}>
+                          <Text style={styles.grupoRotaResumoSubtitulo}>
+                            {itens.length} atividades programadas para o dia
                           </Text>
-                        ) : (
-                          <View style={styles.seloSemResponsavel}>
-                            <Text style={styles.seloSemResponsavelTexto}>
-                              Sem responsável
-                            </Text>
-                          </View>
-                        )}
+                          {semResponsavelAtivo ? (
+                            <Pressable
+                              onPress={() => abrirResponsavelRota(rota)}
+                              hitSlop={8}
+                              style={({ pressed }) => [
+                                styles.seloDefinirResponsavel,
+                                pressed &&
+                                  styles.seloDefinirResponsavelPressionado,
+                              ]}
+                            >
+                              <Text style={styles.seloDefinirResponsavelTexto}>
+                                Definir responsável
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              onPress={() => abrirResponsavelRota(rota)}
+                              hitSlop={8}
+                              style={styles.grupoRotaResponsavel}
+                              accessibilityLabel={`Responsável: ${nomeResponsavelRota}. Trocar responsável`}
+                            >
+                              <Ionicons
+                                name="person-outline"
+                                size={14}
+                                color={light.textSecondary}
+                              />
+                              <Text style={styles.grupoRotaResponsavelTexto}>
+                                {nomeResponsavelRota}
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
 
                         <View style={styles.grupoRotaProgressoRow}>
                           <View style={styles.grupoRotaProgressoTrilho}>
@@ -3658,25 +3669,11 @@ export default function AdminPreservacao() {
 
             <View style={styles.field}>
               <Text style={styles.label}>Responsável</Text>
-              {carregandoFuncionariosZeladoria ? (
-                <Text style={styles.vazio}>Carregando…</Text>
-              ) : (
-                <View style={styles.chipWrap}>
-                  <Chip
-                    label="Nenhum"
-                    selected={responsavelEditarRotaId === null}
-                    onPress={() => setResponsavelEditarRotaId(null)}
-                  />
-                  {funcionariosZeladoria.map((funcionario) => (
-                    <Chip
-                      key={funcionario.id}
-                      label={funcionario.nome}
-                      selected={responsavelEditarRotaId === funcionario.id}
-                      onPress={() => setResponsavelEditarRotaId(funcionario.id)}
-                    />
-                  ))}
-                </View>
-              )}
+              <SeletorResponsavel
+                opcaoNenhum
+                selecionadoId={responsavelEditarRotaId}
+                onSelecionar={setResponsavelEditarRotaId}
+              />
             </View>
 
             {erroModalEditarRota ? (
@@ -4132,20 +4129,68 @@ export default function AdminPreservacao() {
 
       {fluxoNovaAtividadeVisivel ? (
         <FluxoNovaAtividade
-          onFechar={() => setFluxoNovaAtividadeVisivel(false)}
+          rotaInicialId={fluxoNovaAtividadeRotaId ?? undefined}
+          onFechar={() => {
+            setFluxoNovaAtividadeVisivel(false);
+            setFluxoNovaAtividadeRotaId(null);
+          }}
           onSalvo={handleAtividadeCriada}
         />
       ) : null}
 
-      {avisoAtividadeCriada ? (
+      {fluxoNovaRotaVisivel ? (
+        <FluxoNovaRota
+          onFechar={() => setFluxoNovaRotaVisivel(false)}
+          onRotaCriada={async () => {
+            await carregarRotas();
+          }}
+          onAdicionarAtividade={handleAdicionarPrimeiraAtividade}
+        />
+      ) : null}
+
+      <Modal
+        visible={rotaResponsavelModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRotaResponsavelModal(null)}
+      >
+        <View style={styles.overlay}>
+          <View style={[styles.modalRotaCard, styles.modalResponsavelCard]}>
+            <Text style={styles.modalTitulo}>
+              Responsável — {rotaResponsavelModal?.nome ?? ''}
+            </Text>
+            <ScrollView style={styles.modalLocalLista}>
+              <SeletorResponsavel
+                selecionadoId={rotaResponsavelModal?.funcionario_id ?? null}
+                onSelecionar={handleEscolherResponsavelRota}
+                desabilitado={salvandoResponsavelRota}
+              />
+            </ScrollView>
+            {salvandoResponsavelRota ? (
+              <Text style={styles.vazio}>Salvando…</Text>
+            ) : null}
+            {erroResponsavelRota ? (
+              <Text style={styles.erro}>{erroResponsavelRota}</Text>
+            ) : null}
+            <View style={styles.modalBotoes}>
+              <Pressable
+                style={[styles.modalBotao, styles.modalBotaoCancelar]}
+                onPress={() => setRotaResponsavelModal(null)}
+                disabled={salvandoResponsavelRota}
+              >
+                <Text style={styles.modalBotaoCancelarTexto}>Fechar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {aviso ? (
         <View
           pointerEvents="none"
-          style={[
-            styles.avisoAtividadeCriada,
-            { bottom: insets.bottom + spacing.lg },
-          ]}
+          style={[styles.aviso, { bottom: insets.bottom + spacing.lg }]}
         >
-          <Text style={styles.avisoAtividadeCriadaTexto}>Atividade criada</Text>
+          <Text style={styles.avisoTexto}>{aviso}</Text>
         </View>
       ) : null}
     </View>
@@ -4153,7 +4198,7 @@ export default function AdminPreservacao() {
 }
 
 const styles = StyleSheet.create({
-  avisoAtividadeCriada: {
+  aviso: {
     position: 'absolute',
     alignSelf: 'center',
     backgroundColor: light.inkAction,
@@ -4163,7 +4208,7 @@ const styles = StyleSheet.create({
     zIndex: 30,
     elevation: 30,
   },
-  avisoAtividadeCriadaTexto: {
+  avisoTexto: {
     fontFamily: fonts.medium,
     fontSize: 14,
     color: light.bg,
@@ -4503,24 +4548,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: light.textSecondary,
   },
+  grupoRotaSubtituloRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  grupoRotaResponsavel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 1,
+  },
   grupoRotaResponsavelTexto: {
-    fontFamily: fonts.regular,
+    fontFamily: fonts.medium,
     fontSize: 13,
     color: light.textSecondary,
   },
-  seloSemResponsavel: {
-    alignSelf: 'flex-start',
+  seloDefinirResponsavel: {
     borderWidth: 1,
-    borderColor: semantic.overdue,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.sm + 4,
+    borderColor: semantic.pending,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    backgroundColor: `${semantic.overdue}1A`,
+    backgroundColor: `${semantic.pending}1A`,
   },
-  seloSemResponsavelTexto: {
+  seloDefinirResponsavelPressionado: {
+    backgroundColor: `${semantic.pending}33`,
+  },
+  seloDefinirResponsavelTexto: {
     fontFamily: fonts.medium,
     fontSize: 12,
-    color: semantic.overdue,
+    color: semantic.pending,
+  },
+  modalResponsavelCard: {
+    maxHeight: '85%',
   },
   grupoRotaProgressoRow: {
     flexDirection: 'row',

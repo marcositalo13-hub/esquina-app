@@ -19,7 +19,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Ambiente, listarAmbientes } from '../data/ambientes';
-import type { Funcionario } from '../data/funcionarios';
 import {
   atualizarRota,
   criarPlanoManutencao,
@@ -37,9 +36,11 @@ import {
   type TipoAtividade,
 } from '../data/manutencao';
 import { supabase } from '../lib/supabase';
+import { useFuncionariosAtivos } from '../lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../theme';
 import { Chip } from './Chip';
 import { MiniCalendar } from './MiniCalendar';
+import { SeletorResponsavel } from './SeletorResponsavel';
 
 // Mesmo padrão do formulário de plano (limparFormulario em
 // app/admin/preservacao.tsx) — o fluxo não pergunta prioridade, mas a
@@ -94,20 +95,6 @@ async function buscarLocaisAtivos(): Promise<Ambiente[]> {
   return lista.filter((item) => item.ativo);
 }
 
-// Lista completa (ativos e inativos): os inativos só servem para mostrar o
-// nome do responsável atual de uma rota e saber que ele precisa ser trocado.
-async function buscarFuncionarios(): Promise<Funcionario[]> {
-  const resposta = await fetch('/api/listar-funcionarios');
-  const dados = (await resposta.json().catch(() => null)) as {
-    funcionarios?: Funcionario[];
-    erro?: string;
-  } | null;
-  if (!resposta.ok) {
-    throw new Error(dados?.erro ?? 'Não foi possível carregar os usuários.');
-  }
-  return dados?.funcionarios ?? [];
-}
-
 function useCarga<T>(buscar: () => Promise<T>) {
   const [carga, setCarga] = useState<Carga<T>>({ estado: 'carregando' });
 
@@ -154,6 +141,9 @@ function mensagemDeFalha(
 type FluxoNovaAtividadeProps = {
   onFechar: () => void;
   onSalvo: () => void | Promise<void>;
+  // Rota já escolhida no passo 2 (ex.: vindo de "Adicionar primeira
+  // atividade" no fluxo de nova rota).
+  rotaInicialId?: string;
 };
 
 // Criação guiada de atividade de rotina (Atividade → Rota → Responsável →
@@ -162,6 +152,7 @@ type FluxoNovaAtividadeProps = {
 export function FluxoNovaAtividade({
   onFechar,
   onSalvo,
+  rotaInicialId,
 }: FluxoNovaAtividadeProps) {
   const insets = useSafeAreaInsets();
 
@@ -170,7 +161,7 @@ export function FluxoNovaAtividade({
   const [tipos, recarregarTipos] = useCarga(buscarTipos);
   const [locais, recarregarLocais] = useCarga(buscarLocaisAtivos);
   const [rotas, recarregarRotas] = useCarga(buscarRotas);
-  const [funcionarios, recarregarFuncionarios] = useCarga(buscarFuncionarios);
+  const funcionarios = useFuncionariosAtivos();
 
   const [reduzirMovimento, setReduzirMovimento] = useState<boolean | null>(
     null,
@@ -199,7 +190,9 @@ export function FluxoNovaAtividade({
   const [dataInicio, setDataInicio] = useState(hojeLocal());
   const [comoExecutar, setComoExecutar] = useState('');
 
-  const [escolhaRota, setEscolhaRota] = useState<EscolhaRota | null>(null);
+  const [escolhaRota, setEscolhaRota] = useState<EscolhaRota | null>(
+    rotaInicialId ? { tipo: 'existente', rotaId: rotaInicialId } : null,
+  );
   const [nomeNovaRota, setNomeNovaRota] = useState('');
   const [responsavelId, setResponsavelId] = useState<string | null>(null);
 
@@ -229,23 +222,7 @@ export function FluxoNovaAtividade({
     });
   }
 
-  const funcionariosPorId = useMemo(() => {
-    const mapa = new Map<string, Funcionario>();
-    if (funcionarios.estado === 'pronto') {
-      for (const item of funcionarios.dados) {
-        mapa.set(item.id, item);
-      }
-    }
-    return mapa;
-  }, [funcionarios]);
-
-  const funcionariosAtivos = useMemo(
-    () =>
-      funcionarios.estado === 'pronto'
-        ? funcionarios.dados.filter((item) => item.ativo)
-        : [],
-    [funcionarios],
-  );
+  const funcionariosPorId = funcionarios.porId;
 
   const rotaSelecionada =
     escolhaRota?.tipo === 'existente' && rotas.estado === 'pronto'
@@ -625,7 +602,7 @@ export function FluxoNovaAtividade({
             {funcionarios.estado === 'erro' ? (
               <FalhaCarga
                 texto="Não foi possível carregar os responsáveis."
-                onTentar={recarregarFuncionarios}
+                onTentar={funcionarios.recarregar}
               />
             ) : null}
 
@@ -717,37 +694,14 @@ export function FluxoNovaAtividade({
         <Text style={styles.pergunta}>Quem cuida desta rota?</Text>
         {contexto ? <Text style={styles.subtitulo}>{contexto}</Text> : null}
 
-        {funcionarios.estado === 'carregando' ? (
-          <Text style={styles.carregandoTexto}>Carregando usuários…</Text>
-        ) : funcionarios.estado === 'erro' ? (
-          <FalhaCarga
-            texto="Não foi possível carregar os usuários."
-            onTentar={recarregarFuncionarios}
-          />
-        ) : funcionariosAtivos.length === 0 ? (
-          <Text style={styles.carregandoTexto}>
-            Nenhum usuário ativo cadastrado.
-          </Text>
-        ) : (
-          <View style={styles.pauta}>
-            {funcionariosAtivos.map((funcionario) => (
-              <LinhaOpcao
-                key={funcionario.id}
-                titulo={funcionario.nome}
-                detalhe={funcionario.funcao ?? undefined}
-                selecionada={responsavelId === funcionario.id}
-                onPress={() => {
-                  setResponsavelId(funcionario.id);
-                  limparErro('responsavel');
-                }}
-              />
-            ))}
-          </View>
-        )}
-
-        {erros.responsavel ? (
-          <Text style={styles.erro}>{erros.responsavel}</Text>
-        ) : null}
+        <SeletorResponsavel
+          selecionadoId={responsavelId}
+          onSelecionar={(id) => {
+            setResponsavelId(id);
+            limparErro('responsavel');
+          }}
+          erro={erros.responsavel}
+        />
       </>
     );
   }

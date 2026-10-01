@@ -19,6 +19,7 @@ import type {
   PapelFuncionario,
 } from '../../src/data/funcionarios';
 import { supabase } from '../../src/lib/supabase';
+import { atualizarCacheFuncionarios } from '../../src/lib/useFuncionariosAtivos';
 import { fonts, light, radius, semantic, spacing } from '../../src/theme';
 
 const PAPEIS: { valor: PapelFuncionario; label: string }[] = [
@@ -133,6 +134,7 @@ export default function AdminFuncionarios() {
       }
 
       setFuncionarios(dados?.funcionarios ?? []);
+      atualizarCacheFuncionarios(dados?.funcionarios ?? []);
     } catch (erro) {
       setErroLista(mensagemDeErro(erro));
     } finally {
